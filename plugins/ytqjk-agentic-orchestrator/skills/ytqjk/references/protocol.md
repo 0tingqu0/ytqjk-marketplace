@@ -4,37 +4,66 @@
 
 1. Resolve the target project, current branch, HEAD, and `git status --short` with read-only commands.
 2. Require a clean integration baseline. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes.
-3. Locate task tools: `fork_thread`, `list_threads`, `read_thread`, `wait_threads`, `send_message_to_thread`, `set_thread_title`, `set_thread_pinned`, and `set_thread_archived`. If unavailable, report `BLOCKED`.
-4. Create the controller first as a dedicated Codex task. Keep the launcher read-only and silent except for controller lifecycle, hard-stop propagation, and final controller archival. Only the controller creates, assigns, or archives descendant tasks.
-5. On first global use, disclose that `npx skills@latest add mattpocock/skills` executes the latest third-party package and changes global skills. Require explicit confirmation unless that exact command was already approved in the current task. Then let the bootstrap controller run it, ensure `grill-me` is installed, create a fresh formal controller, transfer objective and evidence, and archive the bootstrap controller.
-6. From the formal controller, create fixed same-directory tasks: supervisor, reviewer, Git committer, progress reporter, and RAG. Title them `[YTQJK] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short objective.
-7. Pin only the progress task while work is active.
+3. Detect one host mode before creating roles:
+   - **Task mode:** the host exposes capability-equivalent task/thread create, list,
+     read, wait, message, title, pin, and archive tools. Create a dedicated controller
+     task first. The launcher stays read-only and silent except for lifecycle, hard
+     stops, and final archival.
+   - **IDE Agent mode:** the Codex IDE/CLI host exposes real subagent create, status,
+     wait, and message capabilities. The current chat becomes the control-only
+     controller; create every other role as a separate visible subagent thread.
+     Never replace a role with controller implementation or an inline role-play.
+   If neither complete capability set is available, report `BLOCKED`. Do not mix modes.
+4. On first user-level use, run `npm view skills@latest engines --json` and verify the
+   active Node.js satisfies it. Disclose that
+   `npx skills@latest add mattpocock/skills` executes the latest third-party package
+   and writes skill files plus installer metadata. Require explicit confirmation
+   unless that exact command was already approved in the current task. Run that exact
+   command from the operating-system user home, never the target repository. Its
+   default `.agents/skills` target then maps to Codex's user discovery location while
+   preserving the clean integration baseline. Select Codex, `grill-me`, and its
+   `grilling` dependency; verify both. The plugin supplies the attributed `caveman`
+   skill. Then start a fresh formal controller. In IDE Agent mode, transfer the
+   objective into a fresh chat if the host cannot replace the bootstrap controller.
+5. From the formal controller, create supervisor, reviewer, Git committer, progress
+   reporter, and RAG roles in the same project context. Title them `[YTQJK] 总控`,
+   `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short objective when titles are supported.
+6. Pin only the progress role while work is active when pinning is supported. In IDE
+   Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
 
-Invoking this skill authorizes creation and coordination of these Codex tasks plus local writes under `D:\knowledge`. It does not authorize push, merge, rebase, tag, amend, deployment, remote writes, service changes, hardware action, or destructive cleanup.
+Invoking this skill authorizes creation and coordination of these tasks/subagents plus
+local writes under the knowledge root resolved by `YTQJK_KNOWLEDGE_ROOT` or the
+platform default. It does not authorize push, merge, rebase, tag, amend, deployment,
+remote writes, service changes, hardware action, or destructive cleanup.
 
 ## 2. Role contracts
 
 ### Launcher
 
-Create the controller, preserve the target objective, wait without noise, propagate a hard stop once, and archive the controller last. Never implement, test, review, or mutate Git.
+Task mode only. Create the controller, preserve the target objective, wait without
+noise, propagate a hard stop once, and archive the controller last. Never implement,
+test, review, or mutate Git. IDE Agent mode has no separate launcher role.
 
 ### Controller
 
-Apply `caveman`. Coordinate only. Run the planning gate, own the DAG, create tasks, choose models, enforce scopes, monitor evidence, request supervisor gates, and archive completed tasks. Do not edit implementation, run acceptance, deploy, or mutate Git.
+Apply bundled `$caveman`. Coordinate only. Run the planning gate, own the DAG, create tasks or
+subagents, choose models, enforce scopes, monitor evidence, request supervisor gates,
+and close completed roles. Do not edit implementation, run acceptance, deploy, or
+mutate Git. In IDE Agent mode, the current chat is this controller.
 
 ### Supervisor
 
-Apply `caveman`. Independently inspect objective, plan, dependencies, parallel safety, scope drift, and evidence. Return only `PASS`, `CORRECT`, or `BLOCK` plus concise evidence. `BLOCK` stops affected dispatch or Git gates. The controller may not override it; correction or explicit user arbitration is required.
+Apply bundled `$caveman`. Independently inspect objective, plan, dependencies, parallel safety, scope drift, and evidence. Return only `PASS`, `CORRECT`, or `BLOCK` plus concise evidence. `BLOCK` stops affected dispatch or Git gates. The controller may not override it; correction or explicit user arbitration is required.
 
 Review at least before plan approval, each parallel wave, after material scope/dependency changes, before Git integration, and before final closure.
 
 ### Worker
 
-Apply `caveman`. Work in an isolated worktree on one bounded task and exact write allowlist. No task creation and no Git writes. Run focused self-checks, then export a handoff bundle to the assigned project-cache path. Report changed paths, commands, results, residual risks, and bundle hash.
+Apply bundled `$caveman`. Work in an isolated worktree on one bounded task and exact write allowlist. No task creation and no Git writes. Run focused self-checks, then export a handoff bundle to the assigned project-cache path. Report changed paths, commands, results, residual risks, and bundle hash.
 
 ### Reviewer
 
-Apply `caveman`. Never edit implementation. Perform two independent gates:
+Apply bundled `$caveman`. Never edit implementation. Perform two independent gates:
 
 1. Patch gate: inspect the worker worktree and handoff bundle; rerun relevant checks.
 2. Integration gate: after the Git task applies the bundle, inspect exact staged content and rerun affected checks.
@@ -43,13 +72,20 @@ Return `PASS`, `FAIL`, or `UNKNOWN` with evidence. Missing or unrun checks are `
 
 ### Git committer
 
-Apply `caveman`. Be the sole Git writer. Never fix implementation or conflicts. Apply only reviewed handoff bundles, stage exact allowlisted paths, inspect the staged diff, run `git diff --cached --check`, request integration review, then create small atomic commits. Never use `git add .` or `git add -A`.
+Apply bundled `$caveman`. Be the sole Git writer. Never fix implementation or conflicts. Apply only reviewed handoff bundles, stage exact allowlisted paths, inspect the staged diff, run `git diff --cached --check`, request integration review, then create small atomic commits. Never use `git add .` or `git add -A`.
 
 Integrate one bundle at a time so the integration worktree returns clean after each commit. If apply conflicts, stop and return it to a worker. Local commits are allowed after all gates. Push, merge, rebase, tag, amend, and force operations require explicit authorization in the current task.
 
+In IDE Agent mode, the Git role also provisions each dedicated worker worktree from
+the approved clean integration HEAD before that Worker starts. It returns the exact
+path and HEAD to the controller, but does not implement in the worktree. Do not remove
+worktrees without explicit cleanup authorization.
+
 ### Progress reporter
 
-Do not enable `caveman`. Use normal, complete Simplified Chinese. Run only in its own pinned task; do not send timed updates to the controller. Report:
+Do not enable `$caveman`. Use normal, complete Simplified Chinese. Run only in its own
+task or visible subagent thread; do not send timed updates to the controller. Pin it
+when supported. Report:
 
 - objective and phase;
 - verified percentage;
@@ -59,11 +95,17 @@ Do not enable `caveman`. Use normal, complete Simplified Chinese. Run only in it
 - errors/model escalations;
 - next action and required user action.
 
-Report immediately whenever verified progress crosses 10%. Also report every 10 minutes even when unchanged. Prefer a thread heartbeat automation. If unavailable, use bounded waits of at most 60 seconds and track elapsed wall time. Disable the heartbeat, issue the final report, unpin, then archive.
+Report immediately whenever verified progress crosses 10%. Also report every 10
+minutes even when unchanged. Prefer a thread heartbeat automation. If unavailable,
+use bounded waits of at most 60 seconds inside the progress role and track elapsed
+wall time. Disable the heartbeat, issue the final report, unpin when supported, then
+close the completed role. Use stop only to cancel active work. Archive after close
+when supported. Never claim unattended timing, closing, pinning, or archival that
+the host did not provide.
 
 ### RAG
 
-Apply `caveman`, except use full clarity for approval prompts. Be the only knowledge-index writer. Other tasks query it through task messages. Provide source path, line/symbol, source commit or dirty state, and index time. Knowledge informs decisions but never substitutes current source, tests, or review evidence.
+Apply bundled `$caveman`, except use full clarity for approval prompts. Be the only knowledge-index writer. Other tasks query it through task messages. Provide source path, line/symbol, source commit or dirty state, and index time. Knowledge informs decisions but never substitutes current source, tests, or review evidence.
 
 ## 3. Planning gate
 
@@ -107,18 +149,23 @@ Use stronger models or reasoning for architecture, security, difficult debugging
 9. Record commit and evidence in RAG. Archive the Worker immediately.
 10. Continue until ten milestones pass, then run final regression and closure review.
 
-Only the Git task may change the integration index or history. Platform-managed worktree provisioning is a controller control-plane action, not integration. Workers may edit their assigned working-tree files and use read-only `git status`, `diff`, `log`, `show`, and `ls-files`; they must not stage, commit, merge, rebase, tag, amend, push, or run `git worktree` commands.
+Only the Git task may change the integration index or history. Task-mode
+platform-managed worktree provisioning is a controller control-plane action; IDE
+Agent mode delegates explicit worktree provisioning to the Git role. Workers may edit
+their assigned working-tree files and use read-only `git status`, `diff`, `log`,
+`show`, and `ls-files`; they must not stage, commit, merge, rebase, tag, amend, push,
+or run `git worktree` commands.
 
 Use the bundled handoff utility from the skill directory. A Worker exports every changed path explicitly:
 
-```powershell
-python scripts/handoff_cli.py export --repo <worker-worktree> --bundle <project-cache>\handoffs\<task-id> --path <file-1> --path <file-2>
+```text
+python scripts/handoff_cli.py export --repo <worker-worktree> --bundle <project-cache>/handoffs/<task-id> --path <file-1> --path <file-2>
 ```
 
 After patch review and supervisor `PASS`, the Git task applies exactly one bundle into a clean integration worktree:
 
-```powershell
-python scripts/handoff_cli.py apply --repo <integration-worktree> --bundle <project-cache>\handoffs\<task-id>
+```text
+python scripts/handoff_cli.py apply --repo <integration-worktree> --bundle <project-cache>/handoffs/<task-id>
 ```
 
 `apply` verifies the base commit, manifest and payload hashes, allowlist, clean target, ignore rules, clean filters, and patch preflight; it stages exact paths and returns a staged-snapshot SHA-256. If any post-write step fails, it resets/restores only the manifest paths, removes only newly copied payloads, and verifies the integration worktree is clean. It never commits or resolves conflicts. The reviewer must bind its integration `PASS` to that hash.
@@ -127,7 +174,11 @@ python scripts/handoff_cli.py apply --repo <integration-worktree> --bundle <proj
 
 Use: `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`, `RUNNING`, `REVIEWING`, `REWORK`, `GIT_GATE`, `BLOCKED`, `DONE`.
 
-Archive only after delivery, evidence registration, downstream acknowledgement, and no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active tasks.
+Archive only after delivery, evidence registration, downstream acknowledgement, and
+no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active tasks. In IDE
+Agent mode, close completed subagent threads promptly; use stop only for active
+cancellation, and archive after close only when the host exposes it. Otherwise mark
+them `DONE` and report that the UI thread remains visible.
 
 Final order:
 
@@ -137,7 +188,8 @@ Final order:
 4. Git task after commit hashes and clean status are recorded.
 5. Supervisor after final direction `PASS`.
 6. Progress reporter after final report; unpin first.
-7. Controller after all children are archived.
-8. Launcher last.
+7. Task-mode controller after all children are archived. The IDE Agent-mode current
+   chat remains open for the final user handoff.
+8. Task-mode launcher last.
 
 On explicit pause/stop, send one stop message to active tasks and stop immediately. Do not poll, read, test, clean, commit, archive, deploy, or update knowledge until the user explicitly resumes.

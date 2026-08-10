@@ -1,0 +1,6 @@
+interface:
+  display_name: "Caveman"
+  short_description: "保留技术信息，压缩子任务输出"
+  default_prompt: "Use $caveman to make this response terse without losing technical detail."
+policy:
+  allow_implicit_invocation: false

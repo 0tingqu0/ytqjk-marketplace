@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+
+
+REPOSITORY = Path(__file__).resolve().parents[1]
+PLUGIN = REPOSITORY / "plugins" / "ytqjk-agentic-orchestrator"
+SKILL = PLUGIN / "skills" / "ytqjk"
+
+
+class DistributionLayoutTest(unittest.TestCase):
+    def test_canonical_skill_has_no_repository_copy(self) -> None:
+        named_skills = []
+        for candidate in REPOSITORY.rglob("SKILL.md"):
+            text = candidate.read_text(encoding="utf-8")
+            if "\nname: ytqjk\n" in text:
+                named_skills.append(candidate.resolve())
+        self.assertEqual(named_skills, [(SKILL / "SKILL.md").resolve()])
+        self.assertFalse((REPOSITORY / ".agents" / "skills" / "ytqjk").exists())
+        for required in ("agents", "references", "scripts"):
+            self.assertTrue((SKILL / required).is_dir())
+
+    def test_marketplace_targets_plugin(self) -> None:
+        marketplace = json.loads(
+            (REPOSITORY / ".agents" / "plugins" / "marketplace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(marketplace["name"], "ytqjk")
+        self.assertEqual(
+            marketplace["plugins"][0]["source"]["path"],
+            "./plugins/ytqjk-agentic-orchestrator",
+        )
+        manifest = json.loads(
+            (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["name"], "ytqjk-agentic-orchestrator")
+
+    def test_readme_installs_canonical_skill_for_ide(self) -> None:
+        readme = (REPOSITORY / "README.md").read_text(encoding="utf-8")
+        expected_url = (
+            "https://github.com/0tingqu0/ytqjk-marketplace/tree/main/"
+            "plugins/ytqjk-agentic-orchestrator/skills"
+        )
+        self.assertIn(expected_url, readme)
+        self.assertIn(
+            "--agent codex --skill ytqjk --skill caveman --copy", readme
+        )
+        self.assertIn("$ytqjk", readme)
+        self.assertIn("/skills", readme)
+
+    def test_bundled_caveman_has_attribution_and_license(self) -> None:
+        caveman = PLUGIN / "skills" / "caveman" / "SKILL.md"
+        license_path = PLUGIN / "skills" / "caveman" / "LICENSE"
+        notices = PLUGIN / "THIRD_PARTY_NOTICES.md"
+        self.assertTrue(caveman.is_file())
+        self.assertIn("Matt Pocock", caveman.read_text(encoding="utf-8"))
+        self.assertIn(
+            "Copyright (c) 2026 Matt Pocock",
+            license_path.read_text(encoding="utf-8"),
+        )
+        notice_text = notices.read_text(encoding="utf-8")
+        self.assertIn("Copyright (c) 2026 Matt Pocock", notice_text)
+        self.assertIn("MIT License", notice_text)
+
+    def test_repository_has_no_generated_python_cache(self) -> None:
+        generated = [
+            path
+            for path in REPOSITORY.rglob("*")
+            if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
+        ]
+        self.assertEqual(generated, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
