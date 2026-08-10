@@ -37,6 +37,7 @@ class DistributionLayoutTest(unittest.TestCase):
             (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["name"], "ytqjk-agentic-orchestrator")
+        self.assertLessEqual(len(manifest["interface"]["defaultPrompt"]), 128)
 
     def test_readme_installs_canonical_skill_for_ide(self) -> None:
         readme = (REPOSITORY / "README.md").read_text(encoding="utf-8")

@@ -1,4 +1,4 @@
 interface:
   display_name: "YTQJK Agentic Orchestrator"
   short_description: "多会话计划、执行、复审、Git 提交、进度与本地知识编排"
-  default_prompt: "Activate $ytqjk. First response: zero tools, no work claims, and one unresolved question with a recommended answer. Defer initialization until the user replies."
+  default_prompt: "Activate $ytqjk. First reply: zero tools and one recommended question. Defer setup until the user answers."
