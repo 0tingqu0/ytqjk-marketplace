@@ -30,3 +30,7 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 - `D:\knowledge`、模型、SQLite/vector 数据库、handoff 和任何本机凭据均不在本仓库中。
 
 安装前请检查 [插件清单](plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json) 和 [总控协议](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/protocol.md)。
+
+## 许可证
+
+[MIT](LICENSE)，Copyright (c) 2026 一听曲就困。
