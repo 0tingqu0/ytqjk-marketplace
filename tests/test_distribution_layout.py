@@ -37,6 +37,8 @@ class DistributionLayoutTest(unittest.TestCase):
             (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["name"], "ytqjk-agentic-orchestrator")
+        self.assertEqual(manifest["author"]["name"], "一听曲就困")
+        self.assertEqual(manifest["interface"]["developerName"], "一听曲就困")
         prompt = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(prompt.encode("utf-8")), 128)
         self.assertIn("$ytqjk", prompt)
@@ -132,6 +134,27 @@ class DistributionLayoutTest(unittest.TestCase):
             if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
         ]
         self.assertEqual(generated, [])
+
+    def test_rag_workflow_refreshes_before_size_gated_vectors(self) -> None:
+        protocol = (SKILL / "references" / "protocol.md").read_text(
+            encoding="utf-8"
+        )
+        knowledge = (SKILL / "references" / "knowledge-store.md").read_text(
+            encoding="utf-8"
+        )
+        normalized_protocol = " ".join(protocol.split())
+        normalized_knowledge = " ".join(knowledge.split())
+        self.assertIn("Before the first query", normalized_protocol)
+        self.assertIn(
+            "missing, stale, or security-incompatible index", normalized_protocol
+        )
+        self.assertIn("vectors are size-gated only", normalized_protocol)
+        self.assertIn(
+            "Repeated low-confidence queries never download", normalized_knowledge
+        )
+        self.assertIn(
+            "report that result instead of repeating queries", normalized_knowledge
+        )
 
 
 if __name__ == "__main__":
