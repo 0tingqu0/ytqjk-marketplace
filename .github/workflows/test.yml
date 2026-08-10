@@ -1,0 +1,50 @@
+name: Cross-platform tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test distribution layout
+        run: python -B -m unittest discover -s tests -p "test_*.py" -v
+      - name: Test skill scripts
+        run: python -B -m unittest discover -s plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/tests -p "test_*.py" -v
+
+  vector-linux:
+    name: Ubuntu vector round-trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      YTQJK_MODEL_CACHE: ${{ runner.temp }}/ytqjk/models
+      YTQJK_VECTOR_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Prepare isolated vector runtime
+        run: python -B plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/bootstrap_runtime.py --knowledge-root "$RUNNER_TEMP/ytqjk"
+      - name: Run vector integration test
+        run: >-
+          "$RUNNER_TEMP/ytqjk/.runtime/bin/python" -B -m unittest
+          plugins.ytqjk-agentic-orchestrator.skills.ytqjk.scripts.tests.test_vector_store -v
