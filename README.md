@@ -13,7 +13,8 @@ codex plugin marketplace add 0tingqu0/ytqjk-marketplace
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
-重启 Codex、新建任务，然后输入 `/ytqjk`。
+重启 Codex、新建任务，然后输入 `/ytqjk`。新激活的首条回复不调用工具：它会立即确认已启用、
+说明尚未执行操作，并提出一个含推荐答案的问题；你回答后才延迟初始化协议、角色与 RAG。
 
 ## VS Code、Cursor 与 Windsurf
 
@@ -35,7 +36,8 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 - Windows 优先使用 `D:\knowledge`。没有 D 盘时使用 `%LOCALAPPDATA%\YTQJK\knowledge`。
 - Linux/WSL2 使用 `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`。
 - `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
-- 首次总控会在确认后执行用户指定的 `npx skills@latest add mattpocock/skills`。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
+- 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
+  `npx skills@latest add mattpocock/skills`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 
 ## 本地数据与安全
 
@@ -48,7 +50,7 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 
 ## 引用与致谢
 
-- 计划拷问使用 Matt Pocock 的 [`grill-me` 与 `grilling`](https://github.com/mattpocock/skills)，由用户指定的 `npx skills@latest add mattpocock/skills` 安装；版权和许可证归原作者。
+- 计划拷问使用 Matt Pocock 的 [`grill-me`](https://github.com/mattpocock/skills)，由用户指定的 `npx skills@latest add mattpocock/skills` 在缺失时安装；版权和许可证归原作者。
 - 精简输出使用 Matt Pocock 历史版 `caveman` 的 MIT 授权快照。当前上游已移除此 skill，因此本插件随包分发审计版本；完整来源、改动说明与许可证见 [第三方声明](plugins/ytqjk-agentic-orchestrator/THIRD_PARTY_NOTICES.md)。
 - skill 安装命令使用 Vercel Labs 的开源 [`skills` CLI](https://github.com/vercel-labs/skills)。插件和 skill 结构遵循 [OpenAI Codex Plugins](https://developers.openai.com/codex/plugins) 与 [Skills](https://developers.openai.com/codex/skills) 规范。
 - OpenAI 的 `plugin-creator` 仅用于本项目的脚手架、cachebuster 和校验，不是运行时依赖。除以上明确列出的 skill 外，本插件没有内嵌其他人的插件代码。

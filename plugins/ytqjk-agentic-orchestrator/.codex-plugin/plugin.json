@@ -1,6 +1,6 @@
 {
   "name": "ytqjk-agentic-orchestrator",
-  "version": "0.1.0+codex.20260810041256",
+  "version": "0.1.0+codex.20260810054941",
   "description": "Coordinates isolated Codex tasks through planning, review, Git, progress, and local RAG gates.",
   "author": {
     "name": "wwj"
@@ -13,6 +13,6 @@
     "developerName": "wwj",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Use $ytqjk to coordinate this project task through isolated Codex tasks."
+    "defaultPrompt": "Activate $ytqjk. First response: zero tools, no work claims, and one unresolved question with a recommended answer. Defer protocol, repository, roles, RAG, Git, and installer checks until the user replies."
   }
 }

@@ -1,5 +1,17 @@
 # Orchestration protocol
 
+## 0. Instant activation
+
+For a new `/ytqjk` or `$ytqjk` activation, the skill's first assistant response
+uses zero tools. It must appear before this protocol is read, repository or skill
+inspection, network access, role creation, RAG, or Git. State that YTQJK is
+enabled but no work has started, and ask one non-discoverable question with a
+recommended answer.
+
+After the user answers, read this file completely and continue below. Active-run
+`stop`, `pause`, `resume`, and `status` requests bypass this new-activation path
+and follow their lifecycle rules immediately.
+
 ## 1. Bootstrap
 
 1. Resolve the target project, current branch, HEAD, and `git status --short` with read-only commands.
@@ -14,21 +26,31 @@
      controller; create every other role as a separate visible subagent thread.
      Never replace a role with controller implementation or an inline role-play.
    If neither complete capability set is available, report `BLOCKED`. Do not mix modes.
-4. On first user-level use, run `npm view skills@latest engines --json` and verify the
-   active Node.js satisfies it. Disclose that
-   `npx skills@latest add mattpocock/skills` executes the latest third-party package
-   and writes skill files plus installer metadata. Require explicit confirmation
-   unless that exact command was already approved in the current task. Run that exact
-   command from the operating-system user home, never the target repository. Its
-   default `.agents/skills` target then maps to Codex's user discovery location while
-   preserving the clean integration baseline. Select Codex, `grill-me`, and its
-   `grilling` dependency; verify both. The plugin supplies the attributed `caveman`
-   skill. Then start a fresh formal controller. In IDE Agent mode, transfer the
-   objective into a fresh chat if the host cannot replace the bootstrap controller.
-5. From the formal controller, create supervisor, reviewer, Git committer, progress
-   reporter, and RAG roles in the same project context. Title them `[YTQJK] 总控`,
-   `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short objective when titles are supported.
-6. Pin only the progress role while work is active when pinning is supported. In IDE
+4. Inspect the host-provided skill inventory. When a readable `grill-me` is already
+   available, treat the user-profile bootstrap as complete: do not run `npm view`,
+   `npx`, a network check, or an installer. Verify only dependencies declared by that
+   installed skill; never require a hard-coded `grilling` directory. The plugin
+   supplies the attributed `caveman` skill.
+5. Only when `grill-me` is unavailable, run
+   `npm view skills@latest engines --json` and verify the active Node.js satisfies it.
+   Disclose that `npx skills@latest add mattpocock/skills` executes the latest
+   third-party package and writes skill files plus installer metadata. Require
+   explicit confirmation unless that exact command was already approved in the
+   current task. Run that exact command from the operating-system user home, never
+   the target repository. Select Codex and `grill-me`, verify the installed skill and
+   only its declared dependencies, then start a fresh formal controller. In IDE Agent
+   mode, transfer the objective into a fresh chat if the host cannot replace the
+   bootstrap controller.
+6. Create roles just in time without weakening role separation:
+   - At formal `GRILLING`, create the supervisor and progress reporter. Create them
+     independently without waiting for one to finish before starting the other.
+   - Before the first repository-answerable question or index operation, create RAG.
+   - After plan approval and before the first Worker, create the reviewer and sole Git
+     committer. Both must exist before Worker dispatch.
+   Title them `[YTQJK] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short
+   objective when titles are supported. Every required role still exists before its
+   first responsibility.
+7. Pin only the progress role while work is active when pinning is supported. In IDE
    Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
 
 Invoking this skill authorizes creation and coordination of these tasks/subagents plus
@@ -40,9 +62,12 @@ remote writes, service changes, hardware action, or destructive cleanup.
 
 ### Launcher
 
-Task mode only. Create the controller, preserve the target objective, wait without
-noise, propagate a hard stop once, and archive the controller last. Never implement,
-test, review, or mutate Git. IDE Agent mode has no separate launcher role.
+Task mode only. After the activation answer, create the controller and preserve
+the target objective. Use one bounded readiness wait until the controller is
+started or needs input, then return its visible task link; never wait for project
+completion. Remain lifecycle-only, propagate a hard stop once, and archive the
+controller last. Never implement, test, review, or mutate Git. IDE Agent mode has
+no separate launcher role.
 
 ### Controller
 
