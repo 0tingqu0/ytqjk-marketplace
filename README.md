@@ -13,8 +13,9 @@ codex plugin marketplace add 0tingqu0/ytqjk-marketplace
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
-重启 Codex、新建任务，然后输入 `/ytqjk`。新激活的首条回复不调用工具：它会立即确认已启用、
-说明尚未执行操作，并提出一个含推荐答案的问题；你回答后才延迟初始化协议、角色与 RAG。
+重启 Codex、新建任务，然后输入 `/ytqjk`。目标明确并由你显式确认前，它会留在当前激活任务，
+每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色。确认后的首个工具调用
+才读取协议并创建总控；目标确认不等于计划批准，后续仍执行 `grill-me`、监督和计划批准门。
 
 ## VS Code、Cursor 与 Windsurf
 

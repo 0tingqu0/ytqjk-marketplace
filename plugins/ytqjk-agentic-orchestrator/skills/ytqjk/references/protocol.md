@@ -1,16 +1,21 @@
 # Orchestration protocol
 
-## 0. Instant activation
+## 0. Activation objective gate
 
-For a new `/ytqjk` or `$ytqjk` activation, the skill's first assistant response
-uses zero tools. It must appear before this protocol is read, repository or skill
-inspection, network access, role creation, RAG, or Git. State that YTQJK is
-enabled but no work has started, and ask one non-discoverable question with a
-recommended answer.
+For a new `/ytqjk` or `$ytqjk` activation, enter `GOAL_INTAKE`. Throughout
+`GOAL_INTAKE`, before explicit objective confirmation, make no tool call and keep
+all objective clarification in the current activation task. Create no controller,
+supervisor, progress, RAG, reviewer, Git, or Worker session or role.
 
-After the user answers, read this file completely and continue below. Active-run
-`stop`, `pause`, `resume`, and `status` requests bypass this new-activation path
-and follow their lifecycle rules immediately.
+Ask exactly one objective question per response, with a recommended answer. Ask
+for the highest-priority missing outcome or constraint. Once the objective is
+clear, restate its exact scope and ask for confirmation as that turn's only
+question. Initial objective text never counts as confirmation; require an
+affirmative reply to the restated summary.
+
+After explicit objective confirmation, read this file completely and continue
+below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
+`resume`, and `status` bypass this gate and follow lifecycle rules immediately.
 
 ## 1. Bootstrap
 
@@ -19,11 +24,11 @@ and follow their lifecycle rules immediately.
 3. Detect one host mode before creating roles:
    - **Task mode:** the host exposes capability-equivalent task/thread create, list,
      read, wait, message, title, pin, and archive tools. Create a dedicated controller
-     task first. The launcher stays read-only and silent except for lifecycle, hard
-     stops, and final archival.
+     task first, but only after objective confirmation. The activation task remains
+     the launcher and stays read-only except for lifecycle, hard stops, and archival.
    - **IDE Agent mode:** the Codex IDE/CLI host exposes real subagent create, status,
-     wait, and message capabilities. The current chat becomes the control-only
-     controller; create every other role as a separate visible subagent thread.
+     wait, and message capabilities. After objective confirmation, the current chat
+     becomes the control-only controller; create every other role separately.
      Never replace a role with controller implementation or an inline role-play.
    If neither complete capability set is available, report `BLOCKED`. Do not mix modes.
 4. Inspect the host-provided skill inventory. When a readable `grill-me` is already
@@ -53,17 +58,18 @@ and follow their lifecycle rules immediately.
 7. Pin only the progress role while work is active when pinning is supported. In IDE
    Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
 
-Invoking this skill authorizes creation and coordination of these tasks/subagents plus
-local writes under the knowledge root resolved by `YTQJK_KNOWLEDGE_ROOT` or the
-platform default. It does not authorize push, merge, rebase, tag, amend, deployment,
-remote writes, service changes, hardware action, or destructive cleanup.
+Explicit objective confirmation authorizes creation and coordination of these
+tasks/subagents plus local writes under the knowledge root resolved by
+`YTQJK_KNOWLEDGE_ROOT` or the platform default. Invocation alone does not. Neither
+authorizes push, merge, rebase, tag, amend, deployment, remote writes, service
+changes, hardware action, or destructive cleanup.
 
 ## 2. Role contracts
 
 ### Launcher
 
-Task mode only. After the activation answer, create the controller and preserve
-the target objective. Use one bounded readiness wait until the controller is
+Task mode only. After explicit objective confirmation, create the controller and
+preserve the confirmed objective. Use one bounded readiness wait until it is
 started or needs input, then return its visible task link; never wait for project
 completion. Remain lifecycle-only, propagate a hard stop once, and archive the
 controller last. Never implement, test, review, or mutate Git. IDE Agent mode has
@@ -134,7 +140,9 @@ Apply bundled `$caveman`, except use full clarity for approval prompts. Be the o
 
 ## 3. Planning gate
 
-The controller must apply `grill-me` before dispatch. Ask one question at a time with a recommended answer. Send repo-answerable questions to RAG or a read-only discovery task.
+Objective confirmation does not approve the plan. The controller must apply
+`grill-me` before dispatch. Ask one question at a time with a recommended answer.
+Send repo-answerable questions to RAG or a read-only discovery task.
 
 Publish exactly ten evidence-gated milestones, each worth 10%. Each milestone and leaf task must include:
 
@@ -197,7 +205,8 @@ python scripts/handoff_cli.py apply --repo <integration-worktree> --bundle <proj
 
 ## 6. Status and archive rules
 
-Use: `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`, `RUNNING`, `REVIEWING`, `REWORK`, `GIT_GATE`, `BLOCKED`, `DONE`.
+Use: `GOAL_INTAKE`, `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`,
+`RUNNING`, `REVIEWING`, `REWORK`, `GIT_GATE`, `BLOCKED`, `DONE`.
 
 Archive only after delivery, evidence registration, downstream acknowledgement, and
 no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active tasks. In IDE

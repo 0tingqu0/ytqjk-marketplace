@@ -1,48 +1,40 @@
 ---
 name: ytqjk
-description: Start YTQJK for substantial multi-agent project work with grill-me planning, isolated workers, supervision, independent review, sole-writer Git, progress reporting, and local RAG. Supports Codex task and IDE modes on Windows, Linux, and WSL2.
+description: Start YTQJK multi-agent project orchestration with objective confirmation, grill-me planning, isolated workers, supervision, review, sole-writer Git, progress, and local RAG on Codex task or IDE hosts.
 ---
 
 # YTQJK Agentic Orchestrator
 
-Run a control plane. The controller coordinates work and never implements the
-underlying project task. This is the plugin entrypoint and the standalone skill
-selected as `$ytqjk` or through `/skills`.
+Run a control plane; its controller never implements project work. Invoke as the
+plugin entrypoint, `$ytqjk`, or through `/skills`.
 
-## Instant activation
+## Activation objective gate
 
-A new activation's first assistant response uses zero tools and must be visible
-immediately. Before that response, do not read references, inspect a repository,
-check skills, access the network, create roles, start RAG, or touch Git.
+For a new activation, enter `GOAL_INTAKE` and make the first response visible
+immediately. Throughout `GOAL_INTAKE`, before explicit objective confirmation,
+make no tool call and stay in the current activation task. Do not create any
+controller, supervisor, progress, RAG, reviewer, Git, or Worker session or role.
 
-Reply in the user's language with one terse line; do not load or apply another
-skill for this instant response. State that YTQJK is enabled but no work has
-started, then ask exactly one unresolved, non-discoverable question with a
-recommended answer. If no objective was supplied, ask for the outcome and
-constraints. If the objective is clear, recommend model and reasoning floors of
-`auto/auto` unless the user already set them.
+Ask exactly one objective question per response, in the user's language, tersely,
+with a recommended answer. Load no other skill for the instant reply. Ask for the
+highest-priority missing outcome or constraint. Once clear, restate the exact
+objective and ask the user to confirm it. Initial objective text is not
+confirmation; only an affirmative reply to that summary counts. State that no
+work has started. Never claim a role, check, percentage, or cache without evidence.
 
-This fast path applies only to a new activation. An existing run's `stop`,
-`pause`, `resume`, or `status` request follows the lifecycle rules immediately.
-Never claim that a controller, role, check, percentage, or cache exists without
-evidence.
-
-On explicit stop or pause, send the stop once, then perform no polling, reads,
-tests, cleanup, Git, archival, deployment, or knowledge writes until resumed.
+Existing-run `stop`, `pause`, `resume`, or `status` bypasses this gate. On explicit
+stop or pause, send the stop once, then perform no polling, reads, tests, cleanup,
+Git, archival, deployment, or knowledge writes until resumed.
 
 ## Deferred initialization
 
-After the user answers, the first deferred tool call must read
-[references/protocol.md](references/protocol.md) completely. Before that read
-finishes, make no other tool call and create no role. Read it once per controller
-task and again after context compaction or a plugin-version change. When starting
-or querying RAG, also read
+Only after explicit objective confirmation, make reading
+[references/protocol.md](references/protocol.md) completely the first deferred
+tool call. Before it finishes, call no other tool and create no role. Read it once
+per controller task and again after context compaction or plugin-version change.
+Before starting or querying RAG, read
 [references/knowledge-store.md](references/knowledge-store.md) completely.
 
-## Safety boundary
-
-The instant response authorizes no project action. After the deferred read, the
-protocol is authoritative for host mode, `grill-me`, isolated Workers,
-supervision, review, sole-writer Git, ten 10% milestones, progress reporting, RAG,
-model escalation, and archival. It creates expensive roles only before their
-first required responsibility.
+Objective confirmation is not plan approval. The protocol remains authoritative
+for host mode, `grill-me`, isolated Workers, supervision, review, sole-writer Git,
+ten 10% milestones, progress, RAG, model escalation, and archival.

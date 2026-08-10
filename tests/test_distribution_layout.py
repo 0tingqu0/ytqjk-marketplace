@@ -37,7 +37,16 @@ class DistributionLayoutTest(unittest.TestCase):
             (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["name"], "ytqjk-agentic-orchestrator")
-        self.assertLessEqual(len(manifest["interface"]["defaultPrompt"]), 128)
+        prompt = manifest["interface"]["defaultPrompt"]
+        self.assertLessEqual(len(prompt.encode("utf-8")), 128)
+        self.assertIn("$ytqjk", prompt)
+        self.assertIn("GOAL_INTAKE", prompt)
+        self.assertIn("make no tool call", prompt)
+        self.assertIn("until explicit confirmation", prompt)
+        agent_metadata = (SKILL / "agents" / "openai.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(f'default_prompt: "{prompt}"', agent_metadata)
 
     def test_readme_installs_canonical_skill_for_ide(self) -> None:
         readme = (REPOSITORY / "README.md").read_text(encoding="utf-8")
@@ -51,6 +60,7 @@ class DistributionLayoutTest(unittest.TestCase):
         )
         self.assertIn("$ytqjk", readme)
         self.assertIn("/skills", readme)
+        self.assertIn("目标明确并由你显式确认前", readme)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
         caveman = PLUGIN / "skills" / "caveman" / "SKILL.md"
@@ -70,22 +80,50 @@ class DistributionLayoutTest(unittest.TestCase):
         skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertLessEqual(len(skill_text.encode("utf-8")), 2500)
         normalized = " ".join(skill_text.split())
-        instant = normalized.index("## Instant activation")
+        instant = normalized.index("## Activation objective gate")
         deferred = normalized.index("## Deferred initialization")
         self.assertLess(instant, deferred)
         instant_contract = normalized[instant:deferred]
         self.assertIn(
-            "A new activation's first assistant response uses zero tools",
+            "Throughout `GOAL_INTAKE`, before explicit objective confirmation, make no tool call",
             instant_contract,
         )
-        self.assertIn("do not load or apply another skill", instant_contract)
+        self.assertIn("stay in the current activation task", instant_contract)
+        self.assertIn(
+            "Ask exactly one objective question per response", instant_contract
+        )
+        self.assertIn(
+            "only an affirmative reply to that summary counts", instant_contract
+        )
+        self.assertIn(
+            "controller, supervisor, progress, RAG, reviewer, Git, or Worker",
+            instant_contract,
+        )
         self.assertNotIn("$caveman", instant_contract)
         self.assertIn(
-            "After the user answers, the first deferred tool call must read",
+            "Only after explicit objective confirmation, make reading",
             normalized,
         )
         self.assertIn("On explicit stop or pause, send the stop once", normalized)
         self.assertNotIn("Before creating any task, read", normalized)
+
+        protocol = (SKILL / "references" / "protocol.md").read_text(
+            encoding="utf-8"
+        )
+        protocol_normalized = " ".join(protocol.split())
+        self.assertIn(
+            "Throughout `GOAL_INTAKE`, before explicit objective confirmation, make no tool call",
+            protocol_normalized,
+        )
+        self.assertIn(
+            "all objective clarification in the current activation task",
+            protocol_normalized,
+        )
+        self.assertIn("Invocation alone does not", protocol_normalized)
+        self.assertIn(
+            "Objective confirmation does not approve the plan",
+            protocol_normalized,
+        )
 
     def test_repository_has_no_generated_python_cache(self) -> None:
         generated = [
