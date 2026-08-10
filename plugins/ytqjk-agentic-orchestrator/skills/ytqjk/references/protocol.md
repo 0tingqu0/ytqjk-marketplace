@@ -138,6 +138,12 @@ the host did not provide.
 
 Apply bundled `$caveman`, except use full clarity for approval prompts. Be the only knowledge-index writer. Other tasks query it through task messages. Provide source path, line/symbol, source commit or dirty state, and index time. Knowledge informs decisions but never substitutes current source, tests, or review evidence.
 
+Before the first query, inspect project and global manifests and refresh every
+missing, stale, or security-incompatible index. Run one query against current
+caches. If it returns no evidence, report the empty result and cache statistics;
+do not repeat queries merely to trigger vectors. In `auto`, vectors are size-gated
+only; use explicit `on` for semantic retrieval of a smaller corpus.
+
 ## 3. Planning gate
 
 Objective confirmation does not approve the plan. The controller must apply

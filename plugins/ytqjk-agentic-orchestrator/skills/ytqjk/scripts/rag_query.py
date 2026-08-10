@@ -21,7 +21,7 @@ GLOBAL_CACHE = "global-cache"
 
 
 def vector_enabled(
-    mode: str, stats: dict[str, int], config: dict[str, Any], misses: int
+    mode: str, stats: dict[str, int], config: dict[str, Any]
 ) -> bool:
     if mode == "on":
         return True
@@ -31,7 +31,6 @@ def vector_enabled(
     return (
         stats["text_bytes"] >= int(thresholds["text_bytes"])
         or stats["chunks"] >= int(thresholds["chunks"])
-        or misses >= int(thresholds["low_confidence_queries"])
     )
 
 
@@ -151,7 +150,7 @@ def command_query(args: argparse.Namespace) -> dict[str, Any]:
     vector_info = manifest.get("vector", {})
     mode = str(manifest.get("vector_mode", config.get("vector_mode", "auto")))
     stats = manifest.get("stats", {"text_bytes": 0, "chunks": 0})
-    should_enable = vector_enabled(mode, stats, config, misses)
+    should_enable = vector_enabled(mode, stats, config)
     if should_enable and not vector_info.get("enabled") and not stale:
         vector_info = build_vector_cache(project_dir, args.knowledge_root, config)
         manifest["vector"] = vector_info
@@ -180,7 +179,7 @@ def command_query(args: argparse.Namespace) -> dict[str, Any]:
         global_database.exists()
         and not global_stale
         and int(global_stats.get("chunks", 0)) > 0
-        and vector_enabled(global_mode, global_stats, config, misses)
+        and vector_enabled(global_mode, global_stats, config)
         and not global_vector_info.get("enabled")
     ):
         global_vector_info = build_vector_cache(

@@ -51,9 +51,7 @@ def command_index(args: argparse.Namespace) -> dict[str, Any]:
     chunks, stats = scan_project(args.project_root, config, identity["head"])
     database = project_dir / "lexical.sqlite3"
     build_lexical(database, chunks)
-    enabled = vector_enabled(
-        mode, stats, config, int(manifest.get("low_confidence_queries", 0))
-    )
+    enabled = vector_enabled(mode, stats, config)
     vector_info: dict[str, Any] = {"enabled": False, "status": "DISABLED", "error": None}
     if enabled:
         vector_info = build_vector_cache(project_dir, args.knowledge_root, config)
@@ -86,9 +84,7 @@ def command_index_global(args: argparse.Namespace) -> dict[str, Any]:
     mode = args.vector_mode or config.get("vector_mode", "auto")
     chunks, stats = scan_global(args.knowledge_root, config)
     build_lexical(global_dir / "lexical.sqlite3", chunks)
-    enabled = vector_enabled(
-        mode, stats, config, int(manifest.get("low_confidence_queries", 0))
-    )
+    enabled = vector_enabled(mode, stats, config)
     vector_info = {"enabled": False, "status": "DISABLED", "error": None}
     if enabled and chunks:
         vector_info = build_vector_cache(global_dir, args.knowledge_root, config)

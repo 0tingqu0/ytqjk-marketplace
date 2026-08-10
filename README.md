@@ -37,6 +37,8 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 - Windows 优先使用 `D:\knowledge`。没有 D 盘时使用 `%LOCALAPPDATA%\YTQJK\knowledge`。
 - Linux/WSL2 使用 `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`。
 - `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
+- RAG 首次查询前会刷新缺失、过期或安全版本不兼容的项目与全局索引。`auto` 仅在文本达到
+  10 MiB 或 2,000 个分块时启用向量；小知识库不会因连续空查询而自动下载模型。
 - 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
   `npx skills@latest add mattpocock/skills`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 

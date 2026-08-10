@@ -64,7 +64,9 @@ Support `off`, `auto`, and `on`; default `auto`.
 
 - `off`: lexical retrieval only.
 - `on`: lexical plus local embedding/vector retrieval.
-- `auto`: enable vectors when indexed text is at least 10 MiB, chunks reach 2,000, or three consecutive lexical queries have low confidence.
+- `auto`: enable vectors only when indexed text is at least 10 MiB or chunks reach
+  2,000. Repeated low-confidence queries never download a model for a small corpus;
+  use `on` explicitly when semantic retrieval is wanted below those thresholds.
 
 Store thresholds in `config.json` and allow project overrides. Run embeddings locally with FastEmbed and store vectors in embedded LanceDB. Cache models under `<knowledge-root>/models` and isolated Python dependencies under `<knowledge-root>/.runtime`; do not modify system Python or run a permanent service. Before first download, report model name/version/estimated size. Use flat search below 50,000 chunks and create a local HNSW-SQ index at or above that size. If vector setup fails, report the downgrade and keep lexical retrieval; never claim vector evidence.
 
@@ -116,3 +118,9 @@ repo="/absolute/path/to/repo"
 ```
 
 Before a first vector build, the RAG task must report the configured model, package versions, estimated download, and cache path. `off` never loads vector dependencies; `auto` builds them only after a configured threshold; `on` requests them immediately. Re-run project indexing after HEAD changes and global indexing after an approved knowledge promotion.
+
+Before the first query in a run, the RAG task must inspect both manifests. Run
+`index` when the project cache is missing, stale, or on an older security schema;
+run `index-global` when the global cache is missing, stale, or on an older security
+schema. Then query once. If both current caches contain no matching evidence,
+report that result instead of repeating queries to force vector activation.

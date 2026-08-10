@@ -25,7 +25,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "auto": {
         "text_bytes": 10 * 1024 * 1024,
         "chunks": 2000,
-        "low_confidence_queries": 3,
     },
     "index": {
         "chunk_chars": 1200,
