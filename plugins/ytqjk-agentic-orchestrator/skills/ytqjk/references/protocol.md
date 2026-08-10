@@ -1,0 +1,143 @@
+# Orchestration protocol
+
+## 1. Bootstrap
+
+1. Resolve the target project, current branch, HEAD, and `git status --short` with read-only commands.
+2. Require a clean integration baseline. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes.
+3. Locate task tools: `fork_thread`, `list_threads`, `read_thread`, `wait_threads`, `send_message_to_thread`, `set_thread_title`, `set_thread_pinned`, and `set_thread_archived`. If unavailable, report `BLOCKED`.
+4. Create the controller first as a dedicated Codex task. Keep the launcher read-only and silent except for controller lifecycle, hard-stop propagation, and final controller archival. Only the controller creates, assigns, or archives descendant tasks.
+5. On first global use, disclose that `npx skills@latest add mattpocock/skills` executes the latest third-party package and changes global skills. Require explicit confirmation unless that exact command was already approved in the current task. Then let the bootstrap controller run it, ensure `grill-me` is installed, create a fresh formal controller, transfer objective and evidence, and archive the bootstrap controller.
+6. From the formal controller, create fixed same-directory tasks: supervisor, reviewer, Git committer, progress reporter, and RAG. Title them `[YTQJK] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short objective.
+7. Pin only the progress task while work is active.
+
+Invoking this skill authorizes creation and coordination of these Codex tasks plus local writes under `D:\knowledge`. It does not authorize push, merge, rebase, tag, amend, deployment, remote writes, service changes, hardware action, or destructive cleanup.
+
+## 2. Role contracts
+
+### Launcher
+
+Create the controller, preserve the target objective, wait without noise, propagate a hard stop once, and archive the controller last. Never implement, test, review, or mutate Git.
+
+### Controller
+
+Apply `caveman`. Coordinate only. Run the planning gate, own the DAG, create tasks, choose models, enforce scopes, monitor evidence, request supervisor gates, and archive completed tasks. Do not edit implementation, run acceptance, deploy, or mutate Git.
+
+### Supervisor
+
+Apply `caveman`. Independently inspect objective, plan, dependencies, parallel safety, scope drift, and evidence. Return only `PASS`, `CORRECT`, or `BLOCK` plus concise evidence. `BLOCK` stops affected dispatch or Git gates. The controller may not override it; correction or explicit user arbitration is required.
+
+Review at least before plan approval, each parallel wave, after material scope/dependency changes, before Git integration, and before final closure.
+
+### Worker
+
+Apply `caveman`. Work in an isolated worktree on one bounded task and exact write allowlist. No task creation and no Git writes. Run focused self-checks, then export a handoff bundle to the assigned project-cache path. Report changed paths, commands, results, residual risks, and bundle hash.
+
+### Reviewer
+
+Apply `caveman`. Never edit implementation. Perform two independent gates:
+
+1. Patch gate: inspect the worker worktree and handoff bundle; rerun relevant checks.
+2. Integration gate: after the Git task applies the bundle, inspect exact staged content and rerun affected checks.
+
+Return `PASS`, `FAIL`, or `UNKNOWN` with evidence. Missing or unrun checks are `UNKNOWN`, never `PASS`. After all commits, run the final regression gate.
+
+### Git committer
+
+Apply `caveman`. Be the sole Git writer. Never fix implementation or conflicts. Apply only reviewed handoff bundles, stage exact allowlisted paths, inspect the staged diff, run `git diff --cached --check`, request integration review, then create small atomic commits. Never use `git add .` or `git add -A`.
+
+Integrate one bundle at a time so the integration worktree returns clean after each commit. If apply conflicts, stop and return it to a worker. Local commits are allowed after all gates. Push, merge, rebase, tag, amend, and force operations require explicit authorization in the current task.
+
+### Progress reporter
+
+Do not enable `caveman`. Use normal, complete Simplified Chinese. Run only in its own pinned task; do not send timed updates to the controller. Report:
+
+- objective and phase;
+- verified percentage;
+- ten milestone states;
+- active/blocked/failed tasks;
+- review and Git evidence;
+- errors/model escalations;
+- next action and required user action.
+
+Report immediately whenever verified progress crosses 10%. Also report every 10 minutes even when unchanged. Prefer a thread heartbeat automation. If unavailable, use bounded waits of at most 60 seconds and track elapsed wall time. Disable the heartbeat, issue the final report, unpin, then archive.
+
+### RAG
+
+Apply `caveman`, except use full clarity for approval prompts. Be the only knowledge-index writer. Other tasks query it through task messages. Provide source path, line/symbol, source commit or dirty state, and index time. Knowledge informs decisions but never substitutes current source, tests, or review evidence.
+
+## 3. Planning gate
+
+The controller must apply `grill-me` before dispatch. Ask one question at a time with a recommended answer. Send repo-answerable questions to RAG or a read-only discovery task.
+
+Publish exactly ten evidence-gated milestones, each worth 10%. Each milestone and leaf task must include:
+
+- ID and outcome;
+- dependencies and inputs;
+- deliverables;
+- read scope and exact write allowlist;
+- acceptance checks and required evidence;
+- owner and model tier;
+- selected model floor and reasoning-effort floor;
+- parallel group or serial reason;
+- handoff and commit boundary;
+- risk and rollback.
+
+Also publish a dependency DAG, parallel matrix, and ordered small-commit plan. Dispatch requires resolved material decisions, supervisor `PASS`, and explicit user approval. Material scope, dependency, or acceptance changes return to grilling and plan audit.
+
+Progress increases only after reviewer `PASS`. If later evidence invalidates a milestone, subtract its 10% and report why.
+
+## 4. Parallel execution and models
+
+Run at most three Workers concurrently. The controller may reduce concurrency for machine load or coupling. Parallel work requires satisfied dependencies, disjoint write allowlists, no shared mutable service/device/generated state, and no reliance on unfinished output. Hidden coupling triggers supervisor `BLOCK` and DAG replanning.
+
+During `grill-me`, expose the models and reasoning-effort levels actually available on the current host. Let the user choose a model floor and reasoning-effort floor independently, or leave either on `auto` (recommended). Record both in the approved plan. Choose the lowest adequate model and reasoning level at or above those floors; never silently downgrade. If a selected floor is unavailable, return `BLOCKED` and ask the user to revise it.
+
+Use stronger models or reasoning for architecture, security, difficult debugging, or integration. After two reproducible failures on one task, write an error record, archive the failed Worker after handoff, and create a replacement with a stronger model, reasoning level, or both. A third failure triggers supervisor `BLOCK` and replanning; never retry indefinitely.
+
+## 5. Handoff, review, and commit loop
+
+1. Start a Worker from the current clean integration HEAD in an isolated worktree.
+2. Give it one task, allowlist, acceptance checks, bundle destination, and model tier.
+3. Worker edits, self-checks, and exports a bundle without staging or committing.
+4. Reviewer runs the patch gate. `FAIL/UNKNOWN` returns to a repair Worker.
+5. Supervisor checks direction and scope before integration.
+6. Freeze new integration writes. Git task verifies clean status and applies one bundle.
+7. Reviewer runs the integration gate against staged content.
+8. Git task commits a small atomic slice using repository/user commit-message conventions, then proves `git status --short` is empty.
+9. Record commit and evidence in RAG. Archive the Worker immediately.
+10. Continue until ten milestones pass, then run final regression and closure review.
+
+Only the Git task may change the integration index or history. Platform-managed worktree provisioning is a controller control-plane action, not integration. Workers may edit their assigned working-tree files and use read-only `git status`, `diff`, `log`, `show`, and `ls-files`; they must not stage, commit, merge, rebase, tag, amend, push, or run `git worktree` commands.
+
+Use the bundled handoff utility from the skill directory. A Worker exports every changed path explicitly:
+
+```powershell
+python scripts/handoff_cli.py export --repo <worker-worktree> --bundle <project-cache>\handoffs\<task-id> --path <file-1> --path <file-2>
+```
+
+After patch review and supervisor `PASS`, the Git task applies exactly one bundle into a clean integration worktree:
+
+```powershell
+python scripts/handoff_cli.py apply --repo <integration-worktree> --bundle <project-cache>\handoffs\<task-id>
+```
+
+`apply` verifies the base commit, manifest and payload hashes, allowlist, clean target, ignore rules, clean filters, and patch preflight; it stages exact paths and returns a staged-snapshot SHA-256. If any post-write step fails, it resets/restores only the manifest paths, removes only newly copied payloads, and verifies the integration worktree is clean. It never commits or resolves conflicts. The reviewer must bind its integration `PASS` to that hash.
+
+## 6. Status and archive rules
+
+Use: `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`, `RUNNING`, `REVIEWING`, `REWORK`, `GIT_GATE`, `BLOCKED`, `DONE`.
+
+Archive only after delivery, evidence registration, downstream acknowledgement, and no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active tasks.
+
+Final order:
+
+1. Workers after their reviewed commits.
+2. RAG after final refresh and candidate handoff.
+3. Reviewer after final regression `PASS`.
+4. Git task after commit hashes and clean status are recorded.
+5. Supervisor after final direction `PASS`.
+6. Progress reporter after final report; unpin first.
+7. Controller after all children are archived.
+8. Launcher last.
+
+On explicit pause/stop, send one stop message to active tasks and stop immediately. Do not poll, read, test, clean, commit, archive, deploy, or update knowledge until the user explicitly resumes.

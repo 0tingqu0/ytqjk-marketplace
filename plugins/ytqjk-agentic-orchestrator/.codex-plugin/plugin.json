@@ -1,0 +1,18 @@
+{
+  "name": "ytqjk-agentic-orchestrator",
+  "version": "0.1.0+codex.20260810031427",
+  "description": "Coordinates isolated Codex tasks through planning, review, Git, progress, and local RAG gates.",
+  "author": {
+    "name": "wwj"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "YTQJK Agentic Orchestrator",
+    "shortDescription": "\u591a\u4f1a\u8bdd\u603b\u63a7\u3001\u590d\u5ba1\u3001Git\u3001\u8fdb\u5ea6\u4e0e\u672c\u5730 RAG \u7f16\u6392",
+    "longDescription": "Creates a control-only orchestration task, isolated workers, independent supervision and review, a sole Git committer, a separate progress reporter, and a local project knowledge cache under D:\\knowledge.",
+    "developerName": "wwj",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $ytqjk to coordinate this project task through isolated Codex tasks."
+  }
+}

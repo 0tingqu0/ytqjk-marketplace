@@ -1,0 +1,2 @@
+lancedb==0.34.0
+fastembed==0.8.0
