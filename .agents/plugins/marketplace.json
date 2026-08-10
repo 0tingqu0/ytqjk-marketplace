@@ -1,0 +1,20 @@
+{
+  "name": "ytqjk",
+  "interface": {
+    "displayName": "YTQJK"
+  },
+  "plugins": [
+    {
+      "name": "ytqjk-agentic-orchestrator",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ytqjk-agentic-orchestrator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
