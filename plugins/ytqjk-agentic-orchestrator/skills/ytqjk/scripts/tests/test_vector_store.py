@@ -13,13 +13,16 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
 from rag_common import Chunk  # noqa: E402
+from platform_paths import default_knowledge_root  # noqa: E402
 from vector_store import build_vectors, query_vectors  # noqa: E402
 
 
 MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
-@unittest.skipUnless(os.environ.get("YTQJK_VECTOR_INTEGRATION") == "1", "vector integration")
+@unittest.skipUnless(
+    os.environ.get("YTQJK_VECTOR_INTEGRATION") == "1", "vector integration"
+)
 class VectorStoreTest(unittest.TestCase):
     def test_local_multilingual_round_trip(self) -> None:
         chunk = Chunk(
@@ -34,7 +37,11 @@ class VectorStoreTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "vectors"
-            model_cache = Path(os.environ.get("YTQJK_MODEL_CACHE", r"D:\knowledge\models"))
+            model_cache = Path(
+                os.environ.get(
+                    "YTQJK_MODEL_CACHE", str(default_knowledge_root() / "models")
+                )
+            )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 count = build_vectors(database, [chunk], MODEL, 384, model_cache)

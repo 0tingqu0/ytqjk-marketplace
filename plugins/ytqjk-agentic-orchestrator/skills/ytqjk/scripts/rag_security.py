@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
@@ -116,17 +117,15 @@ def normalize_remote(remote: str) -> str:
     if parsed.scheme.casefold() == "file":
         return _local_remote(value, parsed.path)
     safe_netloc = parsed.netloc.rsplit("@", 1)[-1]
-    path = re.sub(r"\.git$", "", parsed.path.rstrip("/"))
-    return urlunsplit(
-        (parsed.scheme.lower(), safe_netloc.lower(), path, "", "")
-    ).lower()
+    path = re.sub(r"\.git$", "", parsed.path.rstrip("/"), flags=re.IGNORECASE)
+    return urlunsplit((parsed.scheme.lower(), safe_netloc.lower(), path, "", ""))
 
 
 def _local_remote(value: str, path: str) -> str:
     cleaned = re.sub(r"\.git$", "", path.rstrip("/"), flags=re.IGNORECASE)
     name = PurePosixPath(cleaned).name or "repository"
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-_")
-    digest = hashlib.sha256(value.casefold().encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(os.path.normcase(value).encode("utf-8")).hexdigest()[:16]
     return f"local://{digest}/{safe_name or 'repository'}".lower()
 
 

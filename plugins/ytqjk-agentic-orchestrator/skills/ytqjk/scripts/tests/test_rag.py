@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,7 @@ def run_rag(knowledge: Path, command: str, project: Path, *args: str) -> dict:
         ],
         check=False,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr or result.stdout)
@@ -50,7 +51,7 @@ def index_global(knowledge: Path) -> dict:
         ],
         check=True,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     return json.loads(result.stdout)
 
@@ -151,7 +152,7 @@ class RagCliTest(unittest.TestCase):
             initialized = run_rag(knowledge, "init", repo)
             self.assertEqual(
                 initialized["manifest"]["identity"]["remote"],
-                "https://github.com/acme/repo",
+                "https://github.com/Acme/Repo",
             )
             persisted = json.dumps(initialized, ensure_ascii=False)
             persisted += (knowledge / "catalog.json").read_text(encoding="utf-8")
@@ -214,7 +215,7 @@ class RagCliTest(unittest.TestCase):
                 "anything",
             ]
             project_result = subprocess.run(
-                command, check=False, capture_output=True, text=True
+                command, check=False, capture_output=True, encoding="utf-8"
             )
             self.assertEqual(project_result.returncode, 1)
             self.assertIn("security schema", project_result.stdout)
@@ -230,7 +231,7 @@ class RagCliTest(unittest.TestCase):
                 json.dumps(global_manifest), encoding="utf-8"
             )
             global_result = subprocess.run(
-                command, check=False, capture_output=True, text=True
+                command, check=False, capture_output=True, encoding="utf-8"
             )
             self.assertEqual(global_result.returncode, 1)
             self.assertIn("Global cache security schema", global_result.stdout)
@@ -253,6 +254,24 @@ class RagCliTest(unittest.TestCase):
             main = run_rag(knowledge, "init", repo)
             linked = run_rag(knowledge, "init", worker)
             self.assertEqual(main["project_dir"], linked["project_dir"])
+
+    @unittest.skipIf(os.name == "nt", "POSIX paths are case-sensitive")
+    def test_posix_repository_paths_keep_distinct_cache_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            upper = base / "Repo"
+            lower = base / "repo"
+            upper.mkdir()
+            lower.mkdir()
+            git(upper, "init")
+            git(lower, "init")
+
+            knowledge = base / "knowledge"
+            upper_result = run_rag(knowledge, "init", upper)
+            lower_result = run_rag(knowledge, "init", lower)
+            self.assertNotEqual(
+                upper_result["project_dir"], lower_result["project_dir"]
+            )
 
     def test_query_layers_only_approved_global_knowledge(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
 from global_store import chunks_fingerprint, scan_global
+from json_output import write_json
+from platform_paths import default_knowledge_root
 from rag_common import (
     DEFAULT_CONFIG,
     SCHEMA_VERSION,
@@ -108,7 +109,7 @@ def command_index_global(args: argparse.Namespace) -> dict[str, Any]:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Local YTQJK agentic RAG cache.")
-    result.add_argument("--knowledge-root", type=Path, default=Path(r"D:\knowledge"))
+    result.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     subparsers = result.add_subparsers(dest="command", required=True)
     for name in ("init", "index", "query"):
         sub = subparsers.add_parser(name)
@@ -137,9 +138,9 @@ def main() -> int:
     try:
         output = commands[args.command](args)
     except (OSError, ValueError, RuntimeError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        write_json({"ok": False, "error": str(exc)})
         return 1
-    print(json.dumps({"ok": True, **output}, ensure_ascii=False, indent=2))
+    write_json({"ok": True, **output}, indent=2)
     return 0
 
 

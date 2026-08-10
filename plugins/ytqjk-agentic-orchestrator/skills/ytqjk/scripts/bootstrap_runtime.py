@@ -3,18 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 import venv
 from pathlib import Path
 
+from json_output import write_json
+from platform_paths import default_knowledge_root, runtime_python
+
 
 REQUIRED = {"lancedb": "0.34.0", "fastembed": "0.8.0"}
-
-
-def runtime_python(runtime_dir: Path) -> Path:
-    scripts_dir = "Scripts" if sys.platform == "win32" else "bin"
-    executable = "python.exe" if sys.platform == "win32" else "python"
-    return runtime_dir / scripts_dir / executable
 
 
 def installed_versions(python: Path) -> dict[str, str]:
@@ -55,15 +51,15 @@ def ensure_runtime(root: Path, check_only: bool) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare isolated local RAG runtime.")
-    parser.add_argument("--knowledge-root", type=Path, default=Path(r"D:\knowledge"))
+    parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
         result = ensure_runtime(args.knowledge_root.resolve(), args.check)
     except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
-        print(json.dumps({"ready": False, "error": str(exc)}, ensure_ascii=False))
+        write_json({"ready": False, "error": str(exc)})
         return 1
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    write_json(result, indent=2)
     return 0 if result["ready"] else 2
 
 

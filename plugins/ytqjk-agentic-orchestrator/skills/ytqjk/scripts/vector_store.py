@@ -19,7 +19,8 @@ def _imports() -> tuple[Any, Any, Any]:
         from lancedb.index import HnswSq
     except ImportError as exc:
         raise RuntimeError(
-            "Vector runtime missing. Run bootstrap_runtime.py in D:\\knowledge first."
+            "Vector runtime missing. Run bootstrap_runtime.py for the selected "
+            "knowledge root first."
         ) from exc
     return lancedb, TextEmbedding, HnswSq
 

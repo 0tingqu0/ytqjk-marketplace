@@ -86,10 +86,17 @@ def run_git(project: Path, *args: str, check: bool = True) -> str:
 def project_identity(project: Path) -> dict[str, str]:
     root = Path(run_git(project, "rev-parse", "--show-toplevel").strip()).resolve()
     raw_remote = run_git(root, "remote", "get-url", "origin", check=False).strip()
-    common = Path(run_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()).resolve()
-    canonical_root = common.parent if common.name.casefold() == ".git" else common
+    common_value = Path(run_git(root, "rev-parse", "--git-common-dir").strip())
+    common = (
+        common_value if common_value.is_absolute() else root / common_value
+    ).resolve()
+    canonical_root = (
+        common.parent
+        if os.path.normcase(common.name) == os.path.normcase(".git")
+        else common
+    )
     normalized_remote = normalize_remote(raw_remote)
-    identity = normalized_remote or str(canonical_root).casefold()
+    identity = normalized_remote or os.path.normcase(str(canonical_root))
     short_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
     name_source = PurePosixPath(normalized_remote).name if normalized_remote else canonical_root.name
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"

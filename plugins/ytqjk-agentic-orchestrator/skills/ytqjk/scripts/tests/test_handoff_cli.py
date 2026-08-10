@@ -26,7 +26,8 @@ def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProce
 class HandoffCliTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name) / "测试 工作区"
+        self.root.mkdir()
         source = self.root / "source"
         run("git", "init", "--initial-branch=main", str(source))
         git(source, "config", "user.email", "test@example.com")
@@ -111,6 +112,32 @@ class HandoffCliTest(unittest.TestCase):
         )
         self.assertEqual(output["staged_paths"], ["only.txt"])
         self.assertEqual((self.integration / "only.txt").read_text(), "only untracked\n")
+
+    def test_unicode_path_and_spaced_bundle_round_trip(self) -> None:
+        target = self.worker / "docs" / "说明 文件.md"
+        target.parent.mkdir()
+        target.write_text("跨平台交接\n", encoding="utf-8")
+        bundle = self.root / "交接 包"
+        self.cli(
+            "export",
+            "--repo",
+            str(self.worker),
+            "--bundle",
+            str(bundle),
+            "--path",
+            "docs/说明 文件.md",
+        )
+
+        manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["allowlist"], ["docs/说明 文件.md"])
+        _, output = self.cli(
+            "apply", "--repo", str(self.integration), "--bundle", str(bundle)
+        )
+        self.assertEqual(output["staged_paths"], ["docs/说明 文件.md"])
+        self.assertEqual(
+            (self.integration / "docs" / "说明 文件.md").read_text(encoding="utf-8"),
+            "跨平台交接\n",
+        )
 
     def test_export_rejects_staged_changes_without_creating_bundle(self) -> None:
         (self.worker / "note.txt").write_text("staged\n", encoding="utf-8")

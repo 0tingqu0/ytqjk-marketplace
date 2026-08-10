@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 from handoff_core import HandoffError, apply_bundle, export_bundle
+from json_output import write_json
 
 
 def parser() -> argparse.ArgumentParser:
@@ -31,9 +31,9 @@ def main() -> int:
             else apply_bundle(args.repo, args.bundle)
         )
     except (HandoffError, OSError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        write_json({"ok": False, "error": str(exc)})
         return 1
-    print(json.dumps({"ok": True, **output}, ensure_ascii=False, indent=2))
+    write_json({"ok": True, **output}, indent=2)
     return 0
 
 
