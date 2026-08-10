@@ -35,7 +35,6 @@ jobs:
     timeout-minutes: 20
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      YTQJK_MODEL_CACHE: ${{ runner.temp }}/ytqjk/models
       YTQJK_VECTOR_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +44,7 @@ jobs:
       - name: Prepare isolated vector runtime
         run: python -B plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/bootstrap_runtime.py --knowledge-root "$RUNNER_TEMP/ytqjk"
       - name: Run vector integration test
-        run: >-
-          "$RUNNER_TEMP/ytqjk/.runtime/bin/python" -B -m unittest
+        run: |
+          export YTQJK_MODEL_CACHE="$RUNNER_TEMP/ytqjk/models"
+          "$RUNNER_TEMP/ytqjk/.runtime/bin/python" -B -m unittest \
           plugins.ytqjk-agentic-orchestrator.skills.ytqjk.scripts.tests.test_vector_store -v
