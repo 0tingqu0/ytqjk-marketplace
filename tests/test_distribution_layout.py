@@ -65,6 +65,27 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("Copyright (c) 2026 Matt Pocock", notice_text)
         self.assertIn("MIT License", notice_text)
 
+    def test_ytqjk_activation_is_zero_tool_and_deferred(self) -> None:
+        skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertLessEqual(len(skill_text.encode("utf-8")), 2500)
+        normalized = " ".join(skill_text.split())
+        instant = normalized.index("## Instant activation")
+        deferred = normalized.index("## Deferred initialization")
+        self.assertLess(instant, deferred)
+        instant_contract = normalized[instant:deferred]
+        self.assertIn(
+            "A new activation's first assistant response uses zero tools",
+            instant_contract,
+        )
+        self.assertIn("do not load or apply another skill", instant_contract)
+        self.assertNotIn("$caveman", instant_contract)
+        self.assertIn(
+            "After the user answers, the first deferred tool call must read",
+            normalized,
+        )
+        self.assertIn("On explicit stop or pause, send the stop once", normalized)
+        self.assertNotIn("Before creating any task, read", normalized)
+
     def test_repository_has_no_generated_python_cache(self) -> None:
         generated = [
             path
