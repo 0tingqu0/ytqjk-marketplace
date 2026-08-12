@@ -57,6 +57,16 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    first responsibility.
 7. Pin only the progress role while work is active when pinning is supported. In IDE
    Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
+8. Anchor every YTQJK-created role after its host session/task ID and project ID are
+   available. Use `scripts/session_memory.py anchor`; never store raw session IDs in
+   the knowledge root. Anchoring is idempotent: the same host session ID always maps
+   to one stable anonymous key and subsequent knowledge access only refreshes it.
+   Before a role resumes after context compaction, checkpoint its
+   concise, secret-free memory, then restore and inject only that memory into the same
+   role. Before archival, checkpoint and archive it, creating one candidate experience
+   record when memory exists. If the host lacks lifecycle events, perform this at the
+   first post-compaction turn and immediately before archival; never claim platform-wide
+   automatic anchoring.
 
 Explicit objective confirmation authorizes creation and coordination of these
 tasks/subagents plus local writes under the knowledge root resolved by
@@ -143,6 +153,32 @@ missing, stale, or security-incompatible index. Run one query against current
 caches. If it returns no evidence, report the empty result and cache statistics;
 do not repeat queries merely to trigger vectors. In `auto`, vectors are size-gated
 only; use explicit `on` for semantic retrieval of a smaller corpus.
+
+All controller-mediated knowledge queries must use `scripts/session_query.py` with
+the current host `--session-id`, rather than calling `rag_cli.py query` directly.
+This creates the anchor once or refreshes the existing anchor on every subsequent
+knowledge access. The anchoring step must be lightweight and must not index, scan,
+or calculate a Git diff; set a bounded query timeout and return a retryable failure
+rather than leaving a role waiting indefinitely. A host that cannot supply a stable session ID must report this
+limitation and must not invent one shared ID for different sessions.
+
+### Session memory
+
+Session anchors live under `<knowledge-root>/sessions/` and contain only a one-way
+session key, project ID, timestamps, and a concise secret-free memory. Never write
+raw conversation transcripts, raw session IDs, credentials, private endpoints, or
+full local project paths there. Memory includes objective, phase, completed evidence,
+unresolved decisions, relative handoff locations, and next action.
+
+When a host scheduler is available, run:
+
+```text
+python scripts/session_memory.py --knowledge-root <knowledge-root> sweep --days 30
+```
+
+It archives only inactive anchors with stored memory and writes their experience to
+`personal-experience/candidates`; it never approves or indexes it. Without scheduler
+or idle-event support, state that 30-day detection cannot run automatically.
 
 ## 3. Planning gate
 

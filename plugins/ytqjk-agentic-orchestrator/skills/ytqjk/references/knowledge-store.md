@@ -173,3 +173,14 @@ prefers Markdown headings, then paragraph boundaries, with chunks capped at abou
 1,800 characters. Every chunk records its parent intake ID, source filename,
 sequence number, and summary. Deleting the overview removes its generated chunks
 and linked original attachment; this package remains in candidates until approval.
+
+## Session anchors
+
+YTQJK-created tasks can be anchored in `<knowledge-root>/sessions/<session-key>/`.
+The session key is a one-way hash; the anchor stores project identity, activity times,
+and a concise sanitized memory, never raw session IDs or full transcripts. On context
+compaction, the role checkpoints then restores this memory. On archive, it exports a
+candidate experience record. A scheduled `sweep --days 30` can archive inactive
+anchors; it requires a host scheduler and never approves or indexes resulting records.
+Every knowledge query uses the same session key to refresh one anchor; duplicate
+anchors and duplicate exports of an unchanged memory are prevented.

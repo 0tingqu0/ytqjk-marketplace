@@ -38,3 +38,9 @@ Before starting or querying RAG, read
 Objective confirmation is not plan approval. The protocol remains authoritative
 for host mode, `grill-me`, isolated Workers, supervision, review, sole-writer Git,
 ten 10% milestones, progress, RAG, model escalation, and archival.
+
+## Session anchors
+
+Follow the protocol's `session_memory.py` flow for YTQJK-created sessions: anchor,
+checkpoint/restore after compaction, archive to candidate experience. Do not claim
+unrelated-session, automatic-compaction, or idle-event access without host support.
