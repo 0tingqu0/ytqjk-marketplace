@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import tempfile
 import unittest
+import wave
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -175,6 +176,21 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertIn("图片尺寸：320 x 200", content)
             self.assertIn(f"大小：{len(png)} bytes", content)
             self.assertIn("图片未进行文字识别", content)
+
+    def test_intake_records_wav_audio_metadata_and_folder_path(self) -> None:
+        stream = BytesIO()
+        with wave.open(stream, "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8000)
+            audio.writeframes(b"\x00\x00" * 8000)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_upload(root, "voice.wav", stream.getvalue(), relative_path="资料/录音/voice.wav")
+            content = (root / saved["path"]).read_text(encoding="utf-8")
+
+            self.assertIn("音频信息：WAV，1 声道，8000 Hz，1.0 秒", content)
+            self.assertIn("文件夹位置：`资料/录音/voice.wav`", content)
 
     def test_intake_accepts_source_and_config_text(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -112,11 +112,11 @@ async function candidateRequest(method, payload, endpoint = "/api/candidate") {
   return result;
 }
 
-async function submitIntake(name, content, encoding, purpose) {
+async function submitIntake(name, content, encoding, purpose, relativePath = "", clearInputs = true, refresh = true) {
   setIntakeProgress("分析资料", 20);
   byId("intake-status").textContent = "保存中...";
   setIntakeProgress("拆分知识片段", 45);
-  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding, purpose }) });
+  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding, purpose, relativePath }) });
   setIntakeProgress("评估批准条件", 75);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
@@ -127,13 +127,37 @@ async function submitIntake(name, content, encoding, purpose) {
   setIntakeProgress(stage, 100, true);
   byId("intake-status").textContent = status;
   rememberIntakeProgress(stage, 100, status);
-  byId("note").value = ""; byId("purpose").value = ""; byId("file-input").value = "";
-  await loadSnapshot();
+  if (clearInputs) { byId("note").value = ""; byId("purpose").value = ""; byId("file-input").value = ""; }
+  if (refresh) await loadSnapshot();
+  return payload;
+}
+
+async function fileContent(file) {
+  const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("无法读取文件")); reader.readAsDataURL(file); });
+  return content;
 }
 
 async function submitFile(file) {
-  const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("无法读取文件")); reader.readAsDataURL(file); });
-  await submitIntake(file.name, content, "base64", byId("purpose").value);
+  await submitIntake(file.name, await fileContent(file), "base64", byId("purpose").value);
+}
+
+async function submitFolder(files) {
+  const total = files.length;
+  let approved = 0; let candidate = 0; let rejected = 0;
+  const purpose = byId("purpose").value;
+  for (const [index, file] of files.entries()) {
+    setIntakeProgress(`导入 ${index + 1}/${total}：${file.name}`, Math.round((index / total) * 90));
+    try {
+      const result = await submitIntake(file.name, await fileContent(file), "base64", purpose, file.webkitRelativePath, false, false);
+      if (result.state === "approved") approved += 1; else candidate += 1;
+    } catch { rejected += 1; }
+    setIntakeProgress(`自动批准 ${approved} · 候选 ${candidate} · 拒绝 ${rejected}`, Math.round(((index + 1) / total) * 100), index + 1 === total);
+  }
+  const status = `文件夹已处理 ${total} 项：自动批准 ${approved} 项，候选 ${candidate} 项，拒绝 ${rejected} 项`;
+  byId("intake-status").textContent = status;
+  rememberIntakeProgress(`自动批准 ${approved} · 候选 ${candidate} · 拒绝 ${rejected}`, 100, status);
+  byId("purpose").value = ""; byId("folder-input").value = "";
+  await loadSnapshot();
 }
 
 function showIntakeError(message) {
@@ -147,6 +171,11 @@ byId("file-input").onchange = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   try { await submitFile(file); } catch (error) { showIntakeError(error.message); }
+};
+byId("folder-input").onchange = async (event) => {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+  try { await submitFolder(files); } catch (error) { showIntakeError(error.message); }
 };
 const dropZone = document.querySelector(".drop-zone");
 dropZone.ondragover = (event) => { event.preventDefault(); dropZone.classList.add("dragging"); };

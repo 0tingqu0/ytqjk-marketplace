@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 import struct
+import wave
 import zipfile
+from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -21,7 +23,8 @@ TEXT_EXTENSIONS = {
 TEXT_FILE_NAMES = {"dockerfile", "license", "makefile", "readme"}
 OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
 IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
-SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | OFFICE_EXTENSIONS | IMAGE_EXTENSIONS
+AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
+SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | OFFICE_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS
 MAX_ARCHIVE_FILES = 512
 MAX_ARCHIVE_EXPANDED_BYTES = 20 * 1024 * 1024
 
@@ -39,6 +42,8 @@ def extract_upload(name: str, source: bytes) -> tuple[str, dict[str, object]]:
     if extension in IMAGE_EXTENSIONS:
         width, height = image_dimensions(source, extension)
         return "", {"dimensions": f"{width} x {height}" if width else "无法识别"}
+    if extension in AUDIO_EXTENSIONS:
+        return "", {"audio": audio_metadata(source, extension)}
     raise ValueError("不支持的资料格式。")
 
 
@@ -193,3 +198,15 @@ def _webp_dimensions(source: bytes) -> tuple[int, int]:
         height = int.from_bytes(source[27:30], "little") + 1
         return width, height
     return 0, 0
+
+
+def audio_metadata(source: bytes, extension: str) -> str:
+    label = extension.removeprefix(".").upper()
+    if extension != ".wav":
+        return f"{label}，未提取语音文本"
+    try:
+        with wave.open(BytesIO(source)) as audio:
+            duration = audio.getnframes() / audio.getframerate()
+            return f"WAV，{audio.getnchannels()} 声道，{audio.getframerate()} Hz，{duration:.1f} 秒，未提取语音文本"
+    except (EOFError, wave.Error):
+        return "WAV，元数据无法识别，未提取语音文本"

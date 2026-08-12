@@ -64,7 +64,9 @@ def intake_document(root: Path, name: str, content: str, purpose: str = "") -> d
     return intake_upload(root, name, content.encode("utf-8"), purpose)
 
 
-def intake_upload(root: Path, name: str, source: bytes, purpose: str = "") -> dict[str, str]:
+def intake_upload(
+    root: Path, name: str, source: bytes, purpose: str = "", relative_path: str = ""
+) -> dict[str, str]:
     source_name = Path(name).name.strip()
     if (
         not source_name
@@ -79,6 +81,7 @@ def intake_upload(root: Path, name: str, source: bytes, purpose: str = "") -> di
         raise ValueError("单份资料必须非空且不能超过 10 MiB。")
     content, details = extract_upload(source_name, source)
     normalized_purpose = validate_purpose(purpose)
+    source_path = validate_relative_path(relative_path)
     if "\x00" in content or contains_high_confidence_secret(content):
         raise ValueError("资料可能包含凭据或敏感内容，未保存。")
     if supported_extension(source_name) in TEXT_EXTENSIONS and not content.strip():
@@ -103,7 +106,9 @@ def intake_upload(root: Path, name: str, source: bytes, purpose: str = "") -> di
         f"- 格式：`{analysis['format']}`\n- 大小：{analysis['bytes']} bytes\n"
         f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n"
         + (f"- 作用：{normalized_purpose}\n" if normalized_purpose else "")
+        + (f"- 文件夹位置：`{source_path}`\n" if source_path else "")
         + (f"- 图片尺寸：{details['dimensions']}\n" if "dimensions" in details else "")
+        + (f"- 音频信息：{details['audio']}\n" if "audio" in details else "")
         + f"- 原件：`{original.relative_to(root).as_posix()}`\n"
         "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n"
         "## 批准评估\n\n"
@@ -129,6 +134,15 @@ def validate_purpose(purpose: str) -> str:
     normalized = purpose.strip()
     if len(normalized) > 500 or "\x00" in normalized or contains_high_confidence_secret(normalized):
         raise ValueError("资料作用无效或可能包含敏感内容。")
+    return normalized
+
+
+def validate_relative_path(relative_path: str) -> str:
+    normalized = relative_path.replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    if len(normalized) > 500 or "\x00" in normalized or any(part in {"", ".", ".."} for part in normalized.split("/")):
+        raise ValueError("文件夹位置无效。")
     return normalized
 
 
@@ -211,12 +225,12 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             return
         try:
             payload = self.read_payload(length)
-            name, content, purpose = payload.get("name"), payload.get("content"), payload.get("purpose", "")
-            if not isinstance(name, str) or not isinstance(content, str) or not isinstance(purpose, str):
+            name, content, purpose, relative_path = payload.get("name"), payload.get("content"), payload.get("purpose", ""), payload.get("relativePath", "")
+            if not isinstance(name, str) or not isinstance(content, str) or not isinstance(purpose, str) or not isinstance(relative_path, str):
                 raise ValueError("资料名称或内容无效。")
             if payload.get("encoding") == "base64":
                 source = base64.b64decode(content, validate=True)
-                result = intake_upload(self.knowledge_root, name, source, purpose)
+                result = intake_upload(self.knowledge_root, name, source, purpose, relative_path)
             else:
                 result = intake_document(self.knowledge_root, name, content, purpose)
             self.send_json({"ok": True, **result}, HTTPStatus.CREATED)

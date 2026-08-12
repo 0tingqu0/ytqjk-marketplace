@@ -28,6 +28,7 @@ input:focus, textarea:focus { border-color: #58a9d8; outline: 0; box-shadow: 0 0
 .intake { margin-bottom: 16px; padding-bottom: 18px; border-bottom: 1px solid #edf1f5; }
 .drop-zone { display: block; padding: 18px 14px; border: 1px dashed #8bc7e6; border-radius: 12px; background: #f3fbff; text-align: center; cursor: pointer; transition: transform .2s ease, background-color .2s ease, border-color .2s ease; }
 .drop-zone:hover, .drop-zone.dragging { border-color: #ff775e; background: #fff3f0; transform: translateY(-2px); } .drop-title, .drop-zone small { display: block; }
+.folder-select { display: inline-block; margin: 9px 0 13px; color: #257eaf; cursor: pointer; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .drop-title { color: #257eaf; font-size: 14px; font-weight: 800; } .drop-zone small { margin-top: 5px; color: #74879a; font-size: 11px; font-weight: 400; }
 .intake textarea { margin-bottom: 10px; } .intake button, #preview-actions button { padding: 9px 14px; border: 0; border-radius: 10px; color: #fff; background: #ff775e; cursor: pointer; box-shadow: 0 6px 14px #ff775e2b; transition: transform .2s ease, background-color .2s ease; }
 .intake button:hover, #preview-actions button:hover { background: #e8624d; transform: translateY(-1px); } #delete-candidate { background: #52667c; box-shadow: none; } #delete-candidate:hover { background: #374a5f; }
