@@ -129,3 +129,4 @@ byId("delete-candidate").onclick = async () => {
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;
 loadSnapshot().catch((error) => byId("updated").textContent = error.message);
+setInterval(() => loadSnapshot().catch(() => undefined), 10000);
