@@ -24,7 +24,9 @@ from candidate_actions import candidate_document, delete_candidate, update_candi
 from dashboard_snapshot import snapshot as build_snapshot  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
-from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload, supported_extension  # noqa: E402
+from intake_formats import (  # noqa: E402
+    SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, TEXT_FILE_NAMES, extract_upload, supported_extension,
+)
 from knowledge_chunks import write_chunks  # noqa: E402
 
 
@@ -66,7 +68,7 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     if (
         not source_name
         or source_name != name
-        or SAFE_FILE_NAME.fullmatch(source_name) is None
+        or (SAFE_FILE_NAME.fullmatch(source_name) is None and source_name.lower() not in TEXT_FILE_NAMES)
         or supported_extension(source_name) not in SUPPORTED_EXTENSIONS
     ):
         raise ValueError("仅支持文本、.docx、.pptx、.xlsx 和常见图片资料。")

@@ -148,10 +148,13 @@ the candidate Markdown analysis. Before saving, the dashboard rejects sensitive
 filenames and high-confidence secret patterns in extracted text. Intake never
 approves, promotes, or indexes the candidate.
 
-It also accepts common UTF-8 source, configuration, and data files, including
-`.py`, `.ts`, `.tsx`, `.js`, `.java`, `.go`, `.rs`, `.sql`, `.xml`, `.toml`,
-`.ini`, `.properties`, `.sh`, `.ps1`, `.diff`, `.jsonl`, `.svg`, and related
-web styles and markup. The dashboard deliberately does not accept arbitrary
+It also accepts an expanded set of source, configuration, and data files,
+including `.py`, `.ts`, `.tsx`, `.js`, `.java`, `.go`, `.rs`, `.sql`, `.xml`,
+`.toml`, `.ini`, `.properties`, `.sh`, `.ps1`, `.diff`, `.jsonl`, `.svg`,
+Asciidoc, infrastructure definitions, and related web styles and markup.
+`Dockerfile`, `Makefile`, `LICENSE`, and `README` are also accepted as text.
+Text decoding recognizes UTF-8 (including BOM), UTF-16, UTF-32, GB18030, Big5,
+Shift_JIS, and EUC-KR. The dashboard deliberately does not accept arbitrary
 extensions or legacy binary Office files (`.doc`, `.ppt`, `.xls`).
 
 Candidate Markdown entries can be edited or deleted from the dashboard. These

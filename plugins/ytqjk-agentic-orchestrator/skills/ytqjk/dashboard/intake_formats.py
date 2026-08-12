@@ -8,12 +8,17 @@ from xml.etree import ElementTree
 
 
 TEXT_EXTENSIONS = {
-    ".bat", ".c", ".cc", ".cfg", ".conf", ".cpp", ".cs", ".css", ".diff", ".dockerfile",
-    ".env.example", ".go", ".graphql", ".h", ".hpp", ".html", ".ini", ".java", ".js", ".jsx",
-    ".kt", ".kts", ".less", ".lua", ".md", ".mdx", ".mjs", ".php", ".properties", ".ps1", ".py",
-    ".r", ".rb", ".rst", ".rs", ".sass", ".scss", ".sh", ".sql", ".svg", ".swift", ".toml", ".ts",
-    ".tsx", ".txt", ".vue", ".xml", ".yaml", ".yml", ".csv", ".json", ".jsonl", ".log",
+    ".adoc", ".asciidoc", ".bat", ".bib", ".c", ".cc", ".cfg", ".clj", ".cljc", ".cljs",
+    ".cmake", ".coffee", ".conf", ".cpp", ".cs", ".css", ".csv", ".dart", ".diff", ".dockerfile",
+    ".elm", ".env.example", ".ex", ".exs", ".fish", ".fs", ".fsx", ".gitattributes", ".gitignore",
+    ".go", ".gradle", ".graphql", ".groovy", ".h", ".hcl", ".hpp", ".html", ".ini", ".jade", ".java",
+    ".jl", ".js", ".json", ".jsonl", ".jsx", ".kt", ".kts", ".less", ".liquid", ".log", ".lua",
+    ".md", ".mdx", ".mjs", ".mk", ".nim", ".nix", ".php", ".pl", ".pm", ".properties", ".proto",
+    ".prisma", ".ps1", ".psd1", ".pug", ".py", ".r", ".rake", ".rb", ".rst", ".rs", ".sass",
+    ".sbt", ".scss", ".sh", ".sol", ".sql", ".styl", ".svg", ".swift", ".tf", ".toml", ".ts",
+    ".tsx", ".txt", ".v", ".vala", ".vim", ".vue", ".xaml", ".xml", ".yaml", ".yml", ".zsh",
 }
+TEXT_FILE_NAMES = {"dockerfile", "license", "makefile", "readme"}
 OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
 IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".webp"}
 SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | OFFICE_EXTENSIONS | IMAGE_EXTENSIONS
@@ -24,10 +29,7 @@ MAX_ARCHIVE_EXPANDED_BYTES = 20 * 1024 * 1024
 def extract_upload(name: str, source: bytes) -> tuple[str, dict[str, object]]:
     extension = supported_extension(name)
     if extension in TEXT_EXTENSIONS:
-        try:
-            return source.decode("utf-8"), {}
-        except UnicodeDecodeError as exc:
-            raise ValueError("文本资料必须使用 UTF-8 编码。") from exc
+        return _decode_text(source), {}
     if extension == ".docx":
         return _docx_text(source), {}
     if extension == ".pptx":
@@ -42,7 +44,35 @@ def extract_upload(name: str, source: bytes) -> tuple[str, dict[str, object]]:
 
 def supported_extension(name: str) -> str:
     lowered = name.lower()
+    if lowered in TEXT_FILE_NAMES:
+        return ".txt"
     return ".env.example" if lowered.endswith(".env.example") else Path(lowered).suffix
+
+
+def _decode_text(source: bytes) -> str:
+    for encoding in _text_encodings(source):
+        try:
+            text = source.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if _is_text_content(text):
+            return text.lstrip("\ufeff")
+    raise ValueError("无法识别文本编码；支持 UTF-8、UTF-16、UTF-32、GB18030、Big5、Shift_JIS 和 EUC-KR。")
+
+
+def _text_encodings(source: bytes) -> tuple[str, ...]:
+    if source.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+        return ("utf-32",)
+    if source.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return ("utf-16",)
+    return ("utf-8-sig", "gb18030", "big5", "shift_jis", "euc_kr")
+
+
+def _is_text_content(text: str) -> bool:
+    if not text:
+        return True
+    controls = sum(ord(character) < 32 and character not in "\n\r\t" for character in text)
+    return controls * 100 <= len(text)
 
 
 def _open_archive(source: bytes) -> zipfile.ZipFile:

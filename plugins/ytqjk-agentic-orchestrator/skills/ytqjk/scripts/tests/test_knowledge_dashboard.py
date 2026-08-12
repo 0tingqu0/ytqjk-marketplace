@@ -163,6 +163,26 @@ class KnowledgeDashboardTest(unittest.TestCase):
 
             self.assertEqual(saved["state"], "candidate")
 
+    def test_intake_accepts_utf8_bom_and_expanded_text_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_upload(root, "guide.adoc", b"\xef\xbb\xbf= Guide\nUTF-8 content\n")
+            makefile = MODULE.intake_upload(root, "Makefile", b"all:\n\techo ready\n")
+
+            self.assertNotIn("\ufeff", (root / saved["path"]).read_text(encoding="utf-8"))
+            self.assertEqual(makefile["state"], "candidate")
+
+    def test_intake_accepts_common_legacy_text_encodings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            saved = MODULE.intake_upload(Path(temporary), "legacy.txt", "\u4e2d\u6587".encode("gb18030"))
+
+            self.assertEqual(saved["state"], "candidate")
+
+    def test_intake_rejects_unrecognizable_text_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "无法识别文本编码"):
+                MODULE.intake_upload(Path(temporary), "binary.txt", b"\x00\x81\xff\x00")
+
     def test_candidate_update_delete_and_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
