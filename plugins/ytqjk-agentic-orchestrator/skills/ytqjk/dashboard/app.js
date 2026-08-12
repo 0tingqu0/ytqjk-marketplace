@@ -1,6 +1,12 @@
 const state = { data: null, selected: null };
 const byId = (id) => document.getElementById(id);
-const formatBytes = (value) => new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 }).format(value) + " B";
+const formatBytes = (value) => {
+  const units = ["B", "KiB", "MiB", "GiB"];
+  let amount = Number(value) || 0;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) { amount /= 1024; unit += 1; }
+  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(amount)} ${units[unit]}`;
+};
 const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "未索引";
 const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
 const intakeProgressKey = "ytqjk-last-intake-progress";
@@ -92,11 +98,12 @@ async function showProjectLibrary(project) {
   const response = await fetch("/api/project-library?id=" + encodeURIComponent(project.id));
   if (!response.ok) { byId("project-library-meta").textContent = "无法读取该项目子库"; return; }
   const library = await response.json();
-  byId("project-library-meta").textContent = `${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块 · ${formatTime(library.indexed_at)}`;
+  const cacheState = library.cache.capacity_exceeded ? " · 已超限" : "";
+  byId("project-library-meta").textContent = `${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块 · 缓存 ${formatBytes(library.cache.project_used_bytes)}/${formatBytes(library.cache.capacity_bytes)} · ${library.cache.policy}${cacheState}`;
   byId("project-library-empty").hidden = library.files.length > 0 || library.prefetch.length > 0;
   const prefetch = library.prefetch.map((entry) => {
     const item = document.createElement("details"); item.className = "project-knowledge";
-    const summary = text("summary", `总库预取 · ${entry.path} · 第 ${entry.line_start}-${entry.line_end} 行`);
+    const summary = text("summary", `总库预取 · 命中 ${entry.hit_count} 次 · ${entry.path} · 第 ${entry.line_start}-${entry.line_end} 行`);
     item.append(summary, text("pre", entry.content)); return item;
   });
   const source = library.files.map((chunks) => {

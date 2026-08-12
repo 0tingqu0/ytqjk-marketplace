@@ -6,6 +6,7 @@ from pathlib import Path
 
 from approval_promotion import promote_eligible
 from archive_sync import sync_archived_sessions
+from project_prefetch import list_prefetch, prefetch_stats
 
 
 SECTIONS = (
@@ -85,7 +86,7 @@ def project_rows(root: Path) -> list[dict[str, object]]:
         if not isinstance(identity, dict): identity = {}
         if not isinstance(stats, dict): stats = {}
         if not isinstance(catalog_row, dict): catalog_row = {}
-        rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED")})
+        rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": manifest.get("index_state", catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED"))})
     return rows
 
 
@@ -107,7 +108,7 @@ def project_library(root: Path, project_id: str) -> dict[str, object] | None:
         "indexed_at": manifest.get("indexed_at"), "files": list(files.values()),
         "file_count": len(files), "chunk_count": len(chunks),
         "expected_files": stats.get("files", 0), "expected_chunks": stats.get("chunks", 0),
-        "prefetch": read_prefetch(project_dir),
+        "prefetch": list_prefetch(project_dir), "cache": prefetch_stats(project_dir),
     }
 
 
@@ -125,12 +126,6 @@ def read_project_chunks(database: Path) -> list[dict[str, object]]:
         {"path": row[0], "line_start": row[1], "line_end": row[2], "content": row[3]}
         for row in rows
     ]
-
-
-def read_prefetch(project_dir: Path) -> list[dict[str, object]]:
-    cached = read_json(project_dir / "cache" / "global-knowledge.json")
-    entries = cached.get("entries", [])
-    return entries if isinstance(entries, list) else []
 
 
 def session_rows(root: Path) -> list[dict[str, object]]:

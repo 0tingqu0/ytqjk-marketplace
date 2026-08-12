@@ -33,12 +33,36 @@ Use the resolved root for this layout:
     <project-name>--<short-hash>/
       manifest.json
       cache/
+        global-knowledge.sqlite3
       handoffs/
       lexical.sqlite3
       vectors/
 ```
 
-The personal root is durable. `global-cache` indexes only `verified` plus both `approved` areas. Each project directory is a rebuildable computer-local cache. On a project query, cache the matching approved global chunks under `cache/global-knowledge.json`; this is a prediction driven by current project questions, not a second source of truth. Query both global and current-project caches, then fuse lexical and vector ranks. Never auto-delete caches; mark stale and report size/last access. Cache deletion requires explicit approval. Back up metadata before schema migrations.
+The personal root is durable. `global-cache` indexes only `verified` plus both
+`approved` areas. Each project directory is a rebuildable computer-local cache,
+not a knowledge source. Its `cache/global-knowledge.sqlite3` contains only global
+chunks previously needed by that project; legacy `global-knowledge.json` entries
+are migrated automatically.
+
+Use this strict lookup state machine:
+
+1. Query only the current project's cached global chunks and project source index.
+   `PROJECT_CACHE_HIT` returns immediately.
+2. On a miss, query the approved global index. `GLOBAL_FALLBACK_HIT` returns the
+   evidence and stores it only in the current project cache.
+3. If both miss, return `KNOWLEDGE_MISS`. The current conversation performs any
+   external research, then sends sanitized content and traceable sources through
+   `knowledge_intake_cli.py` to the global personal-experience candidate area.
+
+A session anchor is permanently bound to one project ID and cannot access any
+other project's cache. A project knowledge cache has a hard 1 GiB total limit,
+including project lexical and vector indexes. Cached global chunks are evicted by
+lowest hit count first, then oldest access time. If that is insufficient, discard
+the rebuildable vector index and then the lexical index, and record the capacity
+eviction in the project manifest. Handoffs and error records are workflow evidence
+outside this knowledge-cache limit. Cache migrations retain metadata; arbitrary
+manual cache deletion still requires explicit approval.
 
 WSL2 uses its Linux root by default. Only use `/mnt/d/knowledge` when the user
 explicitly chooses to share it, and never open the same SQLite or LanceDB cache from
@@ -72,7 +96,11 @@ Store thresholds in `config.json` and allow project overrides. Run embeddings lo
 
 ## Knowledge promotion
 
-Write raw discoveries, task state, errors, and hypotheses only to the project cache. Verified reusable facts may enter `verified` with source and review evidence.
+Write raw task state, errors, and hypotheses only to the project cache. External
+research produced after `KNOWLEDGE_MISS` enters global
+`personal-experience/candidates` through the intake interface after source
+validation, secret scanning, and duplicate detection. Verified reusable facts may
+enter `verified` with source and review evidence.
 
 Direct dashboard uploads and all session lessons enter the global `personal-experience/candidates`; only explicit user approval promotes them to `approved`. A project ID in the session record is metadata for retrieval and cache prediction, not a separate source of truth. Generate reviewed global error lessons under `error-experience/candidates`; require confirmed root cause, effective fix, and passing verification before user-approved promotion to `approved`. Mark unresolved hypotheses `UNVERIFIED` and never promote them.
 
@@ -99,7 +127,7 @@ $repo = 'C:\absolute\path\to\repo'
 & $ragPython scripts\rag_cli.py init --project-root $repo
 & $ragPython scripts\rag_cli.py index --project-root $repo --vector-mode auto
 & $ragPython scripts\rag_cli.py index-global --vector-mode auto
-& $ragPython scripts\rag_cli.py query --project-root $repo "<question>"
+& $ragPython scripts\session_query.py --project-root $repo --session-id $env:CODEX_THREAD_ID "<question>"
 ```
 
 Linux or WSL2 Bash:
@@ -114,7 +142,7 @@ repo="/absolute/path/to/repo"
 "$rag_python" scripts/rag_cli.py init --project-root "$repo"
 "$rag_python" scripts/rag_cli.py index --project-root "$repo" --vector-mode auto
 "$rag_python" scripts/rag_cli.py index-global --vector-mode auto
-"$rag_python" scripts/rag_cli.py query --project-root "$repo" "<question>"
+"$rag_python" scripts/session_query.py --project-root "$repo" --session-id "$CODEX_THREAD_ID" "<question>"
 ```
 
 Before a first vector build, the RAG task must report the configured model, package versions, estimated download, and cache path. `off` never loads vector dependencies; `auto` builds them only after a configured threshold; `on` requests them immediately. Re-run project indexing after HEAD changes and global indexing after an approved knowledge promotion.

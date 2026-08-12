@@ -39,6 +39,10 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 - `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
 - RAG 首次查询前会刷新缺失、过期或安全版本不兼容的项目与全局索引。`auto` 仅在文本达到
   10 MiB 或 2,000 个分块时启用向量；小知识库不会因连续空查询而自动下载模型。
+- 所有会话检索都先查当前项目子库；命中即结束，未命中才回源总库。总库命中会写入当前
+  项目子库，总库仍未命中则返回 `KNOWLEDGE_MISS`，由当前会话外部检索并通过候选接口提交。
+  会话不能切换项目或读取其他项目子库。每个项目子库总容量为 1 GiB，按 LFU+LRU 淘汰，
+  优先保留多次命中的知识。
 - 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
   `npx skills@latest add mattpocock/skills`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 
@@ -89,7 +93,8 @@ Codex 未向插件开放全局新会话、自动压缩和闲置事件订阅时�
 
 - RAG 仅索引 Git 已跟踪的文本文件，并在分块前排除常见敏感路径和高置信秘密内容；这不能替代项目自己的秘密扫描。
 - 知识根保存源码检索缓存、项目绝对路径、脱敏后的网络 remote 或本地 remote 指纹，以及模型和隔离运行时。
-- 缓存不会自动删除。安全规则升级后必须重新索引；旧缓存可能仍含旧内容，只有用户明确批准后才删除。
+- 项目知识子库为可重建缓存，达到 1 GiB 硬上限时会按 LFU+LRU 自动淘汰回源知识，必要时
+  丢弃可重建向量/词法索引。安全规则升级产生的旧缓存不因升级自动删除，任意手工删除仍需明确批准。
 - 知识根、模型、SQLite/vector 数据库、handoff 和任何本机凭据均不在本仓库中。
 
 安装前请检查 [插件清单](plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json)、[总控协议](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/protocol.md) 和 [知识库说明](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/knowledge-store.md)。

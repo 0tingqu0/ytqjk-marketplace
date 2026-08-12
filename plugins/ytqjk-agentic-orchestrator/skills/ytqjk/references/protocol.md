@@ -150,11 +150,24 @@ the host did not provide.
 
 Apply bundled `$caveman`, except use full clarity for approval prompts. Be the only knowledge-index writer. Other tasks query it through task messages. Provide source path, line/symbol, source commit or dirty state, and index time. Knowledge informs decisions but never substitutes current source, tests, or review evidence.
 
-Before the first query, inspect project and global manifests and refresh every
-missing, stale, or security-incompatible index. Run one query against current
-caches. If it returns no evidence, report the empty result and cache statistics;
-do not repeat queries merely to trigger vectors. In `auto`, vectors are size-gated
-only; use explicit `on` for semantic retrieval of a smaller corpus.
+Every query follows one strict route. Search only the current project's rebuildable
+global-chunk cache and source index first. `PROJECT_CACHE_HIT` ends the query
+without opening the global index.
+Only a project-cache miss may search the approved global index. A
+`GLOBAL_FALLBACK_HIT` is returned and cached only in that current project. A total
+miss returns `KNOWLEDGE_MISS`, cache statistics, and
+`SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE`; the current task may then research
+externally and ask the RAG role to submit the sanitized result through
+`scripts/knowledge_intake_cli.py`. That interface writes only to the global
+`personal-experience/candidates` area and never approves or indexes it.
+
+Never read another project's cache or reuse a session anchor across projects. Each
+project knowledge cache has a hard 1 GiB capacity. Evict cached global chunks by
+LFU first and LRU for equal hit counts; project lexical and vector indexes count
+toward the same capacity. If LFU+LRU eviction is insufficient, discard the
+rebuildable vector index and then the rebuildable lexical index. Record the reason
+in the project manifest. Handoffs and error records are workflow evidence, not
+knowledge-cache data, and are outside this capacity policy.
 
 All controller-mediated knowledge queries must use `scripts/session_query.py` with
 the current host `--session-id`, rather than calling `rag_cli.py query` directly.
