@@ -8,8 +8,8 @@
 </head>
 <body>
   <header class="topbar">
-    <div><p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p><h1>知识库控制台</h1></div>
-    <div class="actions"><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button><span id="updated">读取中</span></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true">YK</span><div><p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p><h1>知识库控制台</h1></div></div>
+    <div class="actions"><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
   </header>
   <main>
     <section class="summary" aria-label="知识库摘要">
@@ -22,25 +22,25 @@
     <section class="workspace">
       <aside>
         <section class="intake" aria-labelledby="intake-title">
-          <h2 id="intake-title">投递资料</h2>
-          <label class="drop-zone" for="file-input"><span>拖入资料</span><small>文本、Office、表格或图片，最大 10 MiB</small></label>
+          <div class="panel-heading"><span class="panel-index">01</span><h2 id="intake-title">投递资料</h2></div>
+          <label class="drop-zone" for="file-input"><span class="drop-title">拖入资料</span><small>文本、Office、表格或图片，最大 10 MiB</small></label>
           <input id="file-input" type="file" accept=".bat,.c,.cc,.cfg,.conf,.cpp,.cs,.css,.csv,.diff,.docx,.dockerfile,.env.example,.gif,.go,.graphql,.h,.hpp,.html,.ini,.java,.jpeg,.jpg,.js,.json,.jsonl,.jsx,.kt,.kts,.less,.log,.lua,.md,.mdx,.mjs,.php,.png,.pptx,.properties,.ps1,.py,.r,.rb,.rst,.rs,.sass,.scss,.sh,.sql,.svg,.swift,.toml,.ts,.tsx,.txt,.vue,.webp,.xlsx,.xml,.yaml,.yml" hidden>
           <label for="note">也可直接粘贴</label>
           <textarea id="note" rows="4" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
           <button id="submit-intake">存为候选资料</button><p id="intake-status" role="status"></p>
         </section>
-        <label for="filter">筛选条目</label>
-        <input id="filter" type="search" placeholder="路径、类别或状态">
+        <label class="filter-label" for="filter">筛选条目</label>
+        <div class="search-wrap"><input id="filter" type="search" placeholder="路径、类别或状态"></div>
         <div class="legend"><span class="dot verified"></span>已验证 <span class="dot approved"></span>已批准 <span class="dot candidate"></span>候选</div>
         <nav id="documents" aria-label="知识文档"></nav>
       </aside>
       <section class="detail" aria-live="polite">
-        <div id="empty"><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
+        <div id="empty"><span class="empty-mark">+</span><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
         <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
       </section>
     </section>
-    <section class="projects"><div class="section-title"><h2>项目缓存</h2><span id="global-status"></span></div><div id="project-grid"></div></section>
-    <section class="projects"><div class="section-title"><h2>锚定会话</h2><span>仅显示匿名元数据</span></div><div id="session-grid"></div></section>
+    <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目缓存</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>
+    <section class="projects"><div class="section-title"><div><span class="section-kicker">会话层</span><h2>锚定会话</h2></div><span>仅显示匿名元数据</span></div><div id="session-grid"></div></section>
   </main>
   <script src="app.js"></script>
 </body>

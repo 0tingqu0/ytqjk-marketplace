@@ -5,18 +5,18 @@ const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { 
 const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
 
 async function loadSnapshot() {
+  document.body.classList.add("is-loading");
   byId("updated").textContent = "刷新中";
   const response = await fetch("/api/snapshot", { cache: "no-store" });
   if (!response.ok) throw new Error("无法读取知识库");
   state.data = await response.json();
-  byId("verified-count").textContent = state.data.counts.verified;
-  byId("approved-count").textContent = state.data.counts.approved;
-  byId("candidate-count").textContent = state.data.counts.candidate;
-  byId("session-count").textContent = state.data.counts.sessions;
+  [["verified-count", state.data.counts.verified], ["approved-count", state.data.counts.approved], ["candidate-count", state.data.counts.candidate], ["session-count", state.data.counts.sessions]].forEach(([id, value]) => {
+    const node = byId(id); if (node.textContent !== String(value)) { node.classList.remove("count-flash"); void node.offsetWidth; node.classList.add("count-flash"); } node.textContent = value;
+  });
   byId("root").textContent = state.data.root;
   byId("updated").textContent = "已刷新 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
   byId("global-status").textContent = `全局索引 ${state.data.global.indexed_at ? formatTime(state.data.global.indexed_at) : "未建立"}`;
-  renderDocuments(); renderProjects(); renderSessions();
+  renderDocuments(); renderProjects(); renderSessions(); document.body.classList.remove("is-loading");
 }
 
 function renderDocuments() {
@@ -24,7 +24,7 @@ function renderDocuments() {
   const rows = state.data.documents.filter((item) => [item.path, item.label, item.state].join(" ").toLowerCase().includes(filter));
   byId("documents").replaceChildren(...rows.map((item) => {
     const button = document.createElement("button");
-    button.className = `document ${item.state}`;
+    button.className = `document ${item.state}${state.selected?.path === item.path ? " selected" : ""}`;
     const detail = document.createElement("span");
     detail.append(text("b", item.label), text("small", item.path));
     const dot = document.createElement("span");
@@ -36,9 +36,9 @@ function renderDocuments() {
 }
 
 function renderProjects() {
-  byId("project-grid").replaceChildren(...state.data.projects.map((project) => {
+  byId("project-grid").replaceChildren(...state.data.projects.map((project, index) => {
     const card = document.createElement("article");
-    const details = document.createElement("dl");
+    card.style.setProperty("--item", index); const details = document.createElement("dl");
     [["索引", formatTime(project.indexed_at)], ["内容", `${project.files} 文件 · ${project.chunks} 分块`], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
       const row = document.createElement("div");
       row.append(text("dt", term), text("dd", value));
@@ -50,9 +50,9 @@ function renderProjects() {
 }
 
 function renderSessions() {
-  byId("session-grid").replaceChildren(...state.data.sessions.map((session) => {
+  byId("session-grid").replaceChildren(...state.data.sessions.map((session, index) => {
     const card = document.createElement("article");
-    const details = document.createElement("dl");
+    card.style.setProperty("--item", index); const details = document.createElement("dl");
     const status = session.archived_at ? "已归档" : "活动中";
     [["匿名锚点", session.key], ["项目", session.project], ["最后活动", formatTime(session.last_activity_at)], ["记忆", session.has_memory ? "已保存" : "未保存"], ["状态", status]].forEach(([term, value]) => {
       const row = document.createElement("div");
@@ -74,6 +74,7 @@ async function showDocument(item) {
   const payload = await response.json();
   byId("content").value = payload.content;
   state.selected = item;
+  renderDocuments();
 }
 
 async function candidateRequest(method, payload) {
