@@ -93,21 +93,44 @@ def project_rows(root: Path) -> list[dict[str, object]]:
     return rows
 
 
+def session_rows(root: Path) -> list[dict[str, object]]:
+    rows = []
+    for path in sorted((root / "sessions").glob("*/anchor.json")):
+        anchor = read_json(path)
+        session_key, project_id = anchor.get("session_key"), anchor.get("project_id")
+        if not isinstance(session_key, str) or not isinstance(project_id, str):
+            continue
+        rows.append(
+            {
+                "key": session_key[:12],
+                "project": project_id,
+                "created_at": anchor.get("created_at"),
+                "last_activity_at": anchor.get("last_activity_at"),
+                "archived_at": anchor.get("archived_at"),
+                "has_memory": bool(anchor.get("memory")),
+            }
+        )
+    return sorted(rows, key=lambda item: str(item["last_activity_at"] or ""), reverse=True)
+
+
 def snapshot(root: Path) -> dict[str, object]:
     documents = [
         row for relative, label, state in SECTIONS for row in relative_files(root, relative, label, state)
     ]
     global_manifest = read_json(root / "global-cache" / "manifest.json")
+    sessions = session_rows(root)
     return {
         "root": str(root),
         "config": read_json(root / "config.json"),
         "global": global_manifest,
         "projects": project_rows(root),
+        "sessions": sessions,
         "documents": documents,
         "counts": {
             "verified": sum(item["state"] == "verified" for item in documents),
             "approved": sum(item["state"] == "approved" for item in documents),
             "candidate": sum(item["state"] == "candidate" for item in documents),
+            "sessions": len(sessions),
         },
     }
 

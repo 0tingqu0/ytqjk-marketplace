@@ -12,10 +12,11 @@ async function loadSnapshot() {
   byId("verified-count").textContent = state.data.counts.verified;
   byId("approved-count").textContent = state.data.counts.approved;
   byId("candidate-count").textContent = state.data.counts.candidate;
+  byId("session-count").textContent = state.data.counts.sessions;
   byId("root").textContent = state.data.root;
   byId("updated").textContent = "已刷新 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
   byId("global-status").textContent = `全局索引 ${state.data.global.indexed_at ? formatTime(state.data.global.indexed_at) : "未建立"}`;
-  renderDocuments(); renderProjects();
+  renderDocuments(); renderProjects(); renderSessions();
 }
 
 function renderDocuments() {
@@ -44,6 +45,21 @@ function renderProjects() {
       details.append(row);
     });
     card.append(text("h3", project.name), text("p", project.id), details);
+    return card;
+  }));
+}
+
+function renderSessions() {
+  byId("session-grid").replaceChildren(...state.data.sessions.map((session) => {
+    const card = document.createElement("article");
+    const details = document.createElement("dl");
+    const status = session.archived_at ? "已归档" : "活动中";
+    [["匿名锚点", session.key], ["项目", session.project], ["最后活动", formatTime(session.last_activity_at)], ["记忆", session.has_memory ? "已保存" : "未保存"], ["状态", status]].forEach(([term, value]) => {
+      const row = document.createElement("div");
+      row.append(text("dt", term), text("dd", value));
+      details.append(row);
+    });
+    card.append(text("h3", status), details);
     return card;
   }));
 }

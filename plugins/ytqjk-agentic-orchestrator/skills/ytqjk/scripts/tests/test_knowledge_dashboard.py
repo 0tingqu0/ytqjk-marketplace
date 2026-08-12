@@ -38,8 +38,24 @@ class KnowledgeDashboardTest(unittest.TestCase):
 
             data = MODULE.snapshot(root)
 
-            self.assertEqual(data["counts"], {"verified": 1, "approved": 1, "candidate": 1})
+            self.assertEqual(data["counts"], {"verified": 1, "approved": 1, "candidate": 1, "sessions": 0})
             self.assertEqual({item["state"] for item in data["documents"]}, {"verified", "approved", "candidate"})
+
+    def test_snapshot_lists_anonymous_session_anchors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            anchor = root / "sessions" / "hashed" / "anchor.json"
+            anchor.parent.mkdir(parents=True)
+            anchor.write_text(
+                '{"session_key":"a1b2c3d4e5f67890","project_id":"project-a","created_at":"2026-01-01T00:00:00+00:00","last_activity_at":"2026-01-02T00:00:00+00:00","archived_at":null,"memory":"summary"}',
+                encoding="utf-8",
+            )
+
+            data = MODULE.snapshot(root)
+
+            self.assertEqual(data["counts"]["sessions"], 1)
+            self.assertEqual(data["sessions"][0]["key"], "a1b2c3d4e5f6")
+            self.assertNotIn("summary", data["sessions"][0].values())
 
     def test_safe_document_rejects_paths_outside_knowledge_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
