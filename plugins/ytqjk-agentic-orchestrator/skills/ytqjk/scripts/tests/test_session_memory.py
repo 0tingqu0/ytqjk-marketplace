@@ -18,6 +18,10 @@ QUERY_SPEC = importlib.util.spec_from_file_location("session_query", SCRIPTS / "
 assert QUERY_SPEC and QUERY_SPEC.loader
 QUERY_MODULE = importlib.util.module_from_spec(QUERY_SPEC)
 QUERY_SPEC.loader.exec_module(QUERY_MODULE)
+ARCHIVE_SPEC = importlib.util.spec_from_file_location("archive_sync", SCRIPTS / "archive_sync.py")
+assert ARCHIVE_SPEC and ARCHIVE_SPEC.loader
+ARCHIVE_MODULE = importlib.util.module_from_spec(ARCHIVE_SPEC)
+ARCHIVE_SPEC.loader.exec_module(ARCHIVE_MODULE)
 
 
 class SessionMemoryTest(unittest.TestCase):
@@ -79,3 +83,25 @@ class SessionMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ValueError):
                 MODULE.checkpoint(Path(temporary), "thread-3", "project-a", "token: A1B2C3D4E5F6G7")
+
+    def test_archived_log_exports_memory_for_existing_anchor_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "knowledge"
+            codex_home = Path(temporary) / "codex"
+            archive_dir = codex_home / "archived_sessions"
+            archive_dir.mkdir(parents=True)
+            session_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+            MODULE.write_anchor(root, session_id, "project-a")
+            log = archive_dir / f"rollout-2026-01-01T00-00-00-{session_id}.jsonl"
+            log.write_text(
+                '{"payload":{"type":"agent_message","phase":"final_answer","message":"结论：验证通过。"}}\n',
+                encoding="utf-8",
+            )
+
+            synced = ARCHIVE_MODULE.sync_archived_sessions(root, codex_home)
+            anchor = MODULE.read_anchor(root, session_id)
+
+            self.assertEqual(synced, [MODULE.session_key(session_id)])
+            self.assertTrue(anchor["archived_at"])
+            self.assertIn("验证通过", anchor["memory"])
+            self.assertEqual(len(list((root / "personal-experience/candidates").glob("*.md"))), 1)

@@ -14,12 +14,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-DASHBOARD_DIR = Path(__file__).resolve().parent
-SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
+DASHBOARD_DIR = Path(__file__).resolve().parent; SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
 from approval_assessment import assess_for_approval  # noqa: E402
+from archive_sync import sync_archived_sessions  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
@@ -27,8 +27,7 @@ from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload
 from knowledge_chunks import write_chunks  # noqa: E402
 
 
-MAX_PREVIEW_CHARS = 24_000
-MAX_INTAKE_BYTES = 10 * 1024 * 1024
+MAX_PREVIEW_CHARS = 24_000; MAX_INTAKE_BYTES = 10 * 1024 * 1024
 INTAKE_DIR = "personal-experience/candidates/imports"
 SAFE_FILE_NAME = re.compile(r"[\w .()（）-]+\.[A-Za-z0-9]+", re.UNICODE)
 SECTIONS = (
@@ -114,6 +113,7 @@ def session_rows(root: Path) -> list[dict[str, object]]:
 
 
 def snapshot(root: Path) -> dict[str, object]:
+    sync_archived_sessions(root)
     documents = [
         row for relative, label, state in SECTIONS for row in relative_files(root, relative, label, state)
     ]
