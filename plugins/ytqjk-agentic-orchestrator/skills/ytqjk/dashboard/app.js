@@ -52,15 +52,24 @@ async function showDocument(item) {
   byId("empty").hidden = true; byId("preview").hidden = false;
   byId("path").textContent = item.path; byId("state").textContent = item.state === "candidate" ? "CANDIDATE" : item.label;
   byId("state").className = item.state;
-  byId("content").textContent = "读取中...";
+  byId("content").hidden = false; byId("content").readOnly = item.state !== "candidate"; byId("content").value = "读取中...";
+  byId("preview-actions").hidden = item.state !== "candidate";
   const response = await fetch("/api/document?path=" + encodeURIComponent(item.path));
   const payload = await response.json();
-  byId("content").textContent = payload.content;
+  byId("content").value = payload.content;
+  state.selected = item;
 }
 
-async function submitIntake(name, content) {
+async function candidateRequest(method, payload) {
+  const response = await fetch("/api/candidate", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "候选资料操作失败");
+  return result;
+}
+
+async function submitIntake(name, content, encoding) {
   byId("intake-status").textContent = "保存中...";
-  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content }) });
+  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding }) });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
   byId("intake-status").textContent = `已保存为 CANDIDATE：${payload.path}`;
@@ -68,10 +77,15 @@ async function submitIntake(name, content) {
   await loadSnapshot();
 }
 
+async function submitFile(file) {
+  const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("无法读取文件")); reader.readAsDataURL(file); });
+  await submitIntake(file.name, content, "base64");
+}
+
 byId("file-input").onchange = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  try { await submitIntake(file.name, await file.text()); } catch (error) { byId("intake-status").textContent = error.message; }
+  try { await submitFile(file); } catch (error) { byId("intake-status").textContent = error.message; }
 };
 const dropZone = document.querySelector(".drop-zone");
 dropZone.ondragover = (event) => { event.preventDefault(); dropZone.classList.add("dragging"); };
@@ -80,9 +94,19 @@ dropZone.ondrop = async (event) => {
   event.preventDefault(); dropZone.classList.remove("dragging");
   const file = event.dataTransfer.files[0];
   if (!file) return;
-  try { await submitIntake(file.name, await file.text()); } catch (error) { byId("intake-status").textContent = error.message; }
+  try { await submitFile(file); } catch (error) { byId("intake-status").textContent = error.message; }
 };
-byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value).catch((error) => byId("intake-status").textContent = error.message);
+byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => byId("intake-status").textContent = error.message);
+byId("save-candidate").onclick = async () => {
+  if (!state.selected || state.selected.state !== "candidate") return;
+  try { await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("intake-status").textContent = "候选资料已保存"; await loadSnapshot(); }
+  catch (error) { byId("intake-status").textContent = error.message; }
+};
+byId("delete-candidate").onclick = async () => {
+  if (!state.selected || state.selected.state !== "candidate" || !confirm("删除该候选资料及其关联原件？")) return;
+  try { await candidateRequest("DELETE", { path: state.selected.path }); byId("preview").hidden = true; byId("empty").hidden = false; state.selected = null; byId("intake-status").textContent = "候选资料已删除"; await loadSnapshot(); }
+  catch (error) { byId("intake-status").textContent = error.message; }
+};
 
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;

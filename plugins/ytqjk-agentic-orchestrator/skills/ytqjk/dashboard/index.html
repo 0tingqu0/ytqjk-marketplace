@@ -22,8 +22,8 @@
       <aside>
         <section class="intake" aria-labelledby="intake-title">
           <h2 id="intake-title">投递资料</h2>
-          <label class="drop-zone" for="file-input"><span>拖入文本资料</span><small>或选择 .md、.txt、.json、.yaml、.csv、.log</small></label>
-          <input id="file-input" type="file" accept=".csv,.json,.log,.md,.rst,.txt,.yaml,.yml" hidden>
+          <label class="drop-zone" for="file-input"><span>拖入资料</span><small>文本、Office、表格或图片，最大 10 MiB</small></label>
+          <input id="file-input" type="file" accept=".bat,.c,.cc,.cfg,.conf,.cpp,.cs,.css,.csv,.diff,.docx,.dockerfile,.env.example,.gif,.go,.graphql,.h,.hpp,.html,.ini,.java,.jpeg,.jpg,.js,.json,.jsonl,.jsx,.kt,.kts,.less,.log,.lua,.md,.mdx,.mjs,.php,.png,.pptx,.properties,.ps1,.py,.r,.rb,.rst,.rs,.sass,.scss,.sh,.sql,.svg,.swift,.toml,.ts,.tsx,.txt,.vue,.webp,.xlsx,.xml,.yaml,.yml" hidden>
           <label for="note">也可直接粘贴</label>
           <textarea id="note" rows="4" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
           <button id="submit-intake">存为候选资料</button><p id="intake-status" role="status"></p>
@@ -35,7 +35,7 @@
       </aside>
       <section class="detail" aria-live="polite">
         <div id="empty"><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
-        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><pre id="content"></pre></article>
+        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
       </section>
     </section>
     <section class="projects"><div class="section-title"><h2>项目缓存</h2><span id="global-status"></span></div><div id="project-grid"></div></section>

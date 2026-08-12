@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import mimetypes
 import re
@@ -15,15 +17,17 @@ from urllib.parse import parse_qs, unquote, urlparse
 DASHBOARD_DIR = Path(__file__).resolve().parent
 SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(DASHBOARD_DIR))
 
+from candidate_actions import delete_candidate, update_candidate  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
+from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload, supported_extension  # noqa: E402
 
 
 MAX_PREVIEW_CHARS = 24_000
-MAX_INTAKE_BYTES = 1024 * 1024
+MAX_INTAKE_BYTES = 10 * 1024 * 1024
 INTAKE_DIR = "personal-experience/candidates/imports"
-TEXT_EXTENSIONS = {".csv", ".json", ".log", ".md", ".rst", ".txt", ".yaml", ".yml"}
 SAFE_FILE_NAME = re.compile(r"[\w .()（）-]+\.[A-Za-z0-9]+", re.UNICODE)
 SECTIONS = (
     ("verified", "已验证", "verified"),
@@ -115,13 +119,13 @@ def safe_document(root: Path, raw_path: str) -> Path | None:
     return candidate if candidate.suffix == ".md" and candidate.is_file() else None
 
 
-def analyze_intake(name: str, content: str) -> dict[str, object]:
+def analyze_intake(name: str, content: str, source_bytes: int) -> dict[str, object]:
     lines = [line.strip() for line in content.splitlines() if line.strip()]
     headings = [line.lstrip("#").strip() for line in lines if line.startswith("#")]
     summary = next((line for line in lines if not line.startswith("---")), "")
     return {
         "format": Path(name).suffix.lower().lstrip("."),
-        "bytes": len(content.encode("utf-8")),
+        "bytes": source_bytes,
         "lines": len(content.splitlines()),
         "title": headings[0] if headings else Path(name).stem,
         "summary": summary[:240],
@@ -129,36 +133,48 @@ def analyze_intake(name: str, content: str) -> dict[str, object]:
 
 
 def intake_document(root: Path, name: str, content: str) -> dict[str, str]:
+    return intake_upload(root, name, content.encode("utf-8"))
+
+
+def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     source_name = Path(name).name.strip()
-    encoded = content.encode("utf-8")
     if (
         not source_name
         or source_name != name
         or SAFE_FILE_NAME.fullmatch(source_name) is None
-        or Path(source_name).suffix.lower() not in TEXT_EXTENSIONS
+        or supported_extension(source_name) not in SUPPORTED_EXTENSIONS
     ):
-        raise ValueError("仅支持 .md、.txt、.json、.yaml、.yml、.csv、.log、.rst 文本资料。")
-    if is_sensitive_path(source_name) or contains_high_confidence_secret(content):
+        raise ValueError("仅支持文本、.docx、.pptx、.xlsx 和常见图片资料。")
+    if is_sensitive_path(source_name):
         raise ValueError("资料可能包含凭据或敏感文件名，未保存。")
-    if not content.strip() or "\x00" in content:
-        raise ValueError("资料必须是非空 UTF-8 文本。")
-    if len(encoded) > MAX_INTAKE_BYTES:
-        raise ValueError("单份资料不能超过 1 MiB。")
+    if not source or len(source) > MAX_INTAKE_BYTES:
+        raise ValueError("单份资料必须非空且不能超过 10 MiB。")
+    content, details = extract_upload(source_name, source)
+    if "\x00" in content or contains_high_confidence_secret(content):
+        raise ValueError("资料可能包含凭据或敏感内容，未保存。")
+    if supported_extension(source_name) in TEXT_EXTENSIONS and not content.strip():
+        raise ValueError("文本资料必须非空。")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target = root / INTAKE_DIR / f"{timestamp}-{uuid.uuid4().hex[:8]}-{Path(source_name).stem}.md"
+    identifier = f"{timestamp}-{uuid.uuid4().hex[:8]}-{Path(source_name).stem}"
+    target = root / INTAKE_DIR / f"{identifier}.md"
+    original = target.parent / "originals" / f"{identifier}-{source_name}"
     target.parent.mkdir(parents=True, exist_ok=True)
-    analysis = analyze_intake(source_name, content)
+    original.parent.mkdir(parents=True, exist_ok=True)
+    analysis = analyze_intake(source_name, content, len(source))
     metadata = (
         "---\nstatus: CANDIDATE\nsource: dashboard-intake\n"
-        f"original_name: {source_name}\nreceived_at: {datetime.now(timezone.utc).isoformat()}\n---\n\n"
+        f"original_name: {source_name}\noriginal_path: {original.relative_to(root).as_posix()}\nreceived_at: {datetime.now(timezone.utc).isoformat()}\n---\n\n"
     )
     report = (
         f"# 投递候选：{analysis['title']}\n\n## 入库分析\n\n"
         f"- 格式：`{analysis['format']}`\n- 大小：{analysis['bytes']} bytes\n"
-        f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n\n"
+        f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n"
+        + (f"- 图片尺寸：{details['dimensions']}\n" if "dimensions" in details else "")
+        + f"- 原件：`{original.relative_to(root).as_posix()}`\n\n"
         "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n## 原始资料\n\n"
     )
-    target.write_text(metadata + report + content, encoding="utf-8")
+    original.write_bytes(source)
+    target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
     return {"path": target.relative_to(root).as_posix(), "state": "candidate"}
 
 
@@ -179,6 +195,33 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             return
         self.serve_asset(url.path)
 
+    def do_PUT(self) -> None:  # noqa: N802 - inherited API name
+        if urlparse(self.path).path != "/api/candidate":
+            self.send_error(HTTPStatus.NOT_FOUND, "API not found")
+            return
+        try:
+            payload = self.read_payload()
+            path, content = payload.get("path"), payload.get("content")
+            if not isinstance(path, str) or not isinstance(content, str):
+                raise ValueError("候选资料路径或内容无效。")
+            self.send_json({"ok": True, **update_candidate(self.knowledge_root, path, content)})
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def do_DELETE(self) -> None:  # noqa: N802 - inherited API name
+        if urlparse(self.path).path != "/api/candidate":
+            self.send_error(HTTPStatus.NOT_FOUND, "API not found")
+            return
+        try:
+            payload = self.read_payload()
+            path = payload.get("path")
+            if not isinstance(path, str):
+                raise ValueError("候选资料路径无效。")
+            delete_candidate(self.knowledge_root, path)
+            self.send_json({"ok": True})
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
     def do_POST(self) -> None:  # noqa: N802 - inherited API name
         if urlparse(self.path).path != "/api/intake":
             self.send_error(HTTPStatus.NOT_FOUND, "API not found")
@@ -188,19 +231,31 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
         except ValueError:
             self.send_json({"ok": False, "error": "请求长度无效。"}, HTTPStatus.BAD_REQUEST)
             return
-        if not 0 < length <= MAX_INTAKE_BYTES + 4096:
+        if not 0 < length <= (MAX_INTAKE_BYTES * 4 // 3) + 8192:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Payload too large")
             return
         try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("请求格式错误。")
+            payload = self.read_payload(length)
             name, content = payload.get("name"), payload.get("content")
             if not isinstance(name, str) or not isinstance(content, str):
                 raise ValueError("资料名称或内容无效。")
-            self.send_json({"ok": True, **intake_document(self.knowledge_root, name, content)}, HTTPStatus.CREATED)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            if payload.get("encoding") == "base64":
+                source = base64.b64decode(content, validate=True)
+                result = intake_upload(self.knowledge_root, name, source)
+            else:
+                result = intake_document(self.knowledge_root, name, content)
+            self.send_json({"ok": True, **result}, HTTPStatus.CREATED)
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def read_payload(self, length: int | None = None) -> dict[str, object]:
+        content_length = length if length is not None else int(self.headers.get("Content-Length", "0"))
+        if not 0 < content_length <= (MAX_INTAKE_BYTES * 4 // 3) + 8192:
+            raise ValueError("请求长度无效。")
+        payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("请求格式错误。")
+        return payload
 
     def serve_asset(self, request_path: str) -> None:
         requested = "index.html" if request_path in {"", "/"} else unquote(request_path).lstrip("/")

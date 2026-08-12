@@ -50,9 +50,16 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py
 ```
 
-打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本资料，
-将其进行格式/大小/行数/标题摘要分析后存入候选区。候选资料不会自动批准、不会进入
-`verified`、不会自动重新索引。敏感文件名和高置信凭据会被拒绝。
+打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
+Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）和常见图片资料，最大
+10 MiB。Office 正文和表格会被提取分析，图片记录格式、尺寸和文件大小；原文件随候选
+分析记录保存在 `imports/originals`。候选资料不会自动批准、不会进入 `verified`、不会
+自动重新索引。敏感文件名和提取文本中的高置信凭据会被拒绝。
+此外支持常见 UTF-8 源码、配置和数据文本（如 `.py`、`.ts`、`.java`、`.go`、`.sql`、
+`.xml`、`.toml`、`.ini`、`.sh`、`.ps1`、`.diff`、`.jsonl`、`.svg`）。旧版二进制 Office
+格式（`.doc`、`.ppt`、`.xls`）需要先转换为现代格式后投递。
+候选资料可在控制台中编辑或删除，已验证和已批准知识不提供此入口；删除投递资料时会一并
+删除其关联原件。
 
 ## 本地数据与安全
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import tempfile
 import unittest
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 
@@ -15,6 +17,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class KnowledgeDashboardTest(unittest.TestCase):
+    def office_file(self, parts: dict[str, str]) -> bytes:
+        stream = BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            for name, content in parts.items():
+                archive.writestr(name, content)
+        return stream.getvalue()
+
     def test_snapshot_separates_approved_and_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -67,6 +76,60 @@ class KnowledgeDashboardTest(unittest.TestCase):
                 MODULE.intake_document(root, "token.json", "token: A1B2C3D4E5F6G7")
             with self.assertRaises(ValueError):
                 MODULE.intake_document(root, "binary.md", "safe\x00text")
+
+    def test_intake_extracts_modern_office_files(self) -> None:
+        files = {
+            "brief.docx": self.office_file({"word/document.xml": "<doc><t>Word 结论</t></doc>"}),
+            "slides.pptx": self.office_file({"ppt/slides/slide1.xml": "<slide><t>PPT 要点</t></slide>"}),
+            "table.xlsx": self.office_file(
+                {
+                    "xl/sharedStrings.xml": "<sst><si><t>名称</t></si><si><t>数值</t></si></sst>",
+                    "xl/worksheets/sheet1.xml": "<sheetData><row><c t='s'><v>0</v></c><c t='s'><v>1</v></c></row></sheetData>",
+                }
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name, source in files.items():
+                saved = MODULE.intake_upload(root, name, source)
+                content = (root / saved["path"]).read_text(encoding="utf-8")
+                self.assertIn("## 入库分析", content)
+                self.assertTrue((root / "personal-experience/candidates/imports/originals").is_dir())
+                if name == "brief.docx":
+                    self.assertIn("Word 结论", content)
+                if name == "slides.pptx":
+                    self.assertIn("PPT 要点", content)
+                if name == "table.xlsx":
+                    self.assertIn("名称 | 数值", content)
+
+    def test_intake_records_image_dimensions_and_original(self) -> None:
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + (320).to_bytes(4, "big") + (200).to_bytes(4, "big")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_upload(root, "diagram.png", png)
+            content = (root / saved["path"]).read_text(encoding="utf-8")
+
+            self.assertIn("图片尺寸：320 x 200", content)
+            self.assertIn(f"大小：{len(png)} bytes", content)
+            self.assertIn("图片未进行文字识别", content)
+
+    def test_intake_accepts_source_and_config_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            saved = MODULE.intake_document(Path(temporary), "service.toml", "[server]\nport = 8080\n")
+
+            self.assertEqual(saved["state"], "candidate")
+
+    def test_candidate_update_delete_and_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_document(root, "notes.md", "first version")
+            MODULE.update_candidate(root, saved["path"], "second version")
+
+            self.assertEqual((root / saved["path"]).read_text(encoding="utf-8"), "second version")
+            with self.assertRaises(ValueError):
+                MODULE.update_candidate(root, "verified/fact.md", "forbidden")
+            MODULE.delete_candidate(root, saved["path"])
+            self.assertFalse((root / saved["path"]).exists())
 
 
 if __name__ == "__main__":
