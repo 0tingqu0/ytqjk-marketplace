@@ -42,6 +42,16 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 - 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
   `npx skills@latest add mattpocock/skills`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 
+## 知识库控制台
+
+在本机只读查看知识根、项目索引、已验证/已批准经验和候选经验：
+
+```powershell
+python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py
+```
+
+打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址，不提供索引、批准、删除或其他写入操作。
+
 ## 本地数据与安全
 
 - RAG 仅索引 Git 已跟踪的文本文件，并在分块前排除常见敏感路径和高置信秘密内容；这不能替代项目自己的秘密扫描。

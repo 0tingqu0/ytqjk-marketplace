@@ -156,6 +156,16 @@ class DistributionLayoutTest(unittest.TestCase):
             "report that result instead of repeating queries", normalized_knowledge
         )
 
+    def test_readonly_knowledge_dashboard_is_packaged(self) -> None:
+        dashboard = SKILL / "dashboard"
+        for name in ("knowledge_dashboard.py", "index.html", "app.js", "style.css"):
+            self.assertTrue((dashboard / name).is_file())
+        knowledge = (SKILL / "references" / "knowledge-store.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("## Read-only dashboard", knowledge)
+        self.assertIn("binds only to `127.0.0.1`", knowledge)
+
 
 if __name__ == "__main__":
     unittest.main()

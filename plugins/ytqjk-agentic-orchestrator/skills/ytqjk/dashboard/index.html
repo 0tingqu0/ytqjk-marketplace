@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YTQJK 知识库</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p><h1>知识库控制台</h1></div>
+    <div class="actions"><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button><span id="updated">读取中</span></div>
+  </header>
+  <main>
+    <section class="summary" aria-label="知识库摘要">
+      <article><span>已验证</span><strong id="verified-count">-</strong></article>
+      <article><span>已批准经验</span><strong id="approved-count">-</strong></article>
+      <article><span>候选经验</span><strong id="candidate-count">-</strong></article>
+      <article class="root"><span>知识根</span><strong id="root">-</strong></article>
+    </section>
+    <section class="workspace">
+      <aside>
+        <label for="filter">筛选条目</label>
+        <input id="filter" type="search" placeholder="路径、类别或状态">
+        <div class="legend"><span class="dot verified"></span>已验证 <span class="dot approved"></span>已批准 <span class="dot candidate"></span>候选</div>
+        <nav id="documents" aria-label="知识文档"></nav>
+      </aside>
+      <section class="detail" aria-live="polite">
+        <div id="empty"><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
+        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><pre id="content"></pre></article>
+      </section>
+    </section>
+    <section class="projects"><div class="section-title"><h2>项目缓存</h2><span id="global-status"></span></div><div id="project-grid"></div></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

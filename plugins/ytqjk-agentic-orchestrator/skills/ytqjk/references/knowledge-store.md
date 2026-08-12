@@ -124,3 +124,16 @@ Before the first query in a run, the RAG task must inspect both manifests. Run
 run `index-global` when the global cache is missing, stale, or on an older security
 schema. Then query once. If both current caches contain no matching evidence,
 report that result instead of repeating queries to force vector activation.
+
+## Read-only dashboard
+
+Use the bundled local dashboard to inspect project cache metadata plus verified,
+approved, and candidate Markdown entries. It binds only to `127.0.0.1` and never
+indexes, promotes, deletes, or modifies knowledge:
+
+```text
+python dashboard/knowledge_dashboard.py --knowledge-root <knowledge-root>
+```
+
+Open `http://127.0.0.1:8765`. Candidate entries must remain visibly labeled
+`CANDIDATE`; the dashboard is not evidence of approval or current-source state.
