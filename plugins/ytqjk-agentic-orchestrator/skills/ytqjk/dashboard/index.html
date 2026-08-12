@@ -20,6 +20,14 @@
     </section>
     <section class="workspace">
       <aside>
+        <section class="intake" aria-labelledby="intake-title">
+          <h2 id="intake-title">投递资料</h2>
+          <label class="drop-zone" for="file-input"><span>拖入文本资料</span><small>或选择 .md、.txt、.json、.yaml、.csv、.log</small></label>
+          <input id="file-input" type="file" accept=".csv,.json,.log,.md,.rst,.txt,.yaml,.yml" hidden>
+          <label for="note">也可直接粘贴</label>
+          <textarea id="note" rows="4" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
+          <button id="submit-intake">存为候选资料</button><p id="intake-status" role="status"></p>
+        </section>
         <label for="filter">筛选条目</label>
         <input id="filter" type="search" placeholder="路径、类别或状态">
         <div class="legend"><span class="dot verified"></span>已验证 <span class="dot approved"></span>已批准 <span class="dot candidate"></span>候选</div>

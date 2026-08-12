@@ -50,7 +50,9 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py
 ```
 
-打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址，不提供索引、批准、删除或其他写入操作。
+打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本资料，
+将其进行格式/大小/行数/标题摘要分析后存入候选区。候选资料不会自动批准、不会进入
+`verified`、不会自动重新索引。敏感文件名和高置信凭据会被拒绝。
 
 ## 本地数据与安全
 

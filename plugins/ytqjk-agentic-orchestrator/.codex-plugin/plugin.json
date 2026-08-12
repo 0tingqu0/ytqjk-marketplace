@@ -1,6 +1,6 @@
 {
   "name": "ytqjk-agentic-orchestrator",
-  "version": "0.1.0+codex.20260812011252",
+  "version": "0.1.0+codex.20260812013622",
   "description": "Coordinates isolated Codex tasks through planning, review, Git, progress, and local RAG gates.",
   "author": {
     "name": "\u4e00\u542c\u66f2\u5c31\u56f0"

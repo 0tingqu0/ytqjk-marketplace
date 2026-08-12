@@ -137,3 +137,10 @@ python dashboard/knowledge_dashboard.py --knowledge-root <knowledge-root>
 
 Open `http://127.0.0.1:8765`. Candidate entries must remain visibly labeled
 `CANDIDATE`; the dashboard is not evidence of approval or current-source state.
+
+The dashboard can accept a local text file or pasted text into
+`personal-experience/candidates/imports`. It permits `.md`, `.txt`, `.json`,
+`.yaml`, `.yml`, `.csv`, `.log`, and `.rst` up to 1 MiB. Before saving, it rejects
+sensitive filenames and high-confidence secret patterns, then records a basic
+format/size/line/title summary before the original text. Intake never approves,
+promotes, or indexes the candidate.
