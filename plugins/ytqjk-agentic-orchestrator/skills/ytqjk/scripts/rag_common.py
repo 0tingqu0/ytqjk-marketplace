@@ -8,7 +8,7 @@ import sqlite3
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Iterable
 
 from rag_security import (
@@ -97,8 +97,7 @@ def project_identity(project: Path) -> dict[str, str]:
     normalized_remote = normalize_remote(raw_remote)
     identity = normalized_remote or os.path.normcase(str(canonical_root))
     short_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-    name_source = PurePosixPath(normalized_remote).name if normalized_remote else canonical_root.name
-    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", root.name).strip("-_") or "project"
     project_id = "p2604_soc" if safe_name.casefold() == "p2604_soc" else f"{safe_name}--{short_hash}"
     head = run_git(root, "rev-parse", "--verify", "HEAD", check=False).strip() or "UNBORN"
     diff_args = ("diff", "--binary", "--full-index", "--no-ext-diff", "--no-renames")

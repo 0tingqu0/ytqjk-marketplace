@@ -66,6 +66,19 @@ class ProjectTrackingTest(unittest.TestCase):
 
             self.assertEqual(identified["id"], "p2604_soc")
 
+    def test_project_id_uses_local_project_name_with_remote_identity_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(Path(temporary) / "agentic")
+            subprocess.run(
+                ["git", "-C", str(repo), "remote", "add", "origin", "https://example.test/ytqjk-marketplace.git"],
+                check=True, capture_output=True,
+            )
+
+            identified = MODULE.identify_project(repo)
+
+            self.assertEqual(identified["name"], "agentic")
+            self.assertTrue(identified["id"].startswith("agentic--"))
+
     def test_prefetch_cache_is_rebuildable_project_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"

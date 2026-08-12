@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from rag_common import SCHEMA_VERSION, atomic_json, load_json, run_git, utc_now
 from rag_security import normalize_remote
@@ -16,8 +16,7 @@ def identify_project(project: Path) -> dict[str, str]:
     canonical_root = common.parent if os.path.normcase(common.name) == ".git" else common
     remote = normalize_remote(run_git(root, "remote", "get-url", "origin", check=False).strip())
     identity = remote or os.path.normcase(str(canonical_root))
-    name_source = PurePosixPath(remote).name if remote else canonical_root.name
-    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"
+    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", root.name).strip("-_") or "project"
     project_id = (
         "p2604_soc" if name.casefold() == "p2604_soc"
         else f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}"
