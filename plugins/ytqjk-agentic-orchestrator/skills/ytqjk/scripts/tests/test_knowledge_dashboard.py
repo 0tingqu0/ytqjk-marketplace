@@ -106,6 +106,8 @@ class KnowledgeDashboardTest(unittest.TestCase):
             not_ready = MODULE.intake_document(root, "brief.md", "暂存结论")
 
             self.assertEqual(ready["assessment"]["decision"], "READY_FOR_REVIEW")
+            self.assertEqual(ready["state"], "approved")
+            self.assertTrue((root / ready["path"]).is_file())
             self.assertEqual(not_ready["assessment"]["decision"], "NOT_READY")
             self.assertIn("## 批准评估", (root / ready["path"]).read_text(encoding="utf-8"))
 

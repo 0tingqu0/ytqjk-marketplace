@@ -19,8 +19,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
 from approval_assessment import assess_for_approval  # noqa: E402
-from archive_sync import sync_archived_sessions  # noqa: E402
+from approval_promotion import promote_eligible  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
+from dashboard_snapshot import snapshot as build_snapshot  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
 from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload, supported_extension  # noqa: E402
@@ -30,111 +31,6 @@ from knowledge_chunks import write_chunks  # noqa: E402
 MAX_PREVIEW_CHARS = 24_000; MAX_INTAKE_BYTES = 10 * 1024 * 1024
 INTAKE_DIR = "personal-experience/candidates/imports"
 SAFE_FILE_NAME = re.compile(r"[\w .()（）-]+\.[A-Za-z0-9]+", re.UNICODE)
-SECTIONS = (
-    ("verified", "已验证", "verified"),
-    ("personal-experience/approved", "个人经验", "approved"),
-    ("error-experience/approved", "错误经验", "approved"),
-    ("personal-experience/candidates", "个人候选", "candidate"),
-    ("error-experience/candidates", "错误候选", "candidate"),
-)
-
-
-def read_json(path: Path) -> dict[str, object]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def relative_files(root: Path, relative: str, label: str, state: str) -> list[dict[str, object]]:
-    directory = root / relative
-    if not directory.is_dir():
-        return []
-    rows = []
-    for path in sorted(directory.rglob("*.md")):
-        display_path = path.relative_to(root).as_posix()
-        if safe_document(root, display_path) is None:
-            continue
-        rows.append(
-            {
-                "path": display_path,
-                "label": label,
-                "state": state,
-                "bytes": path.stat().st_size,
-                "modified": path.stat().st_mtime,
-            }
-        )
-    return rows
-
-
-def project_rows(root: Path) -> list[dict[str, object]]:
-    rows = []
-    for manifest_path in sorted((root / "projects").glob("*/manifest.json")):
-        manifest = read_json(manifest_path)
-        identity = manifest.get("identity", {})
-        stats = manifest.get("stats", {})
-        vector = manifest.get("vector", {})
-        if not isinstance(identity, dict) or not isinstance(stats, dict):
-            continue
-        rows.append(
-            {
-                "id": identity.get("id", manifest_path.parent.name),
-                "name": identity.get("name", manifest_path.parent.name),
-                "head": identity.get("head", "UNKNOWN"),
-                "dirty": identity.get("dirty", "unknown"),
-                "indexed_at": manifest.get("indexed_at"),
-                "files": stats.get("files", 0),
-                "chunks": stats.get("chunks", 0),
-                "text_bytes": stats.get("text_bytes", 0),
-                "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "UNKNOWN",
-            }
-        )
-    return rows
-
-
-def session_rows(root: Path) -> list[dict[str, object]]:
-    rows = []
-    for path in sorted((root / "sessions").glob("*/anchor.json")):
-        anchor = read_json(path)
-        session_key, project_id = anchor.get("session_key"), anchor.get("project_id")
-        if not isinstance(session_key, str) or not isinstance(project_id, str):
-            continue
-        rows.append(
-            {
-                "key": session_key[:12],
-                "project": project_id,
-                "created_at": anchor.get("created_at"),
-                "last_activity_at": anchor.get("last_activity_at"),
-                "archived_at": anchor.get("archived_at"),
-                "has_memory": bool(anchor.get("memory")),
-            }
-        )
-    return sorted(rows, key=lambda item: str(item["last_activity_at"] or ""), reverse=True)
-
-
-def snapshot(root: Path) -> dict[str, object]:
-    sync_archived_sessions(root)
-    documents = [
-        row for relative, label, state in SECTIONS for row in relative_files(root, relative, label, state)
-    ]
-    global_manifest = read_json(root / "global-cache" / "manifest.json")
-    sessions = session_rows(root)
-    return {
-        "root": str(root),
-        "config": read_json(root / "config.json"),
-        "global": global_manifest,
-        "projects": project_rows(root),
-        "sessions": sessions,
-        "documents": documents,
-        "counts": {
-            "verified": sum(item["state"] == "verified" for item in documents),
-            "approved": sum(item["state"] == "approved" for item in documents),
-            "candidate": sum(item["state"] == "candidate" for item in documents),
-            "sessions": len(sessions),
-        },
-    }
-
-
 def safe_document(root: Path, raw_path: str) -> Path | None:
     candidate = (root / raw_path).resolve()
     try:
@@ -142,6 +38,10 @@ def safe_document(root: Path, raw_path: str) -> Path | None:
     except ValueError:
         return None
     return candidate if candidate.suffix == ".md" and candidate.is_file() else None
+
+
+def snapshot(root: Path) -> dict[str, object]:
+    return build_snapshot(root, safe_document)
 
 
 def analyze_intake(name: str, content: str, source_bytes: int) -> dict[str, object]:
@@ -207,7 +107,9 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     chunks = write_chunks(root, identifier, source_name, content)
     report = report.replace("- 原件：", f"- 知识片段：{len(chunks)} 个\n- 原件：")
     target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
-    return {"path": target.relative_to(root).as_posix(), "state": "candidate", "assessment": assessment, "chunks": len(chunks)}
+    promoted = promote_eligible(root)
+    path = target.relative_to(root).as_posix()
+    return {"path": path.replace("/candidates/", "/approved/") if path in promoted else path, "state": "approved" if path in promoted else "candidate", "assessment": assessment, "chunks": len(chunks)}
 
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):
@@ -240,6 +142,10 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
                 raise ValueError("候选资料路径或内容无效。")
             result = update_candidate(self.knowledge_root, path, content)
             result["assessment"] = assess_for_approval(content, False)
+            promoted = promote_eligible(self.knowledge_root)
+            if result["path"] in promoted:
+                result["path"] = result["path"].replace("/candidates/", "/approved/")
+                result["state"] = "approved"
             self.send_json({"ok": True, **result})
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)

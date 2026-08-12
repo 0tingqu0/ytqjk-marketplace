@@ -89,8 +89,8 @@ async function submitIntake(name, content, encoding) {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
   const assessment = payload.assessment;
-  const result = assessment.decision === "READY_FOR_REVIEW" ? "可提交批准审阅" : assessment.reasons.join("；");
-  byId("intake-status").textContent = `已保存为 CANDIDATE，已拆分 ${payload.chunks} 个知识片段：${result}`;
+  const result = payload.state === "approved" ? "已自动批准" : assessment.reasons.join("；");
+  byId("intake-status").textContent = `资料已${payload.state === "approved" ? "自动批准" : "存为 CANDIDATE"}，已拆分 ${payload.chunks} 个知识片段：${result}`;
   byId("note").value = ""; byId("file-input").value = "";
   await loadSnapshot();
 }
@@ -117,7 +117,7 @@ dropZone.ondrop = async (event) => {
 byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => byId("intake-status").textContent = error.message);
 byId("save-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate") return;
-  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); const assessment = result.assessment; byId("intake-status").textContent = assessment.decision === "READY_FOR_REVIEW" ? "候选已保存：可提交批准审阅" : `候选已保存：${assessment.reasons.join("；")}`; await loadSnapshot(); }
+  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); const assessment = result.assessment; byId("intake-status").textContent = result.state === "approved" ? "候选已自动批准" : `候选已保存：${assessment.reasons.join("；")}`; await loadSnapshot(); }
   catch (error) { byId("intake-status").textContent = error.message; }
 };
 byId("delete-candidate").onclick = async () => {
