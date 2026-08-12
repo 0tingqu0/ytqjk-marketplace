@@ -35,13 +35,20 @@ def delete_candidate(root: Path, raw_path: str) -> None:
     path = candidate_document(root, raw_path)
     if path is None:
         raise ValueError("只能删除候选资料。")
-    original = original_path(root, path)
+    intake_id = intake_identifier(root, path)
+    original = original_path(root, path, intake_id)
+    chunks = chunk_directory(root, path, intake_id)
     path.unlink()
     if original is not None and original.is_file():
         original.unlink()
+    if chunks is not None and chunks.is_dir():
+        for item in chunks.iterdir():
+            if item.is_file():
+                item.unlink()
+        chunks.rmdir()
 
 
-def original_path(root: Path, document: Path) -> Path | None:
+def original_path(root: Path, document: Path, intake_id: str | None) -> Path | None:
     for line in document.read_text(encoding="utf-8").splitlines():
         if not line.startswith("original_path: "):
             continue
@@ -49,7 +56,36 @@ def original_path(root: Path, document: Path) -> Path | None:
         if not _is_within(candidate, (root / "personal-experience" / "candidates" / "imports" / "originals").resolve()):
             return None
         return candidate
+    if intake_id:
+        originals = root / "personal-experience/candidates/imports/originals"
+        matches = list(originals.glob(f"{intake_id}-*")) if originals.is_dir() else []
+        return matches[0] if len(matches) == 1 else None
     return None
+
+
+def chunk_directory(root: Path, document: Path, intake_id: str | None) -> Path | None:
+    for line in document.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("intake_id: "):
+            continue
+        intake_id = line.removeprefix("intake_id: ").strip()
+        return _chunk_path(root, intake_id)
+    return _chunk_path(root, intake_id) if intake_id else None
+
+
+def intake_identifier(root: Path, document: Path) -> str | None:
+    for line in document.read_text(encoding="utf-8").splitlines():
+        if line.startswith("intake_id: "):
+            return line.removeprefix("intake_id: ").strip()
+    imports = (root / "personal-experience/candidates/imports").resolve()
+    return document.stem if _is_within(document, imports) else None
+
+
+def _chunk_path(root: Path, intake_id: str) -> Path | None:
+    if not intake_id or "/" in intake_id or "\\" in intake_id:
+        return None
+    candidate = (root / "personal-experience/candidates/imports/chunks" / intake_id).resolve()
+    parent = (root / "personal-experience/candidates/imports/chunks").resolve()
+    return candidate if _is_within(candidate, parent) else None
 
 
 def _is_within(path: Path, parent: Path) -> bool:

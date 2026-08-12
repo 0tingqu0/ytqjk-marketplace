@@ -74,7 +74,7 @@ async function submitIntake(name, content, encoding) {
   if (!response.ok) throw new Error(payload.error || "保存失败");
   const assessment = payload.assessment;
   const result = assessment.decision === "READY_FOR_REVIEW" ? "可提交批准审阅" : assessment.reasons.join("；");
-  byId("intake-status").textContent = `已保存为 CANDIDATE：${result}`;
+  byId("intake-status").textContent = `已保存为 CANDIDATE，已拆分 ${payload.chunks} 个知识片段：${result}`;
   byId("note").value = ""; byId("file-input").value = "";
   await loadSnapshot();
 }

@@ -67,6 +67,18 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertIn("## 入库分析", content)
             self.assertIn("## 原始资料", content)
 
+    def test_intake_splits_sections_into_traceable_knowledge_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_document(root, "guide.md", "# 安装\n\n步骤一。\n\n# 验证\n\n步骤二。")
+            content = (root / saved["path"]).read_text(encoding="utf-8")
+            chunk_root = root / "personal-experience/candidates/imports/chunks"
+
+            self.assertEqual(saved["chunks"], 2)
+            self.assertIn("知识片段：2 个", content)
+            self.assertEqual(len(list(chunk_root.rglob("*.md"))), 2)
+            self.assertIn("source_name: guide.md", next(chunk_root.rglob("*.md")).read_text(encoding="utf-8"))
+
     def test_intake_assesses_approval_readiness(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -137,6 +149,7 @@ class KnowledgeDashboardTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             saved = MODULE.intake_document(root, "notes.md", "first version")
+            chunks = list((root / "personal-experience/candidates/imports/chunks").glob("*"))
             MODULE.update_candidate(root, saved["path"], "second version")
 
             self.assertEqual((root / saved["path"]).read_text(encoding="utf-8"), "second version")
@@ -144,6 +157,8 @@ class KnowledgeDashboardTest(unittest.TestCase):
                 MODULE.update_candidate(root, "verified/fact.md", "forbidden")
             MODULE.delete_candidate(root, saved["path"])
             self.assertFalse((root / saved["path"]).exists())
+            self.assertTrue(chunks)
+            self.assertFalse(chunks[0].exists())
 
     def test_candidate_actions_allow_error_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

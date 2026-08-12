@@ -24,6 +24,7 @@ from candidate_actions import candidate_document, delete_candidate, update_candi
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
 from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload, supported_extension  # noqa: E402
+from knowledge_chunks import write_chunks  # noqa: E402
 
 
 MAX_PREVIEW_CHARS = 24_000
@@ -165,14 +166,14 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     assessment = assess_for_approval(content, "dimensions" in details)
     metadata = (
         "---\nstatus: CANDIDATE\nsource: dashboard-intake\n"
-        f"original_name: {source_name}\noriginal_path: {original.relative_to(root).as_posix()}\nreceived_at: {datetime.now(timezone.utc).isoformat()}\n---\n\n"
+        f"intake_id: {identifier}\noriginal_name: {source_name}\noriginal_path: {original.relative_to(root).as_posix()}\nreceived_at: {datetime.now(timezone.utc).isoformat()}\n---\n\n"
     )
     report = (
         f"# 投递候选：{analysis['title']}\n\n## 入库分析\n\n"
         f"- 格式：`{analysis['format']}`\n- 大小：{analysis['bytes']} bytes\n"
         f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n"
         + (f"- 图片尺寸：{details['dimensions']}\n" if "dimensions" in details else "")
-        + f"- 原件：`{original.relative_to(root).as_posix()}`\n\n"
+        + f"- 原件：`{original.relative_to(root).as_posix()}`\n"
         "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n"
         "## 批准评估\n\n"
         f"- 结论：`{assessment['decision']}`\n"
@@ -180,8 +181,10 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
         + "\n## 原始资料\n\n"
     )
     original.write_bytes(source)
+    chunks = write_chunks(root, identifier, source_name, content)
+    report = report.replace("- 原件：", f"- 知识片段：{len(chunks)} 个\n- 原件：")
     target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
-    return {"path": target.relative_to(root).as_posix(), "state": "candidate", "assessment": assessment}
+    return {"path": target.relative_to(root).as_posix(), "state": "candidate", "assessment": assessment, "chunks": len(chunks)}
 
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):

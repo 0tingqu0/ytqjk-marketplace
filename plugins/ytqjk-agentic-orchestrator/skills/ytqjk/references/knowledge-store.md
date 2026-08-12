@@ -165,3 +165,11 @@ source, evidence, or validation signal. It records `READY_FOR_REVIEW` or
 `NOT_READY` with reasons in the candidate Markdown and in the dashboard status.
 This assessment does not approve, promote, or index the candidate; approval still
 requires an explicit user decision and RAG review.
+
+Each external intake is also stored as a candidate knowledge package: the original
+attachment is retained, a candidate overview records extraction and approval
+assessment, and usable text is split into Markdown knowledge chunks. Splitting
+prefers Markdown headings, then paragraph boundaries, with chunks capped at about
+1,800 characters. Every chunk records its parent intake ID, source filename,
+sequence number, and summary. Deleting the overview removes its generated chunks
+and linked original attachment; this package remains in candidates until approval.
