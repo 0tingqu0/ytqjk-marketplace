@@ -60,11 +60,11 @@ def analyze_intake(name: str, content: str, source_bytes: int) -> dict[str, obje
     }
 
 
-def intake_document(root: Path, name: str, content: str) -> dict[str, str]:
-    return intake_upload(root, name, content.encode("utf-8"))
+def intake_document(root: Path, name: str, content: str, purpose: str = "") -> dict[str, str]:
+    return intake_upload(root, name, content.encode("utf-8"), purpose)
 
 
-def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
+def intake_upload(root: Path, name: str, source: bytes, purpose: str = "") -> dict[str, str]:
     source_name = Path(name).name.strip()
     if (
         not source_name
@@ -78,6 +78,7 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     if not source or len(source) > MAX_INTAKE_BYTES:
         raise ValueError("单份资料必须非空且不能超过 10 MiB。")
     content, details = extract_upload(source_name, source)
+    normalized_purpose = validate_purpose(purpose)
     if "\x00" in content or contains_high_confidence_secret(content):
         raise ValueError("资料可能包含凭据或敏感内容，未保存。")
     if supported_extension(source_name) in TEXT_EXTENSIONS and not content.strip():
@@ -101,6 +102,7 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
         f"# 投递候选：{analysis['title']}\n\n## 入库分析\n\n"
         f"- 格式：`{analysis['format']}`\n- 大小：{analysis['bytes']} bytes\n"
         f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n"
+        + (f"- 作用：{normalized_purpose}\n" if normalized_purpose else "")
         + (f"- 图片尺寸：{details['dimensions']}\n" if "dimensions" in details else "")
         + f"- 原件：`{original.relative_to(root).as_posix()}`\n"
         "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n"
@@ -121,6 +123,13 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
         "assessment": assessment,
         "chunks": len(chunks),
     }
+
+
+def validate_purpose(purpose: str) -> str:
+    normalized = purpose.strip()
+    if len(normalized) > 500 or "\x00" in normalized or contains_high_confidence_secret(normalized):
+        raise ValueError("资料作用无效或可能包含敏感内容。")
+    return normalized
 
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):
@@ -202,14 +211,14 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             return
         try:
             payload = self.read_payload(length)
-            name, content = payload.get("name"), payload.get("content")
-            if not isinstance(name, str) or not isinstance(content, str):
+            name, content, purpose = payload.get("name"), payload.get("content"), payload.get("purpose", "")
+            if not isinstance(name, str) or not isinstance(content, str) or not isinstance(purpose, str):
                 raise ValueError("资料名称或内容无效。")
             if payload.get("encoding") == "base64":
                 source = base64.b64decode(content, validate=True)
-                result = intake_upload(self.knowledge_root, name, source)
+                result = intake_upload(self.knowledge_root, name, source, purpose)
             else:
-                result = intake_document(self.knowledge_root, name, content)
+                result = intake_document(self.knowledge_root, name, content, purpose)
             self.send_json({"ok": True, **result}, HTTPStatus.CREATED)
         except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)

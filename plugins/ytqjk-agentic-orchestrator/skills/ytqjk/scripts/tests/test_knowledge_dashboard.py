@@ -83,6 +83,13 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertIn("## 入库分析", content)
             self.assertIn("## 原始资料", content)
 
+    def test_intake_records_optional_purpose(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_document(root, "guide.md", "部署步骤。", "用于指导发布后的验证")
+
+            self.assertIn("- 作用：用于指导发布后的验证", (root / saved["path"]).read_text(encoding="utf-8"))
+
     def test_intake_splits_sections_into_traceable_knowledge_chunks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

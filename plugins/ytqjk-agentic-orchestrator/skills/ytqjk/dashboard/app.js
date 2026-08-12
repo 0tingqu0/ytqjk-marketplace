@@ -112,11 +112,11 @@ async function candidateRequest(method, payload, endpoint = "/api/candidate") {
   return result;
 }
 
-async function submitIntake(name, content, encoding) {
+async function submitIntake(name, content, encoding, purpose) {
   setIntakeProgress("分析资料", 20);
   byId("intake-status").textContent = "保存中...";
   setIntakeProgress("拆分知识片段", 45);
-  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding }) });
+  const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding, purpose }) });
   setIntakeProgress("评估批准条件", 75);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
@@ -127,13 +127,13 @@ async function submitIntake(name, content, encoding) {
   setIntakeProgress(stage, 100, true);
   byId("intake-status").textContent = status;
   rememberIntakeProgress(stage, 100, status);
-  byId("note").value = ""; byId("file-input").value = "";
+  byId("note").value = ""; byId("purpose").value = ""; byId("file-input").value = "";
   await loadSnapshot();
 }
 
 async function submitFile(file) {
   const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("无法读取文件")); reader.readAsDataURL(file); });
-  await submitIntake(file.name, content, "base64");
+  await submitIntake(file.name, content, "base64", byId("purpose").value);
 }
 
 function showIntakeError(message) {
@@ -157,7 +157,7 @@ dropZone.ondrop = async (event) => {
   if (!file) return;
   try { await submitFile(file); } catch (error) { showIntakeError(error.message); }
 };
-byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => showIntakeError(error.message));
+byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8", byId("purpose").value).catch((error) => showIntakeError(error.message));
 byId("save-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate") return;
   try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("approve-candidate").hidden = result.state === "approved" || result.assessment.decision === "READY_FOR_REVIEW"; byId("intake-status").textContent = result.state === "approved" ? "候选已自动批准" : `候选已保存：${result.assessment.reasons.join("；")}`; await loadSnapshot(); }
