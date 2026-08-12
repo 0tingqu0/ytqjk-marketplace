@@ -21,7 +21,7 @@ sys.path.insert(0, str(DASHBOARD_DIR))
 from approval_assessment import assess_for_approval  # noqa: E402
 from approval_promotion import promote, promote_eligible  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
-from dashboard_snapshot import snapshot as build_snapshot  # noqa: E402
+from dashboard_snapshot import project_library, snapshot as build_snapshot  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
 from intake_formats import (  # noqa: E402
@@ -153,6 +153,13 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/api/snapshot":
             self.send_json(snapshot(self.knowledge_root))
+            return
+        if url.path == "/api/project-library":
+            project = project_library(self.knowledge_root, parse_qs(url.query).get("id", [""])[0])
+            if project is None:
+                self.send_error(HTTPStatus.NOT_FOUND, "Project library not found")
+                return
+            self.send_json(project)
             return
         if url.path == "/api/document":
             path = safe_document(self.knowledge_root, parse_qs(url.query).get("path", [""])[0])

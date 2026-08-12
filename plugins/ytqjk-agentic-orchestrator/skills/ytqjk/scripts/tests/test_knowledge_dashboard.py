@@ -59,6 +59,26 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertEqual(data["sessions"][0]["key"], "a1b2c3d4e5f6")
             self.assertNotIn("summary", data["sessions"][0].values())
 
+    def test_project_library_groups_indexed_chunks_by_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "projects" / "demo--123"
+            project.mkdir(parents=True)
+            (project / "manifest.json").write_text(
+                '{"identity":{"name":"demo"},"stats":{"files":1,"chunks":2}}', encoding="utf-8"
+            )
+            import sqlite3
+            connection = sqlite3.connect(project / "lexical.sqlite3")
+            connection.execute("CREATE TABLE chunks (path, line_start, line_end, content)")
+            connection.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?)", [("a.py", 1, 2, "one"), ("a.py", 3, 4, "two")])
+            connection.commit(); connection.close()
+
+            library = MODULE.project_library(root, "demo--123")
+
+            self.assertEqual(library["file_count"], 1)
+            self.assertEqual(library["files"][0][1]["content"], "two")
+            self.assertIsNone(MODULE.project_library(root, "../outside"))
+
     def test_safe_document_rejects_paths_outside_knowledge_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

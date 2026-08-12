@@ -76,8 +76,29 @@ function renderProjects() {
       row.append(text("dt", term), text("dd", value));
       details.append(row);
     });
-    card.append(text("h3", project.name), text("p", project.id), details);
+    const open = text("button", "打开子库");
+    open.className = "open-project-library"; open.onclick = () => showProjectLibrary(project);
+    card.append(text("h3", project.name), text("p", project.id), details, open);
     return card;
+  }));
+}
+
+async function showProjectLibrary(project) {
+  const dialog = byId("project-library-dialog");
+  byId("project-library-title").textContent = project.name;
+  byId("project-library-meta").textContent = "读取项目索引...";
+  byId("project-library-empty").hidden = true; byId("project-library-files").replaceChildren();
+  dialog.showModal();
+  const response = await fetch("/api/project-library?id=" + encodeURIComponent(project.id));
+  if (!response.ok) { byId("project-library-meta").textContent = "无法读取该项目子库"; return; }
+  const library = await response.json();
+  byId("project-library-meta").textContent = `${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块 · ${formatTime(library.indexed_at)}`;
+  byId("project-library-empty").hidden = library.files.length > 0;
+  byId("project-library-files").replaceChildren(...library.files.map((chunks) => {
+    const item = document.createElement("details"); const summary = text("summary", `${chunks[0].path} · ${chunks.length} 分块`);
+    const content = document.createElement("div"); content.className = "project-chunks";
+    chunks.forEach((chunk) => { const part = document.createElement("article"); part.append(text("small", `第 ${chunk.line_start}-${chunk.line_end} 行`), text("pre", chunk.content)); content.append(part); });
+    item.append(summary, content); return item;
   }));
 }
 
@@ -217,6 +238,7 @@ byId("delete-candidate").onclick = async () => {
 
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;
+byId("close-project-library").onclick = () => byId("project-library-dialog").close();
 restoreIntakeProgress();
 loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 setInterval(() => loadSnapshot().catch(() => undefined), 10000);

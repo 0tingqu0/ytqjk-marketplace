@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from approval_promotion import promote_eligible
@@ -86,6 +87,43 @@ def project_rows(root: Path) -> list[dict[str, object]]:
         if not isinstance(catalog_row, dict): catalog_row = {}
         rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED")})
     return rows
+
+
+def project_library(root: Path, project_id: str) -> dict[str, object] | None:
+    if not project_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in project_id):
+        return None
+    project_dir = root / "projects" / project_id
+    manifest = read_json(project_dir / "manifest.json")
+    identity, stats = manifest.get("identity", {}), manifest.get("stats", {})
+    if not isinstance(identity, dict) or not isinstance(stats, dict):
+        return None
+    database = project_dir / "lexical.sqlite3"
+    chunks = read_project_chunks(database) if database.is_file() else []
+    files: dict[str, list[dict[str, object]]] = {}
+    for chunk in chunks:
+        files.setdefault(str(chunk["path"]), []).append(chunk)
+    return {
+        "id": project_id, "name": identity.get("name", project_id),
+        "indexed_at": manifest.get("indexed_at"), "files": list(files.values()),
+        "file_count": len(files), "chunk_count": len(chunks),
+        "expected_files": stats.get("files", 0), "expected_chunks": stats.get("chunks", 0),
+    }
+
+
+def read_project_chunks(database: Path) -> list[dict[str, object]]:
+    connection = sqlite3.connect(database)
+    try:
+        rows = connection.execute(
+            "SELECT path, line_start, line_end, content FROM chunks ORDER BY path, line_start LIMIT 500"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        connection.close()
+    return [
+        {"path": row[0], "line_start": row[1], "line_end": row[2], "content": row[3]}
+        for row in rows
+    ]
 
 
 def session_rows(root: Path) -> list[dict[str, object]]:
