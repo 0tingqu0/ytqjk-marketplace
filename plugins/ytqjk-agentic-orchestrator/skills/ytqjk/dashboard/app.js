@@ -1,4 +1,4 @@
-const state = { data: null, selected: null };
+const state = { data: null, selected: null, hasRenderedSnapshot: false };
 const byId = (id) => document.getElementById(id);
 const formatBytes = (value) => {
   const units = ["B", "KiB", "MiB", "GiB"];
@@ -45,7 +45,9 @@ async function loadSnapshot() {
   byId("root").textContent = state.data.root;
   byId("updated").textContent = "已刷新 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
   byId("global-status").textContent = `全局索引 ${state.data.global.indexed_at ? formatTime(state.data.global.indexed_at) : "未建立"}`;
-  renderLibraries(); renderDocuments(); renderProjects(); renderSessions(); document.body.classList.remove("is-loading");
+  renderLibraries(); renderDocuments(); renderProjects(); renderSessions();
+  state.hasRenderedSnapshot = true;
+  document.body.classList.remove("is-loading");
 }
 
 function renderLibraries() {
@@ -76,6 +78,7 @@ function renderDocuments() {
 function renderProjects() {
   byId("project-grid").replaceChildren(...state.data.projects.map((project, index) => {
     const card = document.createElement("article");
+    if (!state.hasRenderedSnapshot) card.classList.add("animate-in");
     card.style.setProperty("--item", index); const details = document.createElement("dl");
     [["状态", project.tracking], ["知识缓存", `${project.cache.entries} 分块 · ${formatBytes(project.cache.used_bytes)}`], ["源码索引", `${project.files} 文件 · ${project.chunks} 分块`], ["索引", formatTime(project.indexed_at)], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
       const row = document.createElement("div");
@@ -129,7 +132,9 @@ function renderSessions() {
     const active = sessions.filter((session) => !session.archived_at);
     const saved = sessions.filter((session) => session.has_memory);
     const card = document.createElement("details");
-    card.className = "session-group"; card.style.setProperty("--item", index);
+    card.className = "session-group";
+    if (!state.hasRenderedSnapshot) card.classList.add("animate-in");
+    card.style.setProperty("--item", index);
     const summary = document.createElement("summary");
     const heading = document.createElement("div");
     heading.append(text("h3", project), text("p", `${active.length} 活动 · ${sessions.length - active.length} 已归档 · ${saved.length} 已保存记忆`));
