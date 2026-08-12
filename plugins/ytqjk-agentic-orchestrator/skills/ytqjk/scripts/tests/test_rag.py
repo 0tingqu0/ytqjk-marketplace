@@ -185,6 +185,17 @@ class RagCliTest(unittest.TestCase):
             output = run_rag(base / "knowledge", "init", repo)
             self.assertEqual(output["manifest"]["identity"]["head"], "UNBORN")
 
+    def test_p2604_initialization_uses_stable_project_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            repo = base / "p2604_soc"
+            repo.mkdir()
+            git(repo, "init")
+
+            output = run_rag(base / "knowledge", "init", repo)
+
+            self.assertEqual(Path(output["project_dir"]).name, "p2604_soc")
+
     def test_old_security_schema_must_be_reindexed_before_query(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

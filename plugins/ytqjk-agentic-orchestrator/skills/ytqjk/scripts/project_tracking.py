@@ -18,7 +18,10 @@ def identify_project(project: Path) -> dict[str, str]:
     identity = remote or os.path.normcase(str(canonical_root))
     name_source = PurePosixPath(remote).name if remote else canonical_root.name
     name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"
-    project_id = f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}"
+    project_id = (
+        "p2604_soc" if name.casefold() == "p2604_soc"
+        else f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}"
+    )
     return {"id": project_id, "name": name, "root": str(root), "remote": remote}
 
 

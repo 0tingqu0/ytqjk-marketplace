@@ -99,13 +99,14 @@ def project_identity(project: Path) -> dict[str, str]:
     short_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
     name_source = PurePosixPath(normalized_remote).name if normalized_remote else canonical_root.name
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"
+    project_id = "p2604_soc" if safe_name.casefold() == "p2604_soc" else f"{safe_name}--{short_hash}"
     head = run_git(root, "rev-parse", "--verify", "HEAD", check=False).strip() or "UNBORN"
     diff_args = ("diff", "--binary", "--full-index", "--no-ext-diff", "--no-renames")
     fingerprint_source = run_git(root, *diff_args, "HEAD", "--") if head != "UNBORN" else (
         run_git(root, *diff_args, "--cached", "--") + run_git(root, *diff_args, "--")
     )
     return {
-        "id": f"{safe_name}--{short_hash}",
+        "id": project_id,
         "name": safe_name,
         "remote": normalized_remote,
         "root": str(root),

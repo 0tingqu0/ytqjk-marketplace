@@ -58,6 +58,14 @@ class ProjectTrackingTest(unittest.TestCase):
             self.assertEqual(catalog["projects"][tracked["id"]]["tracking_state"], "REGISTERED")
             self.assertFalse((base / "knowledge/projects" / tracked["id"] / "lexical.sqlite3").exists())
 
+    def test_p2604_uses_existing_stable_project_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = self.make_repo(Path(temporary) / "p2604_soc")
+
+            identified = MODULE.identify_project(repo)
+
+            self.assertEqual(identified["id"], "p2604_soc")
+
     def test_prefetch_cache_is_rebuildable_project_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
