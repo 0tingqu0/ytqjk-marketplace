@@ -72,7 +72,9 @@ async function submitIntake(name, content, encoding) {
   const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding }) });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
-  byId("intake-status").textContent = `已保存为 CANDIDATE：${payload.path}`;
+  const assessment = payload.assessment;
+  const result = assessment.decision === "READY_FOR_REVIEW" ? "可提交批准审阅" : assessment.reasons.join("；");
+  byId("intake-status").textContent = `已保存为 CANDIDATE：${result}`;
   byId("note").value = ""; byId("file-input").value = "";
   await loadSnapshot();
 }
@@ -99,7 +101,7 @@ dropZone.ondrop = async (event) => {
 byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => byId("intake-status").textContent = error.message);
 byId("save-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate") return;
-  try { await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("intake-status").textContent = "候选资料已保存"; await loadSnapshot(); }
+  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); const assessment = result.assessment; byId("intake-status").textContent = assessment.decision === "READY_FOR_REVIEW" ? "候选已保存：可提交批准审阅" : `候选已保存：${assessment.reasons.join("；")}`; await loadSnapshot(); }
   catch (error) { byId("intake-status").textContent = error.message; }
 };
 byId("delete-candidate").onclick = async () => {

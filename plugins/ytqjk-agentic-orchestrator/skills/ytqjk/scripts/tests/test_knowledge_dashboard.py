@@ -67,6 +67,20 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertIn("## 入库分析", content)
             self.assertIn("## 原始资料", content)
 
+    def test_intake_assesses_approval_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready = MODULE.intake_document(
+                root,
+                "evidence.md",
+                "来源：https://example.test/evidence\n测试结果：通过。\n" + "可复用结论。" * 30,
+            )
+            not_ready = MODULE.intake_document(root, "brief.md", "暂存结论")
+
+            self.assertEqual(ready["assessment"]["decision"], "READY_FOR_REVIEW")
+            self.assertEqual(not_ready["assessment"]["decision"], "NOT_READY")
+            self.assertIn("## 批准评估", (root / ready["path"]).read_text(encoding="utf-8"))
+
     def test_intake_rejects_secrets_and_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

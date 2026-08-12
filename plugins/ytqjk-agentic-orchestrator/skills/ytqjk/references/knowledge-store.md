@@ -158,3 +158,10 @@ Candidate Markdown entries can be edited or deleted from the dashboard. These
 operations are limited to the two `candidates` directories; verified and approved
 knowledge has no edit or delete endpoint. Deleting an imported candidate also
 removes its safely linked original attachment.
+
+Every new intake is automatically assessed for approval readiness. The check
+requires usable extracted text, at least 200 non-whitespace characters, and a
+source, evidence, or validation signal. It records `READY_FOR_REVIEW` or
+`NOT_READY` with reasons in the candidate Markdown and in the dashboard status.
+This assessment does not approve, promote, or index the candidate; approval still
+requires an explicit user decision and RAG review.

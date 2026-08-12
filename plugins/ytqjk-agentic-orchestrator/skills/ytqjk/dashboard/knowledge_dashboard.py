@@ -19,6 +19,7 @@ SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
+from approval_assessment import assess_for_approval  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
@@ -161,6 +162,7 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     target.parent.mkdir(parents=True, exist_ok=True)
     original.parent.mkdir(parents=True, exist_ok=True)
     analysis = analyze_intake(source_name, content, len(source))
+    assessment = assess_for_approval(content, "dimensions" in details)
     metadata = (
         "---\nstatus: CANDIDATE\nsource: dashboard-intake\n"
         f"original_name: {source_name}\noriginal_path: {original.relative_to(root).as_posix()}\nreceived_at: {datetime.now(timezone.utc).isoformat()}\n---\n\n"
@@ -171,11 +173,15 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
         f"- 行数：{analysis['lines']}\n- 摘要：{analysis['summary']}\n"
         + (f"- 图片尺寸：{details['dimensions']}\n" if "dimensions" in details else "")
         + f"- 原件：`{original.relative_to(root).as_posix()}`\n\n"
-        "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n## 原始资料\n\n"
+        "此资料尚未验证或批准，仅作为候选知识供后续审阅。\n\n"
+        "## 批准评估\n\n"
+        f"- 结论：`{assessment['decision']}`\n"
+        + "".join(f"- {reason}\n" for reason in assessment["reasons"])
+        + "\n## 原始资料\n\n"
     )
     original.write_bytes(source)
     target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
-    return {"path": target.relative_to(root).as_posix(), "state": "candidate"}
+    return {"path": target.relative_to(root).as_posix(), "state": "candidate", "assessment": assessment}
 
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):
@@ -206,7 +212,9 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             path, content = payload.get("path"), payload.get("content")
             if not isinstance(path, str) or not isinstance(content, str):
                 raise ValueError("候选资料路径或内容无效。")
-            self.send_json({"ok": True, **update_candidate(self.knowledge_root, path, content)})
+            result = update_candidate(self.knowledge_root, path, content)
+            result["assessment"] = assess_for_approval(content, False)
+            self.send_json({"ok": True, **result})
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
