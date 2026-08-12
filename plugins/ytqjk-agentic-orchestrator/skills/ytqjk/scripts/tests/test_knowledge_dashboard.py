@@ -111,6 +111,18 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertEqual(not_ready["assessment"]["decision"], "NOT_READY")
             self.assertIn("## 批准评估", (root / ready["path"]).read_text(encoding="utf-8"))
 
+    def test_not_ready_candidate_can_receive_manual_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saved = MODULE.intake_document(root, "brief.md", "待人工确认的资料")
+            candidate = root / saved["path"]
+
+            self.assertTrue(candidate.is_file())
+            self.assertTrue(MODULE.promote(root, candidate, require_ready=False))
+            approved = root / saved["path"].replace("/candidates/", "/approved/")
+            self.assertTrue(approved.is_file())
+            self.assertIn("approval: manual-dashboard", approved.read_text(encoding="utf-8"))
+
     def test_intake_rejects_secrets_and_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

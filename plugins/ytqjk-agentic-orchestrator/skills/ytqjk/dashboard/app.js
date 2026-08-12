@@ -4,6 +4,15 @@ const formatBytes = (value) => new Intl.NumberFormat("zh-CN", { notation: "compa
 const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "未索引";
 const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
 
+function setIntakeProgress(stage, percent, complete = false) {
+  byId("intake-progress").hidden = false;
+  byId("intake-stage").textContent = stage;
+  byId("intake-percent").textContent = `${percent}%`;
+  const bar = byId("intake-progress-bar");
+  bar.style.width = `${percent}%`;
+  bar.style.backgroundColor = complete ? "#29ae9b" : "#167cba";
+}
+
 async function loadSnapshot() {
   document.body.classList.add("is-loading");
   byId("updated").textContent = "刷新中";
@@ -74,23 +83,32 @@ async function showDocument(item) {
   const payload = await response.json();
   byId("content").value = payload.content;
   state.selected = item;
+  byId("approve-candidate").hidden = isReadyForApproval(payload.content);
   renderDocuments();
 }
 
-async function candidateRequest(method, payload) {
-  const response = await fetch("/api/candidate", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+function isReadyForApproval(content) {
+  return content.includes("结论：`READY_FOR_REVIEW`");
+}
+
+async function candidateRequest(method, payload, endpoint = "/api/candidate") {
+  const response = await fetch(endpoint, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "候选资料操作失败");
   return result;
 }
 
 async function submitIntake(name, content, encoding) {
+  setIntakeProgress("分析资料", 20);
   byId("intake-status").textContent = "保存中...";
+  setIntakeProgress("拆分知识片段", 45);
   const response = await fetch("/api/intake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content, encoding }) });
+  setIntakeProgress("评估批准条件", 75);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
   const assessment = payload.assessment;
   const result = payload.state === "approved" ? "已自动批准" : assessment.reasons.join("；");
+  setIntakeProgress(payload.state === "approved" ? "已自动批准" : "等待人工批准", 100, true);
   byId("intake-status").textContent = `资料已${payload.state === "approved" ? "自动批准" : "存为 CANDIDATE"}，已拆分 ${payload.chunks} 个知识片段：${result}`;
   byId("note").value = ""; byId("file-input").value = "";
   await loadSnapshot();
@@ -101,10 +119,16 @@ async function submitFile(file) {
   await submitIntake(file.name, content, "base64");
 }
 
+function showIntakeError(message) {
+  setIntakeProgress("处理失败", 100, true);
+  byId("intake-progress-bar").style.backgroundColor = "#e8624d";
+  byId("intake-status").textContent = message;
+}
+
 byId("file-input").onchange = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  try { await submitFile(file); } catch (error) { byId("intake-status").textContent = error.message; }
+  try { await submitFile(file); } catch (error) { showIntakeError(error.message); }
 };
 const dropZone = document.querySelector(".drop-zone");
 dropZone.ondragover = (event) => { event.preventDefault(); dropZone.classList.add("dragging"); };
@@ -113,13 +137,21 @@ dropZone.ondrop = async (event) => {
   event.preventDefault(); dropZone.classList.remove("dragging");
   const file = event.dataTransfer.files[0];
   if (!file) return;
-  try { await submitFile(file); } catch (error) { byId("intake-status").textContent = error.message; }
+  try { await submitFile(file); } catch (error) { showIntakeError(error.message); }
 };
-byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => byId("intake-status").textContent = error.message);
+byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8").catch((error) => showIntakeError(error.message));
 byId("save-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate") return;
-  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); const assessment = result.assessment; byId("intake-status").textContent = result.state === "approved" ? "候选已自动批准" : `候选已保存：${assessment.reasons.join("；")}`; await loadSnapshot(); }
+  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("approve-candidate").hidden = result.state === "approved" || result.assessment.decision === "READY_FOR_REVIEW"; byId("intake-status").textContent = result.state === "approved" ? "候选已自动批准" : `候选已保存：${result.assessment.reasons.join("；")}`; await loadSnapshot(); }
   catch (error) { byId("intake-status").textContent = error.message; }
+};
+byId("approve-candidate").onclick = async () => {
+  if (!state.selected || state.selected.state !== "candidate" || !confirm("确认批准此候选资料入库？")) return;
+  try {
+    await candidateRequest("POST", { path: state.selected.path }, "/api/candidate/approve");
+    byId("preview").hidden = true; byId("empty").hidden = false; state.selected = null;
+    byId("intake-status").textContent = "候选资料已批准入库"; await loadSnapshot();
+  } catch (error) { byId("intake-status").textContent = error.message; }
 };
 byId("delete-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate" || !confirm("删除该候选资料及其关联原件？")) return;

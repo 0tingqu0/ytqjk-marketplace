@@ -19,7 +19,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
 from approval_assessment import assess_for_approval  # noqa: E402
-from approval_promotion import promote_eligible  # noqa: E402
+from approval_promotion import promote, promote_eligible  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from dashboard_snapshot import snapshot as build_snapshot  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
@@ -111,7 +111,12 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
     target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
     promoted = promote_eligible(root)
     path = target.relative_to(root).as_posix()
-    return {"path": path.replace("/candidates/", "/approved/") if path in promoted else path, "state": "approved" if path in promoted else "candidate", "assessment": assessment, "chunks": len(chunks)}
+    return {
+        "path": path.replace("/candidates/", "/approved/") if path in promoted else path,
+        "state": "approved" if path in promoted else "candidate",
+        "assessment": assessment,
+        "chunks": len(chunks),
+    }
 
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):
@@ -167,6 +172,19 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def do_POST(self) -> None:  # noqa: N802 - inherited API name
+        if urlparse(self.path).path == "/api/candidate/approve":
+            try:
+                payload = self.read_payload()
+                raw_path = payload.get("path")
+                if not isinstance(raw_path, str):
+                    raise ValueError("候选资料路径无效。")
+                candidate = candidate_document(self.knowledge_root, raw_path)
+                if candidate is None or not promote(self.knowledge_root, candidate, require_ready=False):
+                    raise ValueError("候选资料无效或包含敏感内容，不能批准。")
+                self.send_json({"ok": True, "path": raw_path.replace("/candidates/", "/approved/"), "state": "approved"})
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if urlparse(self.path).path != "/api/intake":
             self.send_error(HTTPStatus.NOT_FOUND, "API not found")
             return

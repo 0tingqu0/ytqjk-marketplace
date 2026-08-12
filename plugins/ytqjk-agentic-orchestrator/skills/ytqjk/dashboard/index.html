@@ -27,7 +27,7 @@
           <input id="file-input" type="file" accept=".adoc,.asciidoc,.bat,.bib,.c,.cc,.cfg,.clj,.cljc,.cljs,.cmake,.coffee,.conf,.cpp,.cs,.css,.csv,.dart,.diff,.docx,.dockerfile,.elm,.env.example,.ex,.exs,.fish,.fs,.fsx,.gitattributes,.gitignore,.gif,.go,.gradle,.graphql,.groovy,.h,.hcl,.hpp,.html,.ini,.jade,.java,.jpeg,.jl,.jpg,.js,.json,.jsonl,.jsx,.kt,.kts,.less,.liquid,.log,.lua,.md,.mdx,.mjs,.mk,.nim,.nix,.php,.pl,.pm,.png,.pptx,.properties,.proto,.prisma,.ps1,.psd1,.pug,.py,.r,.rake,.rb,.rst,.rs,.sass,.sbt,.scss,.sh,.sol,.sql,.styl,.svg,.swift,.tf,.toml,.ts,.tsx,.txt,.v,.vala,.vim,.vue,.webp,.xaml,.xlsx,.xml,.yaml,.yml,.zsh" hidden>
           <label for="note">也可直接粘贴</label>
           <textarea id="note" rows="4" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
-          <button id="submit-intake">存为候选资料</button><p id="intake-status" role="status"></p>
+          <button id="submit-intake">存为候选资料</button><div id="intake-progress" hidden role="status"><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><i><i id="intake-progress-bar"></i></i></div><p id="intake-status" role="status"></p>
         </section>
         <label class="filter-label" for="filter">筛选条目</label>
         <div class="search-wrap"><input id="filter" type="search" placeholder="路径、类别或状态"></div>
@@ -36,7 +36,7 @@
       </aside>
       <section class="detail" aria-live="polite">
         <div id="empty"><span class="empty-mark">+</span><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
-        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
+        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="approve-candidate" hidden>批准入库</button><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
       </section>
     </section>
     <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目缓存</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>

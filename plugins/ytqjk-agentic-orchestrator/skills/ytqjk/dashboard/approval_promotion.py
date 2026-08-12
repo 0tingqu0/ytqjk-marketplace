@@ -24,7 +24,7 @@ def promote_eligible(root: Path) -> list[str]:
     return promoted
 
 
-def promote(root: Path, path: Path) -> bool:
+def promote(root: Path, path: Path, *, require_ready: bool = True) -> bool:
     try:
         content = path.read_text(encoding="utf-8")
     except OSError:
@@ -32,7 +32,7 @@ def promote(root: Path, path: Path) -> bool:
     if contains_high_confidence_secret(content):
         return False
     assessment = assess_for_approval(assessment_content(content), False)
-    if assessment["decision"] != "READY_FOR_REVIEW":
+    if require_ready and assessment["decision"] != "READY_FOR_REVIEW":
         return False
     relative = path.relative_to(root).as_posix()
     target = root / relative.replace("/candidates/", "/approved/", 1)
@@ -42,7 +42,8 @@ def promote(root: Path, path: Path) -> bool:
     if approved == content:
         approved = f"---\nstatus: APPROVED\napproved_at: {approved_at}\n---\n\n{content}"
     else:
-        approved = approved.replace("\n---", f"\napproved_at: {approved_at}\napproval: automatic-evidence-gate\n---", 1)
+        approval = "automatic-evidence-gate" if require_ready else "manual-dashboard"
+        approved = approved.replace("\n---", f"\napproved_at: {approved_at}\napproval: {approval}\n---", 1)
     target.write_text(approved, encoding="utf-8")
     path.unlink()
     return True
