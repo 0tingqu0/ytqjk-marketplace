@@ -131,6 +131,18 @@ class KnowledgeDashboardTest(unittest.TestCase):
             MODULE.delete_candidate(root, saved["path"])
             self.assertFalse((root / saved["path"]).exists())
 
+    def test_candidate_actions_allow_error_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "error-experience/candidates/test.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("before", encoding="utf-8")
+
+            MODULE.update_candidate(root, "error-experience/candidates/test.md", "after")
+            MODULE.delete_candidate(root, "error-experience/candidates/test.md")
+
+            self.assertFalse(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

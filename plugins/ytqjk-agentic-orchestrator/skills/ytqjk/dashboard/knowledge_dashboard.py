@@ -19,7 +19,7 @@ SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
-from candidate_actions import delete_candidate, update_candidate  # noqa: E402
+from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
 from intake_formats import SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, extract_upload, supported_extension  # noqa: E402
@@ -191,7 +191,9 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             if path is None:
                 self.send_error(HTTPStatus.NOT_FOUND, "Document not found")
                 return
-            self.send_json({"path": path.relative_to(self.knowledge_root).as_posix(), "content": path.read_text(encoding="utf-8")[:MAX_PREVIEW_CHARS]})
+            relative = path.relative_to(self.knowledge_root).as_posix()
+            content = path.read_text(encoding="utf-8")
+            self.send_json({"path": relative, "content": content if candidate_document(self.knowledge_root, relative) else content[:MAX_PREVIEW_CHARS]})
             return
         self.serve_asset(url.path)
 
