@@ -55,7 +55,36 @@ def index_global(knowledge: Path) -> dict:
     )
     return json.loads(result.stdout)
 
+
+def bootstrap(knowledge: Path, project: Path, *args: str) -> dict:
+    return run_rag(knowledge, "bootstrap", project, *args)
+
 class RagCliTest(unittest.TestCase):
+    def test_bootstrap_builds_current_project_and_global_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "ordinary-workspace"
+            workspace.mkdir()
+            (workspace / "notes.md").write_text(
+                "普通工作目录也应自动建立完整知识库。\n", encoding="utf-8"
+            )
+            knowledge = base / "knowledge"
+            approved = knowledge / "personal-experience" / "approved"
+            approved.mkdir(parents=True)
+            (approved / "lesson.md").write_text(
+                "总库已批准知识也会自动索引。\n", encoding="utf-8"
+            )
+
+            result = bootstrap(knowledge, workspace, "--vector-mode", "off")
+
+            project_dir = Path(result["project_dir"])
+            manifest = json.loads((project_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["project"]["stats"]["files"], 1)
+            self.assertEqual(result["global"]["stats"]["files"], 1)
+            self.assertTrue((project_dir / "lexical.sqlite3").is_file())
+            self.assertTrue((knowledge / "global-cache" / "lexical.sqlite3").is_file())
+            self.assertEqual(manifest["identity"]["head"], "NON_GIT")
+
     def test_lexical_index_excludes_secrets_and_returns_citations(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

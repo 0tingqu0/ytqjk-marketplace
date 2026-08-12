@@ -161,6 +161,14 @@ externally and ask the RAG role to submit the sanitized result through
 `scripts/knowledge_intake_cli.py`. That interface writes only to the global
 `personal-experience/candidates` area and never approves or indexes it.
 
+Immediately after the RAG role is created and before its first query, it must run
+`scripts/rag_cli.py bootstrap --project-root <current-work-directory> --vector-mode auto`.
+This automatic full knowledge build registers the current work directory, rebuilds
+its safe project-source index, and refreshes the approved global index. It applies
+whether or not the directory is a Git repository. Other roles register their own
+work directory when they first use the knowledge query interface. Candidate areas
+remain excluded from the global index.
+
 Never read another project's cache or reuse a session anchor across projects. Each
 project knowledge cache has a hard 1 GiB capacity. Evict cached global chunks by
 LFU first and LRU for equal hit counts; project lexical and vector indexes count

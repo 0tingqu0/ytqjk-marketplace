@@ -35,6 +35,12 @@ per controller task and again after context compaction or plugin-version change.
 Before starting or querying RAG, read
 [references/knowledge-store.md](references/knowledge-store.md) completely.
 
+After objective confirmation and before the first knowledge query, the RAG role
+must automatically run `scripts/rag_cli.py bootstrap --project-root <current-work-directory> --vector-mode auto`.
+This builds the current work directory's project sub-library and refreshes the
+approved global index. It applies to Git and non-Git work directories alike.
+Do not treat candidates as approved knowledge or auto-promote any candidate.
+
 Objective confirmation is not plan approval. The protocol remains authoritative
 for host mode, `grill-me`, isolated Workers, supervision, review, sole-writer Git,
 ten 10% milestones, progress, RAG, model escalation, and archival.

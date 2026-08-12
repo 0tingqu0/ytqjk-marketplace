@@ -45,6 +45,12 @@ not a knowledge source. Its `cache/global-knowledge.sqlite3` contains only globa
 chunks previously needed by that project; legacy `global-knowledge.json` entries
 are migrated automatically.
 
+After a YTQJK objective is confirmed, the RAG role automatically runs the
+`bootstrap` command for the current work directory. It creates or refreshes that
+directory's project sub-library, indexes its safe text files, and rebuilds the
+approved global index. This applies to Git and ordinary directories; candidates
+remain excluded and are never auto-approved.
+
 Use this strict lookup state machine:
 
 1. Query only the current project's cached global chunks and project source index.
@@ -127,6 +133,7 @@ $repo = 'C:\absolute\path\to\repo'
 & $ragPython scripts\rag_cli.py init --project-root $repo
 & $ragPython scripts\rag_cli.py index --project-root $repo --vector-mode auto
 & $ragPython scripts\rag_cli.py index-global --vector-mode auto
+& $ragPython scripts\rag_cli.py bootstrap --project-root $repo --vector-mode auto
 & $ragPython scripts\session_query.py --project-root $repo --session-id $env:CODEX_THREAD_ID "<question>"
 ```
 
@@ -142,6 +149,7 @@ repo="/absolute/path/to/repo"
 "$rag_python" scripts/rag_cli.py init --project-root "$repo"
 "$rag_python" scripts/rag_cli.py index --project-root "$repo" --vector-mode auto
 "$rag_python" scripts/rag_cli.py index-global --vector-mode auto
+"$rag_python" scripts/rag_cli.py bootstrap --project-root "$repo" --vector-mode auto
 "$rag_python" scripts/session_query.py --project-root "$repo" --session-id "$CODEX_THREAD_ID" "<question>"
 ```
 

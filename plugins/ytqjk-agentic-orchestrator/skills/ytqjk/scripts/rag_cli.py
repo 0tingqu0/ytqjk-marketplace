@@ -118,14 +118,25 @@ def command_query(args: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def command_bootstrap(args: argparse.Namespace) -> dict[str, object]:
+    initialized = command_init(args)
+    project = command_index(args)
+    global_index = command_index_global(args)
+    return {
+        "project_dir": initialized["project_dir"],
+        "project": project,
+        "global": global_index,
+    }
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Local YTQJK agentic RAG cache.")
     result.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     subparsers = result.add_subparsers(dest="command", required=True)
-    for name in ("init", "index", "query"):
+    for name in ("init", "index", "query", "bootstrap"):
         sub = subparsers.add_parser(name)
         sub.add_argument("--project-root", type=Path, required=True)
-        if name == "index":
+        if name in {"index", "bootstrap"}:
             sub.add_argument("--vector-mode", choices=("off", "auto", "on"))
         if name == "query":
             sub.add_argument("query")
@@ -145,6 +156,7 @@ def main() -> int:
         "init": command_init,
         "index": command_index,
         "query": command_query,
+        "bootstrap": command_bootstrap,
         "index-global": command_index_global,
     }
     try:
