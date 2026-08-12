@@ -21,15 +21,17 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
 
 1. Resolve the target project, current branch, HEAD, and `git status --short` with read-only commands.
 2. Require a clean integration baseline. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes.
-3. Detect one host mode before creating roles:
-   - **Task mode:** the host exposes capability-equivalent task/thread create, list,
-     read, wait, message, title, pin, and archive tools. Create a dedicated controller
-     task first, but only after objective confirmation. The activation task remains
-     the launcher and stays read-only except for lifecycle, hard stops, and archival.
-   - **IDE Agent mode:** the Codex IDE/CLI host exposes real subagent create, status,
-     wait, and message capabilities. After objective confirmation, the current chat
-     becomes the control-only controller; create every other role separately.
-     Never replace a role with controller implementation or an inline role-play.
+3. Detect a host with capability-equivalent **Codex conversation/session** create,
+   list, read, wait, message, title, pin, and archive operations. After objective
+   confirmation, list prior `[YTQJK]` conversations for the current project and
+   role before creating anything. Reuse one matching, non-archived conversation;
+   restore its anchor memory, send it the new objective, and refresh its title.
+   Create a new conversation only when no matching conversation is available, the
+   prior one is archived, or its role conflicts with the requested responsibility.
+   The activation conversation remains the launcher and stays lifecycle-only.
+   Never convert a conversation into an opaque autonomous agent or replace a role
+   with inline role-play. If the host lacks the complete conversation capability set,
+   report `BLOCKED`.
    If neither complete capability set is available, report `BLOCKED`. Do not mix modes.
 4. Inspect the host-provided skill inventory. When a readable `grill-me` is already
    available, treat the user-profile bootstrap as complete: do not run `npm view`,
@@ -46,15 +48,16 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    only its declared dependencies, then start a fresh formal controller. In IDE Agent
    mode, transfer the objective into a fresh chat if the host cannot replace the
    bootstrap controller.
-6. Create roles just in time without weakening role separation:
+6. Reuse or create role conversations just in time without weakening role separation:
    - At formal `GRILLING`, create the supervisor and progress reporter. Create them
      independently without waiting for one to finish before starting the other.
    - Before the first repository-answerable question or index operation, create RAG.
    - After plan approval and before the first Worker, create the reviewer and sole Git
      committer. Both must exist before Worker dispatch.
-   Title them `[YTQJK] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG` plus a short
-   objective when titles are supported. Every required role still exists before its
-   first responsibility.
+   Title them `[YTQJK][<project-id>] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG`
+   plus a short objective when titles are supported. The stable prefix and project ID
+   are the reuse key; do not rely on remembered raw session IDs. Every required role
+   still exists before its first responsibility.
 7. Pin only the progress role while work is active when pinning is supported. In IDE
    Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
 8. Anchor every YTQJK-created role after its host session/task ID and project ID are
@@ -68,8 +71,8 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    first post-compaction turn and immediately before archival; never claim platform-wide
    automatic anchoring.
 
-Explicit objective confirmation authorizes creation and coordination of these
-tasks/subagents plus local writes under the knowledge root resolved by
+Explicit objective confirmation authorizes creation, reuse, and coordination of these
+conversations plus local writes under the knowledge root resolved by
 `YTQJK_KNOWLEDGE_ROOT` or the platform default. Invocation alone does not. Neither
 authorizes push, merge, rebase, tag, amend, deployment, remote writes, service
 changes, hardware action, or destructive cleanup.
@@ -78,19 +81,18 @@ changes, hardware action, or destructive cleanup.
 
 ### Launcher
 
-Task mode only. After explicit objective confirmation, create the controller and
-preserve the confirmed objective. Use one bounded readiness wait until it is
-started or needs input, then return its visible task link; never wait for project
-completion. Remain lifecycle-only, propagate a hard stop once, and archive the
-controller last. Never implement, test, review, or mutate Git. IDE Agent mode has
-no separate launcher role.
+After explicit objective confirmation, reuse the matching controller conversation
+or create it only if absent, then preserve the confirmed objective. Use one bounded
+readiness wait, return its visible conversation link, and never wait for completion.
+Remain lifecycle-only, propagate a hard stop once, and archive the controller last.
+Never implement, test, review, or mutate Git.
 
 ### Controller
 
-Apply bundled `$caveman`. Coordinate only. Run the planning gate, own the DAG, create tasks or
-subagents, choose models, enforce scopes, monitor evidence, request supervisor gates,
-and close completed roles. Do not edit implementation, run acceptance, deploy, or
-mutate Git. In IDE Agent mode, the current chat is this controller.
+Apply bundled `$caveman`. Coordinate only. Run the planning gate, own the DAG, reuse
+or create role conversations, choose models, enforce scopes, monitor evidence,
+request supervisor gates, and close completed roles. Do not edit implementation,
+run acceptance, deploy, or mutate Git.
 
 ### Supervisor
 

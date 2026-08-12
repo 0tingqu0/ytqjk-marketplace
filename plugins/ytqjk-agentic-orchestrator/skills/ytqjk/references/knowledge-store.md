@@ -176,7 +176,8 @@ and linked original attachment; this package remains in candidates until approva
 
 ## Session anchors
 
-YTQJK-created tasks can be anchored in `<knowledge-root>/sessions/<session-key>/`.
+YTQJK-created or reused Codex conversations can be anchored in
+`<knowledge-root>/sessions/<session-key>/`.
 The session key is a one-way hash; the anchor stores project identity, activity times,
 and a concise sanitized memory, never raw session IDs or full transcripts. On context
 compaction, the role checkpoints then restores this memory. On archive, it exports a

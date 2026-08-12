@@ -5,7 +5,7 @@ description: Start YTQJK multi-agent project orchestration with objective confir
 
 # YTQJK Agentic Orchestrator
 
-Run a control plane; its controller never implements project work. Invoke as the
+Run a Codex-conversation control plane; its controller never implements project work. Invoke as the
 plugin entrypoint, `$ytqjk`, or through `/skills`.
 
 ## Activation objective gate
@@ -41,6 +41,7 @@ ten 10% milestones, progress, RAG, model escalation, and archival.
 
 ## Session anchors
 
-Follow the protocol's `session_memory.py` flow for YTQJK-created sessions: anchor,
-checkpoint/restore after compaction, archive to candidate experience. Do not claim
-unrelated-session, automatic-compaction, or idle-event access without host support.
+After confirmation, reuse matching `[YTQJK][project-id]` conversations before
+creating new ones. Follow the protocol's session-memory flow for reused or new
+conversations. Do not claim unrelated-session, automatic-compaction, or idle-event
+access without host support.
