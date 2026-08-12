@@ -28,7 +28,15 @@ from project_prefetch import (  # noqa: E402
     query_prefetch,
     update_prefetch,
 )
-from rag_common import Chunk, SCHEMA_VERSION, atomic_json, build_lexical, utc_now  # noqa: E402
+from rag_common import (  # noqa: E402
+    DEFAULT_CONFIG,
+    Chunk,
+    SCHEMA_VERSION,
+    atomic_json,
+    build_lexical,
+    scan_project,
+    utc_now,
+)
 
 
 class ProjectTrackingTest(unittest.TestCase):
@@ -57,6 +65,26 @@ class ProjectTrackingTest(unittest.TestCase):
             self.assertTrue((base / "knowledge/projects" / tracked["id"] / "cache").is_dir())
             self.assertEqual(catalog["projects"][tracked["id"]]["tracking_state"], "REGISTERED")
             self.assertFalse((base / "knowledge/projects" / tracked["id"] / "lexical.sqlite3").exists())
+
+    def test_non_git_directory_registers_sub_library_and_supports_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            workspace = base / "notes workspace"
+            workspace.mkdir()
+            (workspace / "guide.md").write_text("普通目录也可以建立项目知识索引。", encoding="utf-8")
+            knowledge = base / "knowledge"
+            self.make_global_index(knowledge, "总库知识")
+
+            identified = MODULE.identify_project(workspace)
+            chunks, stats = scan_project(workspace, DEFAULT_CONFIG, "NON_GIT")
+            result = query_global(knowledge, workspace, "总库知识", "non-git-session", 5)
+
+            self.assertTrue(identified["id"].startswith("notes-workspace--"))
+            self.assertEqual(stats["files"], 1)
+            self.assertEqual(chunks[0].path, "guide.md")
+            self.assertEqual(result["status"], "GLOBAL_FALLBACK_HIT")
+            self.assertTrue((knowledge / "projects" / identified["id"] / "cache").is_dir())
+            self.assertEqual(len(list((knowledge / "sessions").glob("*/anchor.json"))), 1)
 
     def test_p2604_uses_existing_stable_project_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

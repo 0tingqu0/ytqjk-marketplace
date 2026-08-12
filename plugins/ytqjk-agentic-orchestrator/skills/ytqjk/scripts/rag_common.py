@@ -82,7 +82,43 @@ def run_git(project: Path, *args: str, check: bool = True) -> str:
     return result.stdout
 
 
+def is_git_project(project: Path) -> bool:
+    return run_git(project, "rev-parse", "--is-inside-work-tree", check=False).strip() == "true"
+
+
+def _safe_project_name(root: Path) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "-", root.name).strip("-_") or "project"
+
+
+def _directory_fingerprint(root: Path) -> str:
+    entries: list[str] = []
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if is_sensitive_path(relative):
+            continue
+        stat = path.stat()
+        entries.append(f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}")
+    return hashlib.sha256("\n".join(sorted(entries)).encode("utf-8")).hexdigest()
+
+
 def project_identity(project: Path) -> dict[str, str]:
+    project = project.resolve()
+    if not project.is_dir():
+        raise ValueError("项目工作目录不存在或不是目录。")
+    if not is_git_project(project):
+        name = _safe_project_name(project)
+        identity = os.path.normcase(str(project))
+        return {
+            "id": f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}",
+            "name": name,
+            "remote": "",
+            "root": str(project),
+            "head": "NON_GIT",
+            "source_fingerprint": _directory_fingerprint(project),
+            "dirty": "not-applicable",
+        }
     root = Path(run_git(project, "rev-parse", "--show-toplevel").strip()).resolve()
     raw_remote = run_git(root, "remote", "get-url", "origin", check=False).strip()
     common_value = Path(run_git(root, "rev-parse", "--git-common-dir").strip())
@@ -97,7 +133,7 @@ def project_identity(project: Path) -> dict[str, str]:
     normalized_remote = normalize_remote(raw_remote)
     identity = normalized_remote or os.path.normcase(str(canonical_root))
     short_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", root.name).strip("-_") or "project"
+    safe_name = _safe_project_name(root)
     project_id = "p2604_soc" if safe_name.casefold() == "p2604_soc" else f"{safe_name}--{short_hash}"
     head = run_git(root, "rev-parse", "--verify", "HEAD", check=False).strip() or "UNBORN"
     diff_args = ("diff", "--binary", "--full-index", "--no-ext-diff", "--no-renames")
@@ -153,6 +189,16 @@ def ensure_layout(knowledge_root: Path, project: Path) -> tuple[Path, dict[str, 
 
 
 def tracked_paths(project: Path) -> list[str]:
+    project = project.resolve()
+    if not is_git_project(project):
+        paths = []
+        for path in project.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(project).as_posix()
+            if not is_sensitive_path(relative):
+                paths.append(relative)
+        return sorted(paths)
     output = subprocess.run(
         ["git", "-C", str(project), "ls-files", "-z"],
         capture_output=True,

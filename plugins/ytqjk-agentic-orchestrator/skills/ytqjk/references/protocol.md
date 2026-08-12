@@ -19,8 +19,8 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
 
 ## 1. Bootstrap
 
-1. Resolve the target project, current branch, HEAD, and `git status --short` with read-only commands.
-2. Require a clean integration baseline. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes.
+1. Resolve the target work directory first. When it is a Git project, also resolve current branch, HEAD, and `git status --short` with read-only commands; otherwise mark it `NON_GIT` and still register its project sub-library.
+2. Require a clean integration baseline only for Git implementation work. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes. Non-Git directory tasks continue without a Git baseline.
 3. Detect a host with capability-equivalent **Codex conversation/session** create,
    list, read, wait, message, title, pin, and archive operations. After objective
    confirmation, list prior `[YTQJK]` conversations for the current project and

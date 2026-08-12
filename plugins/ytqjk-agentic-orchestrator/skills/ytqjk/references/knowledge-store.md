@@ -70,11 +70,11 @@ Windows and WSL concurrently. Prefer a root on the active Linux filesystem.
 
 ## Project identity
 
-Normalize the Git remote URL and hash it for the short ID. If no remote exists, hash the canonical absolute project path. All worktrees of one remote share one project cache. Record remote, path aliases, HEAD, dirty state, schema version, and last index time in `manifest.json`.
+Every session work directory receives a project sub-library, whether or not it is a Git repository. For Git projects, normalize the remote URL and hash it for the short ID; if no remote exists, hash the canonical Git worktree path. For ordinary directories, hash the canonical absolute directory path. All worktrees of one Git remote share one project cache; ordinary directories remain isolated by path. Record the available Git metadata or `NON_GIT`, plus path aliases, schema version, and last index time in `manifest.json`.
 
 ## Index scope
 
-Default to text files returned by `git ls-files`. Deny common credential paths such as `.env*`, `.npmrc`, `.pypirc`, `.netrc`, token/credential files, private keys, Terraform state/variable files, cloud credential directories, binaries, dependency/vendor directories, generated output, caches, and oversized files. Untracked files require an explicit allowlist. Reject files containing high-confidence private-key, provider-token, credential-URL, or secret-assignment patterns before chunking. This built-in scan is defense in depth, not a replacement for a repository-wide secret scanner; never index a repository that fails its dedicated scan. Never copy raw secrets into chunks, logs, errors, or reports.
+Git projects default to text files returned by `git ls-files`; ordinary directories use a recursive file scan. Both modes deny common credential paths such as `.env*`, `.npmrc`, `.pypirc`, `.netrc`, token/credential files, private keys, Terraform state/variable files, cloud credential directories, binaries, dependency/vendor directories, generated output, caches, and oversized files. Reject files containing high-confidence private-key, provider-token, credential-URL, or secret-assignment patterns before chunking. This built-in scan is defense in depth, not a replacement for a dedicated secret scanner; never copy raw secrets into chunks, logs, errors, or reports.
 
 Canonicalize network remote URLs before persistence: remove URL userinfo, query, and fragment components. Replace local and `file://` remotes with a basename plus one-way fingerprint so private local directory names are not stored. Never write raw remotes containing credentials or private local paths to manifests, catalogs, logs, or chunks.
 
