@@ -120,16 +120,32 @@ async function showProjectLibrary(project) {
 }
 
 function renderSessions() {
-  byId("session-grid").replaceChildren(...state.data.sessions.map((session, index) => {
-    const card = document.createElement("article");
-    card.style.setProperty("--item", index); const details = document.createElement("dl");
-    const status = session.archived_at ? "已归档" : "活动中";
-    [["匿名锚点", session.key], ["项目", session.project], ["最后活动", formatTime(session.last_activity_at)], ["记忆", session.has_memory ? "已保存" : "未保存"], ["状态", status]].forEach(([term, value]) => {
-      const row = document.createElement("div");
-      row.append(text("dt", term), text("dd", value));
-      details.append(row);
+  const groups = new Map();
+  state.data.sessions.forEach((session) => {
+    const group = groups.get(session.project) || [];
+    group.push(session); groups.set(session.project, group);
+  });
+  byId("session-grid").replaceChildren(...[...groups.entries()].map(([project, sessions], index) => {
+    const active = sessions.filter((session) => !session.archived_at);
+    const saved = sessions.filter((session) => session.has_memory);
+    const card = document.createElement("details");
+    card.className = "session-group"; card.style.setProperty("--item", index);
+    const summary = document.createElement("summary");
+    const heading = document.createElement("div");
+    heading.append(text("h3", project), text("p", `${active.length} 活动 · ${sessions.length - active.length} 已归档 · ${saved.length} 已保存记忆`));
+    summary.append(heading, text("span", `${sessions.length} 个会话`));
+    const list = document.createElement("div"); list.className = "session-list";
+    sessions.forEach((session) => {
+      const row = document.createElement("article");
+      const status = session.archived_at ? "已归档" : "活动中";
+      row.append(
+        text("strong", `${status} · ${session.key}`),
+        text("span", `最后活动 ${formatTime(session.last_activity_at)}`),
+        text("span", session.has_memory ? "记忆已保存" : "未保存记忆"),
+      );
+      list.append(row);
     });
-    card.append(text("h3", status), details);
+    card.append(summary, list);
     return card;
   }));
 }
@@ -256,6 +272,9 @@ byId("delete-candidate").onclick = async () => {
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;
 byId("close-project-library").onclick = () => byId("project-library-dialog").close();
+byId("project-library-dialog").onclick = (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
+};
 restoreIntakeProgress();
 loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 setInterval(() => loadSnapshot().catch(() => undefined), 10000);
