@@ -58,9 +58,9 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    plus a short objective when titles are supported. The stable prefix and project ID
    are the reuse key; do not rely on remembered raw session IDs. Every required role
    still exists before its first responsibility.
-7. Pin only the progress role while work is active when pinning is supported. In IDE
-   Agent mode, keep it as a separate visible subagent even when pinning is unavailable.
-8. Anchor every YTQJK-created role after its host session/task ID and project ID are
+7. Pin only the progress role while work is active when pinning is supported. When
+   pinning is unavailable, keep it as a separate visible conversation.
+8. Anchor every YTQJK-created or reused role after its host session ID and project ID are
    available. Use `scripts/session_memory.py anchor`; never store raw session IDs in
    the knowledge root. Anchoring is idempotent: the same host session ID always maps
    to one stable anonymous key and subsequent knowledge access only refreshes it.
@@ -119,15 +119,15 @@ Apply bundled `$caveman`. Be the sole Git writer. Never fix implementation or co
 
 Integrate one bundle at a time so the integration worktree returns clean after each commit. If apply conflicts, stop and return it to a worker. Local commits are allowed after all gates. Push, merge, rebase, tag, amend, and force operations require explicit authorization in the current task.
 
-In IDE Agent mode, the Git role also provisions each dedicated worker worktree from
-the approved clean integration HEAD before that Worker starts. It returns the exact
+The Git role provisions each dedicated worker worktree from the approved clean
+integration HEAD before that Worker starts. It returns the exact
 path and HEAD to the controller, but does not implement in the worktree. Do not remove
 worktrees without explicit cleanup authorization.
 
 ### Progress reporter
 
 Do not enable `$caveman`. Use normal, complete Simplified Chinese. Run only in its own
-task or visible subagent thread; do not send timed updates to the controller. Pin it
+visible conversation; do not send timed updates to the controller. Pin it
 when supported. Report:
 
 - objective and phase;
@@ -253,10 +253,10 @@ Use: `GOAL_INTAKE`, `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`,
 `RUNNING`, `REVIEWING`, `REWORK`, `GIT_GATE`, `BLOCKED`, `DONE`.
 
 Archive only after delivery, evidence registration, downstream acknowledgement, and
-no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active tasks. In IDE
-Agent mode, close completed subagent threads promptly; use stop only for active
-cancellation, and archive after close only when the host exposes it. Otherwise mark
-them `DONE` and report that the UI thread remains visible.
+no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active conversations.
+Close completed conversations promptly; use stop only for active cancellation, and
+archive after close only when the host exposes it. Otherwise mark them `DONE` and
+report that the UI conversation remains visible.
 
 Final order:
 
@@ -266,8 +266,8 @@ Final order:
 4. Git task after commit hashes and clean status are recorded.
 5. Supervisor after final direction `PASS`.
 6. Progress reporter after final report; unpin first.
-7. Task-mode controller after all children are archived. The IDE Agent-mode current
-   chat remains open for the final user handoff.
-8. Task-mode launcher last.
+7. Controller after all role conversations are archived. The activation conversation
+   remains open for the final user handoff.
+8. Launcher last.
 
 On explicit pause/stop, send one stop message to active tasks and stop immediately. Do not poll, read, test, clean, commit, archive, deploy, or update knowledge until the user explicitly resumes.
