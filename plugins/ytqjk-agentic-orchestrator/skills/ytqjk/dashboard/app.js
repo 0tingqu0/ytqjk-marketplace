@@ -3,6 +3,7 @@ const byId = (id) => document.getElementById(id);
 const formatBytes = (value) => new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 }).format(value) + " B";
 const formatTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "未索引";
 const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
+const intakeProgressKey = "ytqjk-last-intake-progress";
 
 function setIntakeProgress(stage, percent, complete = false) {
   byId("intake-progress").hidden = false;
@@ -11,6 +12,19 @@ function setIntakeProgress(stage, percent, complete = false) {
   const bar = byId("intake-progress-bar");
   bar.style.width = `${percent}%`;
   bar.style.backgroundColor = complete ? "#29ae9b" : "#167cba";
+}
+
+function rememberIntakeProgress(stage, percent, status) {
+  localStorage.setItem(intakeProgressKey, JSON.stringify({ stage, percent, status }));
+}
+
+function restoreIntakeProgress() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(intakeProgressKey) || "null");
+    if (!saved || typeof saved.stage !== "string" || typeof saved.percent !== "number") return;
+    setIntakeProgress(saved.stage, saved.percent, true);
+    byId("intake-status").textContent = typeof saved.status === "string" ? saved.status : "";
+  } catch { localStorage.removeItem(intakeProgressKey); }
 }
 
 async function loadSnapshot() {
@@ -108,8 +122,11 @@ async function submitIntake(name, content, encoding) {
   if (!response.ok) throw new Error(payload.error || "保存失败");
   const assessment = payload.assessment;
   const result = payload.state === "approved" ? "已自动批准" : assessment.reasons.join("；");
-  setIntakeProgress(payload.state === "approved" ? "已自动批准" : "等待人工批准", 100, true);
-  byId("intake-status").textContent = `资料已${payload.state === "approved" ? "自动批准" : "存为 CANDIDATE"}，已拆分 ${payload.chunks} 个知识片段：${result}`;
+  const stage = payload.state === "approved" ? "已自动批准" : "等待人工批准";
+  const status = `资料已${payload.state === "approved" ? "自动批准" : "存为 CANDIDATE"}，已拆分 ${payload.chunks} 个知识片段：${result}`;
+  setIntakeProgress(stage, 100, true);
+  byId("intake-status").textContent = status;
+  rememberIntakeProgress(stage, 100, status);
   byId("note").value = ""; byId("file-input").value = "";
   await loadSnapshot();
 }
@@ -123,6 +140,7 @@ function showIntakeError(message) {
   setIntakeProgress("处理失败", 100, true);
   byId("intake-progress-bar").style.backgroundColor = "#e8624d";
   byId("intake-status").textContent = message;
+  rememberIntakeProgress("处理失败", 100, message);
 }
 
 byId("file-input").onchange = async (event) => {
@@ -161,5 +179,6 @@ byId("delete-candidate").onclick = async () => {
 
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;
+restoreIntakeProgress();
 loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 setInterval(() => loadSnapshot().catch(() => undefined), 10000);

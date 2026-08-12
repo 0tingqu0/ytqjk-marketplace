@@ -27,6 +27,7 @@ from rag_security import contains_high_confidence_secret, is_sensitive_path  # n
 from intake_formats import (  # noqa: E402
     SUPPORTED_EXTENSIONS, TEXT_EXTENSIONS, TEXT_FILE_NAMES, extract_upload, supported_extension,
 )
+from knowledge_dedup import find_duplicate  # noqa: E402
 from knowledge_chunks import write_chunks  # noqa: E402
 
 
@@ -81,6 +82,9 @@ def intake_upload(root: Path, name: str, source: bytes) -> dict[str, str]:
         raise ValueError("资料可能包含凭据或敏感内容，未保存。")
     if supported_extension(source_name) in TEXT_EXTENSIONS and not content.strip():
         raise ValueError("文本资料必须非空。")
+    duplicate = find_duplicate(root, content, source)
+    if duplicate is not None:
+        raise ValueError(f"发现相同知识，未重复入库：{duplicate}")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     identifier = f"{timestamp}-{uuid.uuid4().hex[:8]}-{Path(source_name).stem}"
     target = root / INTAKE_DIR / f"{identifier}.md"

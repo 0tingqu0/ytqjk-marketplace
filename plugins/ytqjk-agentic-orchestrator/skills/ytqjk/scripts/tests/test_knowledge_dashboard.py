@@ -190,6 +190,22 @@ class KnowledgeDashboardTest(unittest.TestCase):
 
             self.assertEqual(saved["state"], "candidate")
 
+    def test_intake_rejects_duplicate_knowledge_with_whitespace_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = MODULE.intake_document(root, "first.md", "结论：部署成功。\n证据：测试通过。")
+
+            with self.assertRaisesRegex(ValueError, first["path"]):
+                MODULE.intake_document(root, "second.md", "结论：部署成功。\n\n证据：测试通过。")
+
+    def test_intake_allows_same_title_with_different_knowledge(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            MODULE.intake_document(root, "notes.md", "结论：部署成功。")
+            saved = MODULE.intake_document(root, "notes.md", "结论：需要回滚。")
+
+            self.assertEqual(saved["state"], "candidate")
+
     def test_intake_rejects_unrecognizable_text_upload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaisesRegex(ValueError, "无法识别文本编码"):
