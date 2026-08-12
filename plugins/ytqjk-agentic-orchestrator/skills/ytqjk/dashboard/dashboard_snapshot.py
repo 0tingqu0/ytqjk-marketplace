@@ -107,6 +107,7 @@ def project_library(root: Path, project_id: str) -> dict[str, object] | None:
         "indexed_at": manifest.get("indexed_at"), "files": list(files.values()),
         "file_count": len(files), "chunk_count": len(chunks),
         "expected_files": stats.get("files", 0), "expected_chunks": stats.get("chunks", 0),
+        "prefetch": read_prefetch(project_dir),
     }
 
 
@@ -124,6 +125,12 @@ def read_project_chunks(database: Path) -> list[dict[str, object]]:
         {"path": row[0], "line_start": row[1], "line_end": row[2], "content": row[3]}
         for row in rows
     ]
+
+
+def read_prefetch(project_dir: Path) -> list[dict[str, object]]:
+    cached = read_json(project_dir / "cache" / "global-knowledge.json")
+    entries = cached.get("entries", [])
+    return entries if isinstance(entries, list) else []
 
 
 def session_rows(root: Path) -> list[dict[str, object]]:

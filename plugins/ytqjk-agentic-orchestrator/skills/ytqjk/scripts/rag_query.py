@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from global_store import chunks_fingerprint, scan_global
+from project_prefetch import update_prefetch
 from rag_common import (
     DEFAULT_CONFIG,
     SCHEMA_VERSION,
@@ -139,6 +140,7 @@ def command_query(args: argparse.Namespace) -> dict[str, Any]:
     )
     for row in global_lexical:
         row["scope"] = "global"
+    update_prefetch(project_dir, args.query, global_lexical)
 
     misses = (
         0

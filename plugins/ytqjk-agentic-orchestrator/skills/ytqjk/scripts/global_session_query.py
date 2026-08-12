@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from platform_paths import default_knowledge_root
+from project_prefetch import update_prefetch
 from project_tracking import track_project
 from rag_common import SCHEMA_VERSION, lexical_query, load_json
 from session_memory import ensure_anchor
@@ -26,6 +27,7 @@ def query_global(
     if manifest.get("schema_version") != SCHEMA_VERSION or not database.is_file():
         raise RuntimeError("全局知识索引不可用或已过期，需要重新建立索引。")
     results = lexical_query(database, query, max(1, min(limit, 20)))
+    prefetched = update_prefetch(knowledge_root / "projects" / project_id, query, results)
     return {
         "ok": True,
         "scope": "approved-global-read-only",
@@ -35,6 +37,7 @@ def query_global(
         "indexed_at": manifest.get("indexed_at"),
         "stale": False,
         "result_count": len(results),
+        "prefetch_count": len(prefetched),
         "results": results,
         "anchor_key": anchor["session_key"],
         "anchor_created": created,

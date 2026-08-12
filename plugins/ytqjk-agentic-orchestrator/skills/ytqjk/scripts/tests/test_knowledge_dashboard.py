@@ -79,6 +79,20 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertEqual(library["files"][0][1]["content"], "two")
             self.assertIsNone(MODULE.project_library(root, "../outside"))
 
+    def test_project_library_lists_prefetched_global_knowledge(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "projects" / "demo--123"
+            project.mkdir(parents=True)
+            (project / "manifest.json").write_text('{"identity":{"name":"demo"},"stats":{}}', encoding="utf-8")
+            cache = project / "cache" / "global-knowledge.json"
+            cache.parent.mkdir(parents=True)
+            cache.write_text('{"entries":[{"path":"personal-experience/approved/session.md"}]}', encoding="utf-8")
+
+            library = MODULE.project_library(root, "demo--123")
+
+            self.assertEqual(library["prefetch"][0]["path"], "personal-experience/approved/session.md")
+
     def test_safe_document_rejects_paths_outside_knowledge_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

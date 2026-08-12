@@ -93,13 +93,22 @@ async function showProjectLibrary(project) {
   if (!response.ok) { byId("project-library-meta").textContent = "无法读取该项目子库"; return; }
   const library = await response.json();
   byId("project-library-meta").textContent = `${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块 · ${formatTime(library.indexed_at)}`;
-  byId("project-library-empty").hidden = library.files.length > 0;
-  byId("project-library-files").replaceChildren(...library.files.map((chunks) => {
+  byId("project-library-empty").hidden = library.files.length > 0 || library.prefetch.length > 0;
+  const prefetch = library.prefetch.map((entry) => {
+    const item = document.createElement("details"); item.className = "project-knowledge";
+    const summary = text("summary", `总库预取 · ${entry.path} · 第 ${entry.line_start}-${entry.line_end} 行`);
+    item.append(summary, text("pre", entry.content)); return item;
+  });
+  const source = library.files.map((chunks) => {
     const item = document.createElement("details"); const summary = text("summary", `${chunks[0].path} · ${chunks.length} 分块`);
     const content = document.createElement("div"); content.className = "project-chunks";
     chunks.forEach((chunk) => { const part = document.createElement("article"); part.append(text("small", `第 ${chunk.line_start}-${chunk.line_end} 行`), text("pre", chunk.content)); content.append(part); });
     item.append(summary, content); return item;
-  }));
+  });
+  const content = byId("project-library-files");
+  content.replaceChildren();
+  if (prefetch.length) { content.append(text("h3", "总库预取缓存"), ...prefetch); }
+  if (source.length) { content.append(text("h3", "项目源码索引"), ...source); }
 }
 
 function renderSessions() {

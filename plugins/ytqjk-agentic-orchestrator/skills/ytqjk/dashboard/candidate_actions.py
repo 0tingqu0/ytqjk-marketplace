@@ -16,6 +16,7 @@ def candidate_document(root: Path, raw_path: str) -> Path | None:
     return path if path.suffix == ".md" and path.is_file() else None
 
 
+
 def update_candidate(root: Path, raw_path: str, content: str) -> dict[str, str]:
     path = candidate_document(root, raw_path)
     if path is None:

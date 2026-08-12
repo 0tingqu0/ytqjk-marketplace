@@ -38,7 +38,7 @@ Use the resolved root for this layout:
       vectors/
 ```
 
-The personal root is durable. `global-cache` indexes only `verified` plus both `approved` areas. Each project directory is a rebuildable computer-local cache. Query both global and current-project caches, then fuse lexical and vector ranks. Never auto-delete caches; mark stale and report size/last access. Cache deletion requires explicit approval. Back up metadata before schema migrations.
+The personal root is durable. `global-cache` indexes only `verified` plus both `approved` areas. Each project directory is a rebuildable computer-local cache. On a project query, cache the matching approved global chunks under `cache/global-knowledge.json`; this is a prediction driven by current project questions, not a second source of truth. Query both global and current-project caches, then fuse lexical and vector ranks. Never auto-delete caches; mark stale and report size/last access. Cache deletion requires explicit approval. Back up metadata before schema migrations.
 
 WSL2 uses its Linux root by default. Only use `/mnt/d/knowledge` when the user
 explicitly chooses to share it, and never open the same SQLite or LanceDB cache from
@@ -74,7 +74,7 @@ Store thresholds in `config.json` and allow project overrides. Run embeddings lo
 
 Write raw discoveries, task state, errors, and hypotheses only to the project cache. Verified reusable facts may enter `verified` with source and review evidence.
 
-Generate personal lessons under `personal-experience/candidates`; only explicit user approval promotes them to `approved`. Generate reviewed error lessons under `error-experience/candidates`; require confirmed root cause, effective fix, and passing verification before user-approved promotion to `approved`. Mark unresolved hypotheses `UNVERIFIED` and never promote them.
+Direct dashboard uploads and all session lessons enter the global `personal-experience/candidates`; only explicit user approval promotes them to `approved`. A project ID in the session record is metadata for retrieval and cache prediction, not a separate source of truth. Generate reviewed global error lessons under `error-experience/candidates`; require confirmed root cause, effective fix, and passing verification before user-approved promotion to `approved`. Mark unresolved hypotheses `UNVERIFIED` and never promote them.
 
 Show candidate approvals only in the RAG task. Do not interrupt controller or progress tasks.
 
