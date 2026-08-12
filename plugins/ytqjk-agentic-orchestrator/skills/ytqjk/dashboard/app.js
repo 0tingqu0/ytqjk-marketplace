@@ -77,7 +77,7 @@ function renderProjects() {
   byId("project-grid").replaceChildren(...state.data.projects.map((project, index) => {
     const card = document.createElement("article");
     card.style.setProperty("--item", index); const details = document.createElement("dl");
-    [["状态", project.tracking], ["索引", formatTime(project.indexed_at)], ["内容", `${project.files} 文件 · ${project.chunks} 分块`], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
+    [["状态", project.tracking], ["知识缓存", `${project.cache.entries} 分块 · ${formatBytes(project.cache.used_bytes)}`], ["源码索引", `${project.files} 文件 · ${project.chunks} 分块`], ["索引", formatTime(project.indexed_at)], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
       const row = document.createElement("div");
       row.append(text("dt", term), text("dd", value));
       details.append(row);
@@ -99,7 +99,8 @@ async function showProjectLibrary(project) {
   if (!response.ok) { byId("project-library-meta").textContent = "无法读取该项目子库"; return; }
   const library = await response.json();
   const cacheState = library.cache.capacity_exceeded ? " · 已超限" : "";
-  byId("project-library-meta").textContent = `${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块 · 缓存 ${formatBytes(library.cache.project_used_bytes)}/${formatBytes(library.cache.capacity_bytes)} · ${library.cache.policy}${cacheState}`;
+  byId("project-library-meta").textContent = `知识缓存 ${library.prefetch.length} 分块 · ${formatBytes(library.cache.used_bytes)}；源码索引 ${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块；子库占用 ${formatBytes(library.cache.project_used_bytes)}/${formatBytes(library.cache.capacity_bytes)} · ${library.cache.policy}${cacheState}`;
+  byId("project-library-empty").textContent = "该项目尚未缓存知识，且尚未建立可浏览的源码索引。";
   byId("project-library-empty").hidden = library.files.length > 0 || library.prefetch.length > 0;
   const prefetch = library.prefetch.map((entry) => {
     const item = document.createElement("details"); item.className = "project-knowledge";

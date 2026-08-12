@@ -114,6 +114,29 @@ class KnowledgeDashboardTest(unittest.TestCase):
             self.assertEqual(library["cache"]["capacity_bytes"], 1024**3)
             self.assertEqual(library["cache"]["policy"], "LFU_LRU")
 
+    def test_project_rows_separate_knowledge_cache_from_source_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "projects" / "demo--123"
+            project.mkdir(parents=True)
+            (project / "manifest.json").write_text(
+                '{"identity":{"name":"demo"},"stats":{"files":0,"chunks":0}}',
+                encoding="utf-8",
+            )
+            cache = project / "cache" / "global-knowledge.json"
+            cache.parent.mkdir(parents=True)
+            cache.write_text(
+                '{"entries":[{"path":"verified/fact.md","line_start":1,'
+                '"line_end":1,"content":"cached knowledge","query":"cached"}]}',
+                encoding="utf-8",
+            )
+
+            project_row = MODULE.build_snapshot(root, MODULE.safe_document)["projects"][0]
+
+            self.assertEqual(project_row["cache"]["entries"], 1)
+            self.assertEqual(project_row["files"], 0)
+            self.assertEqual(project_row["chunks"], 0)
+
     def test_safe_document_rejects_paths_outside_knowledge_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -86,7 +86,8 @@ def project_rows(root: Path) -> list[dict[str, object]]:
         if not isinstance(identity, dict): identity = {}
         if not isinstance(stats, dict): stats = {}
         if not isinstance(catalog_row, dict): catalog_row = {}
-        rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": manifest.get("index_state", catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED"))})
+        project_dir = project_root / project_id
+        rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "cache": prefetch_stats(project_dir), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": manifest.get("index_state", catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED"))})
     return rows
 
 
