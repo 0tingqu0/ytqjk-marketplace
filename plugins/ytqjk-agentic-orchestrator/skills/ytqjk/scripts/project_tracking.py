@@ -9,7 +9,7 @@ from rag_common import SCHEMA_VERSION, atomic_json, load_json, run_git, utc_now
 from rag_security import normalize_remote
 
 
-def track_project(knowledge_root: Path, project: Path) -> dict[str, str]:
+def identify_project(project: Path) -> dict[str, str]:
     root = Path(run_git(project, "rev-parse", "--show-toplevel").strip()).resolve()
     common = Path(run_git(root, "rev-parse", "--git-common-dir").strip())
     common = (common if common.is_absolute() else root / common).resolve()
@@ -19,6 +19,17 @@ def track_project(knowledge_root: Path, project: Path) -> dict[str, str]:
     name_source = PurePosixPath(remote).name if remote else canonical_root.name
     name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name_source).strip("-_") or "project"
     project_id = f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}"
+    return {"id": project_id, "name": name, "root": str(root), "remote": remote}
+
+
+def track_project(
+    knowledge_root: Path,
+    project: Path,
+    identity: dict[str, str] | None = None,
+) -> dict[str, str]:
+    identified = identity or identify_project(project)
+    root = Path(identified["root"])
+    project_id, name, remote = identified["id"], identified["name"], identified["remote"]
     project_dir = knowledge_root / "projects" / project_id
     for relative in ("cache", "handoffs", "errors", "vectors"):
         (project_dir / relative).mkdir(parents=True, exist_ok=True)

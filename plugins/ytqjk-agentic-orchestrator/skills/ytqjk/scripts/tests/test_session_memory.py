@@ -68,16 +68,13 @@ class SessionMemoryTest(unittest.TestCase):
             self.assertFalse(created_second)
             self.assertEqual(len(list((root / "sessions").glob("*/anchor.json"))), 1)
 
-    def test_query_anchor_does_not_run_full_git_identity(self) -> None:
+    def test_anchor_rejects_cross_project_access(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "knowledge"
-            project = Path(temporary) / "project"
-            project.mkdir()
+            root = Path(temporary)
+            MODULE.ensure_anchor(root, "thread-bound", "project-a")
 
-            result = QUERY_MODULE.anchor_query(root, project, "thread-6")
-
-            self.assertTrue(result["created"])
-            self.assertEqual(result["session_key"], MODULE.session_key("thread-6"))
+            with self.assertRaisesRegex(ValueError, "禁止访问其他项目子库"):
+                MODULE.ensure_anchor(root, "thread-bound", "project-b")
 
     def test_memory_rejects_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

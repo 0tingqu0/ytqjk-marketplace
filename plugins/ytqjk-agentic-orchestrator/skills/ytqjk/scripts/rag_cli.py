@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any
 
+from global_session_query import query_global
 from global_store import chunks_fingerprint, scan_global
 from json_output import write_json
 from platform_paths import default_knowledge_root
+from project_prefetch import enforce_project_capacity
 from rag_common import (
     DEFAULT_CONFIG,
     SCHEMA_VERSION,
@@ -17,7 +20,7 @@ from rag_common import (
     scan_project,
     utc_now,
 )
-from rag_query import GLOBAL_CACHE, build_vector_cache, command_query, vector_enabled
+from rag_query import GLOBAL_CACHE, build_vector_cache, vector_enabled
 
 
 def command_init(args: argparse.Namespace) -> dict[str, Any]:
@@ -67,7 +70,11 @@ def command_index(args: argparse.Namespace) -> dict[str, Any]:
         }
     )
     atomic_json(manifest_path, manifest)
-    return {"project_dir": str(project_dir), "stats": stats, "vector": manifest["vector"]}
+    evicted = enforce_project_capacity(project_dir)
+    if "lexical.sqlite3" in evicted:
+        raise RuntimeError("项目索引超过 1 GiB，已丢弃本次可重建索引。")
+    current = load_json(manifest_path, manifest)
+    return {"project_dir": str(project_dir), "stats": stats, "vector": current["vector"]}
 
 
 def command_index_global(args: argparse.Namespace) -> dict[str, Any]:
@@ -103,6 +110,14 @@ def command_index_global(args: argparse.Namespace) -> dict[str, Any]:
     return {"global_dir": str(global_dir), "stats": stats, "vector": vector_info}
 
 
+def command_query(args: argparse.Namespace) -> dict[str, object]:
+    if not args.session_id.strip():
+        raise ValueError("查询必须提供稳定 --session-id 以绑定当前项目子库。")
+    return query_global(
+        args.knowledge_root, args.project_root, args.query, args.session_id, args.limit
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Local YTQJK agentic RAG cache.")
     result.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
@@ -114,6 +129,7 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--vector-mode", choices=("off", "auto", "on"))
         if name == "query":
             sub.add_argument("query")
+            sub.add_argument("--session-id", default=os.environ.get("CODEX_THREAD_ID", ""))
             sub.add_argument("--limit", type=int, default=8)
     global_index = subparsers.add_parser("index-global")
     global_index.add_argument("--vector-mode", choices=("off", "auto", "on"))

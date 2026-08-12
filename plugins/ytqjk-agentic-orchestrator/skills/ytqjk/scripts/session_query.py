@@ -7,17 +7,10 @@ import sys
 from pathlib import Path
 
 from platform_paths import default_knowledge_root
-from session_memory import ensure_anchor
 
 
-RAG_CLI = Path(__file__).with_name("rag_cli.py")
+QUERY_CLI = Path(__file__).with_name("global_session_query.py")
 QUERY_TIMEOUT_SECONDS = 30
-
-
-def anchor_query(root: Path, project_root: Path, session_id: str) -> dict[str, object]:
-    project_id = project_root.resolve().name or "project"
-    anchor, created = ensure_anchor(root, session_id, project_id)
-    return {"session_key": anchor["session_key"], "created": created}
 
 
 def main() -> int:
@@ -29,20 +22,13 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=8)
     args = parser.parse_args()
     root, project = args.knowledge_root.resolve(), args.project_root.resolve()
-    try:
-        anchor_query(root, project, args.session_id)
-    except (OSError, ValueError, RuntimeError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        return 1
     command = [
         sys.executable,
-        str(RAG_CLI),
-        "--knowledge-root",
-        str(root),
-        "query",
-        "--project-root",
-        str(project),
+        str(QUERY_CLI),
         args.query,
+        "--knowledge-root", str(root),
+        "--project-root", str(project),
+        "--session-id", args.session_id,
         "--limit",
         str(args.limit),
     ]

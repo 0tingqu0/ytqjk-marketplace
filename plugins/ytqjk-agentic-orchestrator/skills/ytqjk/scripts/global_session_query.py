@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 from platform_paths import default_knowledge_root
-from project_prefetch import update_prefetch
-from project_tracking import track_project
+from project_prefetch import prefetch_stats, query_prefetch, update_prefetch
+from project_tracking import identify_project, track_project
 from rag_common import SCHEMA_VERSION, lexical_query, load_json
 from session_memory import ensure_anchor
 
@@ -18,29 +18,92 @@ GLOBAL_CACHE = "global-cache"
 def query_global(
     knowledge_root: Path, project_root: Path, query: str, session_id: str, limit: int
 ) -> dict[str, object]:
-    project = track_project(knowledge_root, project_root)
+    if not query.strip():
+        raise ValueError("知识检索问题不能为空。")
+    project = identify_project(project_root)
     project_id = project["id"]
     anchor, created = ensure_anchor(knowledge_root, session_id, project_id)
+    track_project(knowledge_root, project_root, project)
+    project_dir = knowledge_root / "projects" / project_id
+    cached = query_prefetch(project_dir, query, limit)
+    if cached:
+        return _result(
+            project_id, knowledge_root, cached[0].get("cached_at"), cached, anchor, created,
+            "PROJECT_CACHE_HIT", "current-project-cache-only",
+        )
+    project_database = project_dir / "lexical.sqlite3"
+    project_manifest = load_json(project_dir / "manifest.json", {})
+    if (
+        project_database.is_file()
+        and project_manifest.get("schema_version") != SCHEMA_VERSION
+    ):
+        raise RuntimeError("项目知识索引安全版本已过期，需要重新建立索引。")
+    project_results = (
+        lexical_query(project_database, query, max(1, min(limit, 20)))
+        if project_database.is_file()
+        and project_manifest.get("schema_version") == SCHEMA_VERSION
+        else []
+    )
+    if project_results:
+        for row in project_results:
+            row["scope"] = "project-source-cache"
+        return _result(
+            project_id, knowledge_root, project_manifest.get("indexed_at"),
+            project_results, anchor, created, "PROJECT_CACHE_HIT",
+            "current-project-cache-only",
+        )
     cache = knowledge_root / GLOBAL_CACHE
     manifest = load_json(cache / "manifest.json", {})
     database = cache / "lexical.sqlite3"
-    if manifest.get("schema_version") != SCHEMA_VERSION or not database.is_file():
+    global_absent = not manifest and not database.is_file()
+    if not global_absent and (
+        manifest.get("schema_version") != SCHEMA_VERSION or not database.is_file()
+    ):
         raise RuntimeError("全局知识索引不可用或已过期，需要重新建立索引。")
-    results = lexical_query(database, query, max(1, min(limit, 20)))
-    prefetched = update_prefetch(knowledge_root / "projects" / project_id, query, results)
+    results = (
+        [] if global_absent
+        else lexical_query(database, query, max(1, min(limit, 20)))
+    )
+    for row in results:
+        row["scope"] = "global-fallback"
+    prefetched = update_prefetch(project_dir, query, results) if results else []
+    status = "GLOBAL_FALLBACK_HIT" if results else "KNOWLEDGE_MISS"
+    scope = "global-fallback-current-project" if results else "no-knowledge"
+    result = _result(
+        project_id, knowledge_root, manifest.get("indexed_at"), results,
+        anchor, created, status, scope,
+    )
+    result["prefetch_count"] = len(prefetched)
+    if not results:
+        result["next_action"] = "SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE"
+        result["intake_interface"] = "knowledge_intake_cli.py"
+    return result
+
+
+def _result(
+    project_id: str,
+    knowledge_root: Path,
+    indexed_at: object,
+    results: list[dict[str, object]],
+    anchor: dict[str, object],
+    created: bool,
+    status: str,
+    scope: str,
+) -> dict[str, object]:
     return {
         "ok": True,
-        "scope": "approved-global-read-only",
+        "status": status,
+        "scope": scope,
         "project_id": project_id,
         "project_tracking": "REGISTERED",
         "knowledge_root": str(knowledge_root),
-        "indexed_at": manifest.get("indexed_at"),
+        "indexed_at": indexed_at,
         "stale": False,
         "result_count": len(results),
-        "prefetch_count": len(prefetched),
         "results": results,
         "anchor_key": anchor["session_key"],
         "anchor_created": created,
+        "cache": prefetch_stats(knowledge_root / "projects" / project_id),
     }
 
 

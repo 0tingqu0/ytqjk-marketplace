@@ -299,6 +299,11 @@ def lexical_query(database: Path, query: str, limit: int) -> list[dict[str, Any]
                 "ORDER BY score LIMIT ?",
                 (phrase, limit),
             ).fetchall()
+            if not rows:
+                rows = connection.execute(
+                    "SELECT *, 0.0 AS score FROM chunks WHERE content LIKE ? LIMIT ?",
+                    (f"%{query}%", limit),
+                ).fetchall()
         except sqlite3.OperationalError:
             rows = connection.execute(
                 "SELECT *, 0.0 AS score FROM chunks WHERE content LIKE ? LIMIT ?",

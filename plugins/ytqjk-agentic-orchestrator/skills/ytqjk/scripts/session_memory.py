@@ -37,6 +37,9 @@ def read_anchor(root: Path, session_id: str) -> dict[str, object]:
 def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[str, object], bool]:
     validate_session_id(session_id)
     existing = read_anchor(root, session_id)
+    bound_project = existing.get("project_id")
+    if existing and bound_project != project_id:
+        raise ValueError(f"会话已绑定项目 {bound_project}，禁止访问其他项目子库。")
     now = utc_now()
     anchor = {
         "schema_version": 1,
