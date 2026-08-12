@@ -41,6 +41,7 @@ class KnowledgeDashboardTest(unittest.TestCase):
 
             self.assertEqual(data["counts"], {"verified": 1, "approved": 1, "candidate": 1, "sessions": 0})
             self.assertEqual({item["state"] for item in data["documents"]}, {"verified", "approved", "candidate"})
+            self.assertEqual(data["global_library"]["approved"], 1)
 
     def test_snapshot_lists_anonymous_session_anchors(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

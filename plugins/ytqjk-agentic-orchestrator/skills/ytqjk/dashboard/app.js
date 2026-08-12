@@ -39,7 +39,16 @@ async function loadSnapshot() {
   byId("root").textContent = state.data.root;
   byId("updated").textContent = "已刷新 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
   byId("global-status").textContent = `全局索引 ${state.data.global.indexed_at ? formatTime(state.data.global.indexed_at) : "未建立"}`;
-  renderDocuments(); renderProjects(); renderSessions(); document.body.classList.remove("is-loading");
+  renderLibraries(); renderDocuments(); renderProjects(); renderSessions(); document.body.classList.remove("is-loading");
+}
+
+function renderLibraries() {
+  const library = state.data.global_library;
+  const details = byId("global-library");
+  details.replaceChildren(...[["位置", library.path], ["全局索引", formatTime(library.indexed_at)], ["内容", `${library.files} 文件 · ${library.chunks} 分块`], ["状态", `已验证 ${library.verified} · 已批准 ${library.approved} · 候选 ${library.candidate}`]].map(([term, value]) => {
+    const row = document.createElement("div"); row.append(text("dt", term), text("dd", value)); return row;
+  }));
+  byId("project-library-count").textContent = `${state.data.projects.length} 个`;
 }
 
 function renderDocuments() {
@@ -62,7 +71,7 @@ function renderProjects() {
   byId("project-grid").replaceChildren(...state.data.projects.map((project, index) => {
     const card = document.createElement("article");
     card.style.setProperty("--item", index); const details = document.createElement("dl");
-    [["索引", formatTime(project.indexed_at)], ["内容", `${project.files} 文件 · ${project.chunks} 分块`], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
+    [["状态", project.tracking], ["索引", formatTime(project.indexed_at)], ["内容", `${project.files} 文件 · ${project.chunks} 分块`], ["向量", project.vector], ["Git", `${project.head} · ${project.dirty}`]].forEach(([term, value]) => {
       const row = document.createElement("div");
       row.append(text("dt", term), text("dd", value));
       details.append(row);

@@ -19,6 +19,10 @@
       <article><span>锚定会话</span><strong id="session-count">-</strong></article>
       <article class="root"><span>知识根</span><strong id="root">-</strong></article>
     </section>
+    <section class="libraries" aria-label="知识库结构">
+      <article class="global-library"><div><span class="section-kicker">总库</span><h2>总知识库</h2></div><dl id="global-library"></dl></article>
+      <article class="project-library"><div><span class="section-kicker">子库</span><h2>项目知识子库</h2><p>项目首次访问后自动登记；按需建立源码索引。</p></div><strong id="project-library-count">-</strong></article>
+    </section>
     <section class="workspace">
       <aside>
         <section class="intake" aria-labelledby="intake-title">
@@ -43,7 +47,7 @@
         <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="approve-candidate" hidden>批准入库</button><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
       </section>
     </section>
-    <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目缓存</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>
+    <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目知识子库</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>
     <section class="projects"><div class="section-title"><div><span class="section-kicker">会话层</span><h2>锚定会话</h2></div><span>仅显示匿名元数据</span></div><div id="session-grid"></div></section>
   </main>
   <script src="app.js"></script>
