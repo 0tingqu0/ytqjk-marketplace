@@ -20,5 +20,5 @@ def assess_for_approval(content: str, is_image: bool) -> dict[str, object]:
         reasons.append("缺少可追溯的来源、证据或验证线索")
     return {
         "decision": "READY_FOR_REVIEW" if not reasons else "NOT_READY",
-        "reasons": reasons or ["满足完整性与可追溯性要求，可自动批准"],
+        "reasons": reasons or ["满足完整性与可追溯性要求，可进入人工复审"],
     }

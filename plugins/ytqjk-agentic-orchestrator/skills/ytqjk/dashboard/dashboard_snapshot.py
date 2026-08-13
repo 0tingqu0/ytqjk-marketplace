@@ -4,7 +4,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-from approval_promotion import promote_eligible
 from archive_sync import sync_archived_sessions
 from project_prefetch import list_prefetch, prefetch_stats
 
@@ -27,7 +26,6 @@ def read_json(path: Path) -> dict[str, object]:
 
 def snapshot(root: Path, safe_document: object) -> dict[str, object]:
     sync_archived_sessions(root)
-    promote_eligible(root)
     documents = [
         row for relative, label, state in SECTIONS for row in relative_files(root, relative, label, state, safe_document)
     ]

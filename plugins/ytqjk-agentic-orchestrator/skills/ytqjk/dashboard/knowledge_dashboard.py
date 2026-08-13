@@ -19,7 +19,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(DASHBOARD_DIR))
 
 from approval_assessment import assess_for_approval  # noqa: E402
-from approval_promotion import promote, promote_eligible  # noqa: E402
+from approval_promotion import promote  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from dashboard_snapshot import project_library, snapshot as build_snapshot  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
@@ -120,11 +120,10 @@ def intake_upload(
     chunks = write_chunks(root, identifier, source_name, content)
     report = report.replace("- 原件：", f"- 知识片段：{len(chunks)} 个\n- 原件：")
     target.write_text(metadata + report + (content or "图片未进行文字识别，已记录文件元数据。"), encoding="utf-8")
-    promoted = promote_eligible(root)
     path = target.relative_to(root).as_posix()
     return {
-        "path": path.replace("/candidates/", "/approved/") if path in promoted else path,
-        "state": "approved" if path in promoted else "candidate",
+        "path": path,
+        "state": "candidate",
         "assessment": assessment,
         "chunks": len(chunks),
     }
@@ -183,10 +182,6 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
                 raise ValueError("候选资料路径或内容无效。")
             result = update_candidate(self.knowledge_root, path, content)
             result["assessment"] = assess_for_approval(content, False)
-            promoted = promote_eligible(self.knowledge_root)
-            if result["path"] in promoted:
-                result["path"] = result["path"].replace("/candidates/", "/approved/")
-                result["state"] = "approved"
             self.send_json({"ok": True, **result})
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)

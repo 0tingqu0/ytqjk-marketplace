@@ -165,12 +165,8 @@ async function showDocument(item) {
   const payload = await response.json();
   byId("content").value = payload.content;
   state.selected = item;
-  byId("approve-candidate").hidden = isReadyForApproval(payload.content);
+  byId("approve-candidate").hidden = false;
   renderDocuments();
-}
-
-function isReadyForApproval(content) {
-  return content.includes("结论：`READY_FOR_REVIEW`");
 }
 
 async function candidateRequest(method, payload, endpoint = "/api/candidate") {
@@ -189,9 +185,8 @@ async function submitIntake(name, content, encoding, purpose, relativePath = "",
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "保存失败");
   const assessment = payload.assessment;
-  const result = payload.state === "approved" ? "已自动批准" : assessment.reasons.join("；");
-  const stage = payload.state === "approved" ? "已自动批准" : "等待人工批准";
-  const status = `资料已${payload.state === "approved" ? "自动批准" : "存为 CANDIDATE"}，已拆分 ${payload.chunks} 个知识片段：${result}`;
+  const stage = assessment.decision === "READY_FOR_REVIEW" ? "可人工复审" : "等待补充资料";
+  const status = `资料已存为 CANDIDATE，已拆分 ${payload.chunks} 个知识片段：${assessment.reasons.join("；")}`;
   setIntakeProgress(stage, 100, true);
   byId("intake-status").textContent = status;
   rememberIntakeProgress(stage, 100, status);
@@ -211,19 +206,19 @@ async function submitFile(file) {
 
 async function submitFolder(files) {
   const total = files.length;
-  let approved = 0; let candidate = 0; let rejected = 0;
+  let ready = 0; let needsWork = 0; let rejected = 0;
   const purpose = byId("purpose").value;
   for (const [index, file] of files.entries()) {
     setIntakeProgress(`导入 ${index + 1}/${total}：${file.name}`, Math.round((index / total) * 90));
     try {
       const result = await submitIntake(file.name, await fileContent(file), "base64", purpose, file.webkitRelativePath, false, false);
-      if (result.state === "approved") approved += 1; else candidate += 1;
+      if (result.assessment.decision === "READY_FOR_REVIEW") ready += 1; else needsWork += 1;
     } catch { rejected += 1; }
-    setIntakeProgress(`自动批准 ${approved} · 候选 ${candidate} · 拒绝 ${rejected}`, Math.round(((index + 1) / total) * 100), index + 1 === total);
+    setIntakeProgress(`可复审 ${ready} · 待补充 ${needsWork} · 拒绝 ${rejected}`, Math.round(((index + 1) / total) * 100), index + 1 === total);
   }
-  const status = `文件夹已处理 ${total} 项：自动批准 ${approved} 项，候选 ${candidate} 项，拒绝 ${rejected} 项`;
+  const status = `文件夹已处理 ${total} 项：可复审 ${ready} 项，待补充 ${needsWork} 项，拒绝 ${rejected} 项`;
   byId("intake-status").textContent = status;
-  rememberIntakeProgress(`自动批准 ${approved} · 候选 ${candidate} · 拒绝 ${rejected}`, 100, status);
+  rememberIntakeProgress(`可复审 ${ready} · 待补充 ${needsWork} · 拒绝 ${rejected}`, 100, status);
   byId("purpose").value = ""; byId("folder-input").value = "";
   await loadSnapshot();
 }
@@ -257,7 +252,7 @@ dropZone.ondrop = async (event) => {
 byId("submit-intake").onclick = () => submitIntake("dashboard-note.md", byId("note").value, "utf8", byId("purpose").value).catch((error) => showIntakeError(error.message));
 byId("save-candidate").onclick = async () => {
   if (!state.selected || state.selected.state !== "candidate") return;
-  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("approve-candidate").hidden = result.state === "approved" || result.assessment.decision === "READY_FOR_REVIEW"; byId("intake-status").textContent = result.state === "approved" ? "候选已自动批准" : `候选已保存：${result.assessment.reasons.join("；")}`; await loadSnapshot(); }
+  try { const result = await candidateRequest("PUT", { path: state.selected.path, content: byId("content").value }); byId("intake-status").textContent = `候选已保存：${result.assessment.reasons.join("；")}`; await loadSnapshot(); }
   catch (error) { byId("intake-status").textContent = error.message; }
 };
 byId("approve-candidate").onclick = async () => {

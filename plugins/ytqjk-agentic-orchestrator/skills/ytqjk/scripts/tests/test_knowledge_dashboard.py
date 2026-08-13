@@ -193,7 +193,8 @@ class KnowledgeDashboardTest(unittest.TestCase):
             not_ready = MODULE.intake_document(root, "brief.md", "暂存结论")
 
             self.assertEqual(ready["assessment"]["decision"], "READY_FOR_REVIEW")
-            self.assertEqual(ready["state"], "approved")
+            self.assertEqual(ready["state"], "candidate")
+            self.assertIn("/candidates/", ready["path"])
             self.assertTrue((root / ready["path"]).is_file())
             self.assertEqual(not_ready["assessment"]["decision"], "NOT_READY")
             self.assertIn("## 批准评估", (root / ready["path"]).read_text(encoding="utf-8"))
@@ -209,6 +210,24 @@ class KnowledgeDashboardTest(unittest.TestCase):
             approved = root / saved["path"].replace("/candidates/", "/approved/")
             self.assertTrue(approved.is_file())
             self.assertIn("approval: manual-dashboard", approved.read_text(encoding="utf-8"))
+
+    def test_ready_candidate_stays_candidate_after_edit_and_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready_content = (
+                "来源：https://example.test/evidence\n测试结果：通过。\n"
+                + "可复用结论。" * 30
+            )
+            saved = MODULE.intake_document(root, "evidence.md", ready_content)
+
+            updated = MODULE.update_candidate(root, saved["path"], ready_content + "\n补充证据。")
+            MODULE.snapshot(root)
+
+            self.assertEqual(updated["state"], "candidate")
+            self.assertTrue((root / saved["path"]).is_file())
+            self.assertFalse(
+                (root / saved["path"].replace("/candidates/", "/approved/")).exists()
+            )
 
     def test_intake_rejects_secrets_and_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

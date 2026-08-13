@@ -8,22 +8,6 @@ from approval_assessment import assess_for_approval
 from rag_security import contains_high_confidence_secret
 
 
-CANDIDATE_ROOTS = ("personal-experience/candidates", "error-experience/candidates")
-
-
-def promote_eligible(root: Path) -> list[str]:
-    promoted = []
-    for relative in CANDIDATE_ROOTS:
-        source_root = root / relative
-        if not source_root.is_dir():
-            continue
-        documents = [*source_root.glob("*.md"), *(source_root / "imports").glob("*.md")]
-        for path in documents:
-            if promote(root, path):
-                promoted.append(path.relative_to(root).as_posix())
-    return promoted
-
-
 def promote(root: Path, path: Path, *, require_ready: bool = True) -> bool:
     try:
         content = path.read_text(encoding="utf-8")
@@ -42,7 +26,7 @@ def promote(root: Path, path: Path, *, require_ready: bool = True) -> bool:
     if approved == content:
         approved = f"---\nstatus: APPROVED\napproved_at: {approved_at}\n---\n\n{content}"
     else:
-        approval = "automatic-evidence-gate" if require_ready else "manual-dashboard"
+        approval = "reviewed-evidence-gate" if require_ready else "manual-dashboard"
         approved = approved.replace("\n---", f"\napproved_at: {approved_at}\napproval: {approval}\n---", 1)
     target.write_text(approved, encoding="utf-8")
     path.unlink()
