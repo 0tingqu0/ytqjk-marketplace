@@ -1,0 +1,4 @@
+interface:
+  display_name: "YTQJK Knowledge"
+  short_description: "独立版本化知识服务与治理审计核心"
+  default_prompt: "Use $ytqjk-knowledge to manage governed local knowledge records."

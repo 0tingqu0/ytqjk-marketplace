@@ -1,0 +1,124 @@
+"""Public local SQLite boundary for all YTQJK Knowledge adapters."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import threading
+import uuid
+from pathlib import Path
+from typing import Any
+
+from .database import connection, read_row, read_rows, read_value
+from .domain import apply
+from .migrations import LATEST_VERSION, migrate
+from .queue import _WriteQueue
+
+
+class KnowledgeService:
+    """Only public owner of knowledge storage, writes, and snapshot reads."""
+
+    def __init__(self, database: Path) -> None:
+        self._database = database
+        self._writer = threading.Lock()
+        database.parent.mkdir(parents=True, exist_ok=True)
+        with connection(database) as current:
+            migrate(current)
+        self._queue = _WriteQueue(database)
+
+    def migrate(self, target: int = LATEST_VERSION) -> None:
+        """Move DB between supported schema versions."""
+        with self._writer, connection(self._database) as current:
+            migrate(current, target)
+
+    def schema_version(self) -> int:
+        return read_value(self._database, "PRAGMA user_version")
+
+    def create_project(self, scope: str, alias: str) -> str:
+        """Create or return immutable project identity."""
+        payload = {"id": str(uuid.uuid4()), "scope": scope, "alias": alias}
+        key = self._key("project", {"scope": scope, "alias": alias})
+        self._submit("create_project", payload, key)
+        rows = read_rows(self._database, "SELECT id FROM projects WHERE scope = ? AND alias = ?", (scope, alias))
+        return str(rows[0]["id"])
+
+    def create_candidate(self, project_id: str, title: str, content: str, source: str) -> str:
+        """Create or return deduplicated candidate document."""
+        document_id = str(uuid.uuid4())
+        payload = {"document_id": document_id, "project_id": project_id, "title": title, "content": content, "source": source}
+        key = self._key("candidate", {key: value for key, value in payload.items() if key != "document_id"})
+        job_id = self._submit("create_candidate", payload, key)
+        return str(self.job(job_id)["payload_document_id"])
+
+    def edit_candidate(self, document_id: str, content: str, source: str) -> None:
+        self._submit("edit_candidate", {"document_id": document_id, "content": content, "source": source})
+
+    def soft_delete_candidate(self, document_id: str) -> None:
+        self._submit("soft_delete_candidate", {"document_id": document_id})
+
+    def append_state(self, document_id: str, state: str, content: str | None = None) -> None:
+        self._submit("append_state", {"document_id": document_id, "state": state, "content": content})
+
+    def create_snapshot(self, project_id: str) -> str:
+        snapshot_id = str(uuid.uuid4())
+        self._submit("create_snapshot", {"project_id": project_id, "snapshot_id": snapshot_id})
+        return snapshot_id
+
+    def job(self, job_id: int) -> dict[str, Any]:
+        """Read durable job without exposing queue mutation."""
+        row = self._queue.job(job_id)
+        row["payload_document_id"] = _payload_document_id(str(row["payload"]))
+        return row
+
+    def project(self, project_id: str) -> dict[str, Any]:
+        return read_row(self._database, "SELECT * FROM projects WHERE id = ?", (project_id,))
+
+    def document_versions(self, document_id: str) -> list[dict[str, Any]]:
+        return read_rows(self._database, "SELECT * FROM versions WHERE document_id = ? ORDER BY ordinal", (document_id,))
+
+    def count(self, table: str) -> int:
+        if table not in {"originals", "documents", "versions", "jobs", "snapshots", "audit"}:
+            raise ValueError("unsupported table")
+        return read_value(self._database, f"SELECT COUNT(*) FROM {table}")
+
+    def active_snapshot(self, project_id: str) -> dict[str, Any] | None:
+        rows = read_rows(self._database, "SELECT s.* FROM active_snapshots a JOIN snapshots s ON s.id = a.snapshot_id WHERE a.project_id = ?", (project_id,))
+        return rows[0] if rows else None
+
+    def read_active_snapshot(self, project_id: str) -> dict[str, Any] | None:
+        """Read pointer and membership from one consistent DB generation."""
+        with connection(self._database) as current:
+            current.execute("BEGIN")
+            row = current.execute("SELECT s.* FROM active_snapshots a JOIN snapshots s ON s.id = a.snapshot_id WHERE a.project_id = ?", (project_id,)).fetchone()
+            if row is None:
+                current.commit()
+                return None
+            members = current.execute("SELECT document_id, version_id FROM snapshot_versions WHERE snapshot_id = ? ORDER BY document_id", (row["id"],)).fetchall()
+            current.commit()
+        return {"snapshot": dict(row), "versions": [dict(member) for member in members]}
+
+    def search_capabilities(self) -> dict[str, str]:
+        return {"fts": "NOT_IMPLEMENTED", "lancedb": "NOT_IMPLEMENTED"}
+
+    def _submit(self, kind: str, payload: dict[str, Any], key: str | None = None) -> int:
+        with self._writer:
+            job_id = self._queue.submit(kind, payload, key)
+            self._queue.run_until(job_id, apply)
+            return job_id
+
+    @staticmethod
+    def _key(prefix: str, payload: dict[str, Any]) -> str:
+        canonical = json.dumps(
+            {"kind": prefix, "payload": payload},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        encoded = canonical.encode("utf-8")
+        return f"{prefix}:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _payload_document_id(payload: str) -> str | None:
+    """Expose dedupe result document ID without queue mutation capability."""
+    value = json.loads(payload).get("document_id")
+    return str(value) if value is not None else None
