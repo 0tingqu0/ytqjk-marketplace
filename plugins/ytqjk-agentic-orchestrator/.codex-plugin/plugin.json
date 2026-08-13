@@ -3,8 +3,13 @@
   "version": "0.2.0",
   "description": "Coordinates isolated Codex tasks through planning, review, Git, progress, and local RAG gates.",
   "author": {
-    "name": "\u4e00\u542c\u66f2\u5c31\u56f0"
+    "name": "\u4e00\u542c\u66f2\u5c31\u56f0",
+    "url": "https://github.com/0tingqu0"
   },
+  "homepage": "https://github.com/0tingqu0/ytqjk-marketplace#readme",
+  "repository": "https://github.com/0tingqu0/ytqjk-marketplace",
+  "license": "MIT",
+  "keywords": ["codex", "orchestration", "multi-agent", "rag", "knowledge-base"],
   "skills": "./skills/",
   "interface": {
     "displayName": "YTQJK Agentic Orchestrator",

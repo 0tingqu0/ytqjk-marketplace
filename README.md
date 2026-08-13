@@ -2,7 +2,8 @@
 
 面向复杂项目的 Codex 多任务总控。它负责十段式计划、并行 Worker、独立监督与复审、唯一 Git 提交者、单独进度报告者，以及本机 agentic RAG 知识缓存；总控本身不处理实现。
 
-支持 Windows、Linux、WSL2，以及 VS Code、Cursor、Windsurf 中的 Codex IDE extension。
+知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
+extension 可加载独立 skills，但不加载 plugin；完整多会话编排还取决于宿主是否提供可见会话 API。
 
 ## Codex 桌面版与 CLI
 
@@ -13,9 +14,22 @@ codex plugin marketplace add 0tingqu0/ytqjk-marketplace
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
-重启 Codex、新建任务，然后输入 `/ytqjk`。目标明确并由你显式确认前，它会留在当前激活任务，
+重启 Codex、新建任务，然后输入 `$ytqjk`；也可以通过 `/skills` 选择 `ytqjk`。仅当当前宿主
+明确提供 `/ytqjk` 快捷命令时才使用该写法，不把它作为可移植入口。目标明确并由你显式确认前，它会留在当前激活任务，
 每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色。确认后的首个工具调用
 才读取协议并创建总控；目标确认不等于计划批准，后续仍执行 `grill-me`、监督和计划批准门。
+
+### 宿主能力边界
+
+| 使用方式 | 可加载内容 | 完整多会话编排 |
+| --- | --- | --- |
+| Codex 桌面版 | plugin 与 bundled skills | 宿主提供会话创建、列出、读取、等待、消息和标题 API 时可用 |
+| Codex CLI | marketplace plugin 与 bundled skills | 需要同一组完整可见会话 API；能力检测不通过时返回 `BLOCKED` |
+| Codex IDE extension | 项目级 standalone skills；不加载 plugin | 需要同一组完整可见会话 API；能力检测不通过时返回 `BLOCKED`，改用具备这些 API 的桌面版或 CLI 宿主 |
+
+安装成功只表示 skill 可被发现，不代表宿主具备完整多会话控制能力。置顶和归档属于可选增强；
+缺失时进度会话保持可见，完成会话标记为 `DONE`。YTQJK 不会用隐藏智能体或当前会话内角色扮演
+绕过核心能力检查。
 
 ## VS Code、Cursor 与 Windsurf
 
@@ -28,6 +42,41 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 重载 IDE 或新建聊天，然后输入 `$ytqjk`，也可以通过 `/skills` 选择 `ytqjk`。IDE 中不要使用 `/ytqjk`。
 
 `skills@latest` 是 Vercel 维护的第三方 CLI，会下载并执行最新版代码并写入项目 skill 目录；安装前应检查来源。项目级安装只影响当前仓库。
+
+## 更新与回滚
+
+Codex 桌面版在 Plugins 页面卸载后重新安装。Codex CLI 输入 `/plugins` 打开插件浏览器，
+在 `ytqjk` marketplace 中卸载后重新安装；也可从已配置的 marketplace 重新执行安装命令：
+
+```bash
+codex plugin add ytqjk-agentic-orchestrator@ytqjk
+```
+
+安装完成后必须新建任务，已有任务不会重新载入 bundled skills。正式发布版本使用纯
+SemVer；`0.2.0` 发布后不覆盖，同一发布线的后续修复使用 `0.2.1`、`0.2.2`。`+codex.*`
+仅供本地开发缓存刷新，不进入正式发布清单。
+
+IDE 项目级 skills 更新后重载 IDE 或新建聊天：
+
+```bash
+npx skills@latest update ytqjk caveman -p
+```
+
+若更新命令无法识别旧安装记录，重新执行上面的项目级 `skills add` 命令。
+
+已有对应发布 tag 时，可将 marketplace 固定回指定版本；以下以 `v0.2.0` 为例：
+
+```bash
+codex plugin marketplace remove ytqjk
+codex plugin marketplace add 0tingqu0/ytqjk-marketplace --ref v0.2.0
+codex plugin add ytqjk-agentic-orchestrator@ytqjk
+```
+
+IDE 回滚使用相同 tag 的 skills 路径重新安装：
+
+```bash
+npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/v0.2.0/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
+```
 
 ## 环境要求
 
@@ -48,15 +97,25 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 
 ## 知识库控制台
 
-在本机只读查看知识根、项目索引、已验证/已批准经验和候选经验：
+在本机管理控制台查看知识根、项目索引、已验证/已批准经验和候选经验，并投递、编辑、删除或
+人工批准候选资料。
+
+Windows PowerShell：
 
 ```powershell
 python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py
 ```
 
+Linux 或 WSL2：
+
+```bash
+python3 plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/knowledge_dashboard.py
+```
+
 打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
-Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）和常见图片资料，最大
-10 MiB。Office 正文和表格会被提取分析，图片记录格式、尺寸和文件大小；原文件随候选
+Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见图片和音频资料，最大
+10 MiB。Office 正文和表格会被提取分析，图片记录格式、尺寸和文件大小；WAV 音频记录声道、
+采样率和时长，其他音频只记录格式。音频不做语音识别或转写。原文件随候选
 分析记录保存在 `imports/originals`。候选资料不会自动批准、不会进入 `verified`、不会
 自动重新索引。敏感文件名和提取文本中的高置信凭据会被拒绝。
 此外支持常见 UTF-8 源码、配置和数据文本（如 `.py`、`.ts`、`.java`、`.go`、`.sql`、
@@ -78,14 +137,22 @@ YTQJK 创建的总控、监督、复审、Git、进度、RAG 和 Worker 会话�
 会话 ID 或完整对话。同一会话每次调用知识库只刷新同一个匿名锚点，不会重复建立或重复导出
 未变化的经验。支持定时任务的宿主可运行以下命令，回收 30 天未活动且有摘要的会话：
 
+Windows PowerShell：
+
 ```powershell
 python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\scripts\session_memory.py sweep --days 30
+```
+
+Linux 或 WSL2：
+
+```bash
+python3 plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/session_memory.py sweep --days 30
 ```
 
 Codex 未向插件开放全局新会话、自动压缩和闲置事件订阅时，插件无法自行监听所有会话；此时
 仅对 YTQJK 创建并由其生命周期流程管理的会话执行锚定与回收。
 
-启用 `/ytqjk` 并确认目标后，会优先在 Codex 中复用当前项目已有、未归档的
+启用 `$ytqjk` 并确认目标后，会优先在 Codex 中复用当前项目已有、未归档的
 `[YTQJK][项目ID]` 职责会话，并恢复其锚点摘要；只有找不到合适会话、旧会话已归档或职责
 冲突时才创建新会话。它使用 Codex 会话协作，不把当前会话替换为智能体。
 
