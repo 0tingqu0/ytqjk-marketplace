@@ -5,6 +5,32 @@
 知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
 extension 可加载独立 skills，但不加载 plugin；完整多会话编排还取决于宿主是否提供可见会话 API。
 
+## 一键安装
+
+在仓库根目录运行对应入口。`--mode` 支持 `all`、`codex-only`、`ide-only` 和
+`knowledge-only`；默认仅输出 dry-run 计划和包含 `health` 的安装回执，不写入目标目录。
+
+Windows PowerShell：
+
+```powershell
+.\install.ps1 --mode all --target-root C:\path\to\project
+```
+
+Linux、macOS 或 WSL：
+
+```bash
+sh ./install.sh --mode all --target-root /path/to/project
+```
+
+也可跨平台直接调用 Python：
+
+```bash
+python setup.py --mode all --target-root /path/to/project
+```
+
+确认计划后添加 `--apply --yes` 执行；非交互应用必须同时提供 `--target-root`。需要探测
+本机依赖并输出 JSON health receipt 时，添加 `--health --probe-local --json`。
+
 ## Codex 桌面版与 CLI
 
 安装 plugin：
@@ -53,9 +79,8 @@ codex plugin marketplace upgrade ytqjk
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
-安装完成后必须新建任务，已有任务不会重新载入 bundled skills。正式发布版本使用纯
-SemVer；`0.2.0` 发布后不覆盖，同一发布线的后续修复使用 `0.2.1`、`0.2.2`。`+codex.*`
-仅供本地开发缓存刷新，不进入正式发布清单。
+安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
+SemVer `0.3.0`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
