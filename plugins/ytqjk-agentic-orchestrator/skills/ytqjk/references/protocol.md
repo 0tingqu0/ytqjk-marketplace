@@ -19,20 +19,23 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
 
 ## 1. Bootstrap
 
-1. Resolve the target work directory first. When it is a Git project, also resolve current branch, HEAD, and `git status --short` with read-only commands; otherwise mark it `NON_GIT` and still register its project sub-library.
-2. Require a clean integration baseline only for Git implementation work. If dirty, stop and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash, reset, delete, or absorb unknown changes. Non-Git directory tasks continue without a Git baseline.
-3. Detect a host with capability-equivalent **Codex conversation/session** create,
-   list, read, wait, message, title, pin, and archive operations. After objective
-   confirmation, list prior `[YTQJK]` conversations for the current project and
-   role before creating anything. Reuse one matching, non-archived conversation;
-   restore its anchor memory, send it the new objective, and refresh its title.
-   Create a new conversation only when no matching conversation is available, the
-   prior one is archived, or its role conflicts with the requested responsibility.
-   The activation conversation remains the launcher and stays lifecycle-only.
-   Never convert a conversation into an opaque autonomous agent or replace a role
-   with inline role-play. If the host lacks the complete conversation capability set,
-   report `BLOCKED`.
-   If neither complete capability set is available, report `BLOCKED`. Do not mix modes.
+1. Resolve the target work directory and classify the objective as read-only or
+   mutation. For Git, also resolve branch, HEAD, and `git status --short` with
+   read-only commands. Otherwise mark it `NON_GIT` and still register its project
+   sub-library. Non-Git read-only work may continue. Non-Git mutation must reach the
+   planning gate as `BLOCKED`; recommend initializing Git or changing the approved
+   scope to read-only. Never dispatch a non-Git mutation Worker.
+2. Require a clean integration baseline only for Git mutation work. If dirty, stop
+   and ask one `grill-me` question; recommend a dedicated clean worktree. Never stash,
+   reset, delete, or absorb unknown changes. Read-only work needs no clean baseline.
+3. Require host-equivalent Codex conversation/session create, list, read, wait,
+   message, and title operations. If any core operation is absent, report `BLOCKED`;
+   never replace visible conversations with inline role-play or opaque autonomous
+   agents. Pin and archive are optional enhancements: when pin is absent, keep the
+   progress conversation visible; when archive is absent, mark a completed role
+   `DONE` and report that it remains visible. This protocol is driven by explicit
+   host tool calls. It is not a background daemon and must not claim autonomous
+   session discovery, scheduling, or lifecycle events.
 4. Inspect the host-provided skill inventory. When a readable `grill-me` is already
    available, treat the user-profile bootstrap as complete: do not run `npm view`,
    `npx`, a network check, or an installer. Verify only dependencies declared by that
@@ -49,25 +52,38 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    mode, transfer the objective into a fresh chat if the host cannot replace the
    bootstrap controller.
 6. Reuse or create role conversations just in time without weakening role separation:
-   - At formal `GRILLING`, create the supervisor and progress reporter. Create them
-     independently without waiting for one to finish before starting the other.
-   - Before the first repository-answerable question or index operation, create RAG.
-   - After plan approval and before the first Worker, create the reviewer and sole Git
-     committer. Both must exist before Worker dispatch.
+   - After confirmation, the launcher obtains only the controller.
+   - At formal `GRILLING`, obtain the supervisor and progress reporter independently.
+   - Before the first repository-answerable question or index operation, obtain RAG.
+   - Obtain each Worker immediately before its one approved task.
+   - Obtain the reviewer only after a reviewable result exists and before that result's
+     first independent gate. No result means no reviewer conversation.
+   - Obtain the sole Git committer only for an approved Git mutation, before the first
+     mutation Worker needs an isolated worktree. Read-only objectives never create it.
    Title them `[YTQJK][<project-id>] 总控`, `监督`, `复审`, `Git`, `进度`, and `RAG`
    plus a short objective when titles are supported. The stable prefix and project ID
-   are the reuse key; do not rely on remembered raw session IDs. Every required role
-   still exists before its first responsibility.
+   identify candidates; role and handshake state decide reuse. Every required role
+   must exist before its first responsibility, not before the objective needs it.
 7. Pin only the progress role while work is active when pinning is supported. When
    pinning is unavailable, keep it as a separate visible conversation.
-8. Anchor every YTQJK-created or reused role after its host session ID and project ID are
+8. For every needed role, list matching `[YTQJK][<project-id>] <role>` conversations
+   before creation. Exclude archived candidates. Prefer the newest reachable `DONE`
+   or idle candidate; a `RUNNING` candidate is reusable only for the same run/objective.
+   Never overwrite a different active objective. Read the candidate with a bounded
+   timeout, restore its anchor, send an idempotent run token plus objective, and wait
+   once for acknowledgement. If acknowledgement is lost, re-list and re-read once:
+   reuse when the token is present; retry one message when the role is reachable but
+   unacknowledged; create a replacement only when the old conversation is missing or
+   consistently unreachable. An ambiguous delivery after the bounded retry is
+   `BLOCKED`, preventing duplicate active roles. Report every skip or replacement.
+9. Anchor every YTQJK-created or reused role after its host session ID and project ID are
    available. Use `scripts/session_memory.py anchor`; never store raw session IDs in
    the knowledge root. Anchoring is idempotent: the same host session ID always maps
    to one stable anonymous key and subsequent knowledge access only refreshes it.
    Before a role resumes after context compaction, checkpoint its
    concise, secret-free memory, then restore and inject only that memory into the same
-   role. Before archival, checkpoint and archive it, creating one candidate experience
-   record when memory exists. If the host lacks lifecycle events, perform this at the
+   role. Before archival, follow the explicit checkpoint and memory-archive sequence
+   in section 6. If the host lacks lifecycle events, perform this at the
    first post-compaction turn and immediately before archival; never claim platform-wide
    automatic anchoring.
 
@@ -82,10 +98,11 @@ changes, hardware action, or destructive cleanup.
 ### Launcher
 
 After explicit objective confirmation, reuse the matching controller conversation
-or create it only if absent, then preserve the confirmed objective. Use one bounded
-readiness wait, return its visible conversation link, and never wait for completion.
-Remain lifecycle-only, propagate a hard stop once, and archive the controller last.
-Never implement, test, review, or mutate Git.
+through the section 1 handshake or create it only when that handshake permits, then
+preserve the confirmed objective. Return its visible conversation link after one
+bounded readiness wait; never wait for completion. Remain lifecycle-only, propagate
+a hard stop once, and coordinate final controller handoff. Never implement, test,
+review, or mutate Git.
 
 ### Controller
 
@@ -102,14 +119,22 @@ Review at least before plan approval, each parallel wave, after material scope/d
 
 ### Worker
 
-Apply bundled `$caveman`. Work in an isolated worktree on one bounded task and exact write allowlist. No task creation and no Git writes. Run focused self-checks, then export a handoff bundle to the assigned project-cache path. Report changed paths, commands, results, residual risks, and bundle hash.
+Apply bundled `$caveman`. Own one bounded task and exact scope. A read-only Worker
+uses an exact read allowlist and makes no file or Git writes. A Git mutation Worker
+uses the isolated worktree provisioned by the Git role and an exact write allowlist.
+No Worker creates tasks or mutates Git metadata/history. Run focused self-checks and
+report commands, results, residual risks, and evidence. A mutation Worker also exports
+a handoff bundle to the assigned project-cache path and reports changed paths and its
+bundle hash.
 
 ### Reviewer
 
 Apply bundled `$caveman`. Never edit implementation. Perform two independent gates:
 
-1. Patch gate: inspect the worker worktree and handoff bundle; rerun relevant checks.
-2. Integration gate: after the Git task applies the bundle, inspect exact staged content and rerun affected checks.
+1. Result gate: for read-only work, inspect the result and rerun relevant evidence
+   checks; for mutation work, inspect the Worker worktree and handoff bundle.
+2. Integration gate: only for Git mutation, after the Git task applies the bundle,
+   inspect exact staged content and rerun affected checks.
 
 Return `PASS`, `FAIL`, or `UNKNOWN` with evidence. Missing or unrun checks are `UNKNOWN`, never `PASS`. After all commits, run the final regression gate.
 
@@ -119,7 +144,8 @@ Apply bundled `$caveman`. Be the sole Git writer. Never fix implementation or co
 
 Integrate one bundle at a time so the integration worktree returns clean after each commit. If apply conflicts, stop and return it to a worker. Local commits are allowed after all gates. Push, merge, rebase, tag, amend, and force operations require explicit authorization in the current task.
 
-The Git role provisions each dedicated worker worktree from the approved clean
+This role exists only for approved Git mutation. It provisions each dedicated Worker
+worktree from the approved clean
 integration HEAD before that Worker starts. It returns the exact
 path and HEAD to the controller, but does not implement in the worktree. Do not remove
 worktrees without explicit cleanup authorization.
@@ -142,9 +168,8 @@ Report immediately whenever verified progress crosses 10%. Also report every 10
 minutes even when unchanged. Prefer a thread heartbeat automation. If unavailable,
 use bounded waits of at most 60 seconds inside the progress role and track elapsed
 wall time. Disable the heartbeat, issue the final report, unpin when supported, then
-close the completed role. Use stop only to cancel active work. Archive after close
-when supported. Never claim unattended timing, closing, pinning, or archival that
-the host did not provide.
+complete the role through section 6. Use stop only to cancel active work. Never claim
+unattended timing, closing, pinning, or archival that the host did not provide.
 
 ### RAG
 
@@ -168,6 +193,11 @@ its safe project-source index, and refreshes the approved global index. It appli
 whether or not the directory is a Git repository. Other roles register their own
 work directory when they first use the knowledge query interface. Candidate areas
 remain excluded from the global index.
+
+Before the first query, inspect both manifests and rebuild any missing, stale, or
+security-incompatible index. Refresh lexical evidence first; vectors are size-gated
+only after that refresh. One completed bootstrap covers this check, so do not repeat
+queries or rebuilds merely to force vector activation.
 
 Never read another project's cache or reuse a session anchor across projects. Each
 project knowledge cache has a hard 1 GiB capacity. Evict cached global chunks by
@@ -209,6 +239,10 @@ Objective confirmation does not approve the plan. The controller must apply
 `grill-me` before dispatch. Ask one question at a time with a recommended answer.
 Send repo-answerable questions to RAG or a read-only discovery task.
 
+Record `GIT_READ_ONLY`, `GIT_MUTATION`, or `NON_GIT_READ_ONLY` in the plan. A
+`NON_GIT_MUTATION` plan is `BLOCKED`: do not request plan approval or dispatch;
+recommend initializing Git or narrowing the objective to read-only.
+
 Publish exactly ten evidence-gated milestones, each worth 10%. Each milestone and leaf task must include:
 
 - ID and outcome;
@@ -234,17 +268,31 @@ During `grill-me`, expose the models and reasoning-effort levels actually availa
 
 Use stronger models or reasoning for architecture, security, difficult debugging, or integration. After two reproducible failures on one task, write an error record, archive the failed Worker after handoff, and create a replacement with a stronger model, reasoning level, or both. A third failure triggers supervisor `BLOCK` and replanning; never retry indefinitely.
 
-## 5. Handoff, review, and commit loop
+## 5. Review, handoff, and commit loops
 
-1. Start a Worker from the current clean integration HEAD in an isolated worktree.
-2. Give it one task, allowlist, acceptance checks, bundle destination, and model tier.
+### Read-only loop
+
+1. Start a Worker only when an approved read-only task needs independent execution.
+2. Give it one task, exact read scope, acceptance checks, and model tier.
+3. Worker returns evidence without changing files or Git state.
+4. Only now obtain the reviewer; it runs the result gate. `FAIL/UNKNOWN` returns to
+   a replacement or repair Worker within the same read-only scope.
+5. Supervisor checks direction and scope. Record the reviewed evidence, then archive
+   the Worker through section 6. No Git role, worktree, bundle, staging, or commit is
+   used in this loop.
+
+### Git mutation loop
+
+1. Obtain the Git role, then provision a Worker from the current clean integration
+   HEAD in an isolated worktree.
+2. Give it one task, write allowlist, acceptance checks, bundle destination, and model tier.
 3. Worker edits, self-checks, and exports a bundle without staging or committing.
-4. Reviewer runs the patch gate. `FAIL/UNKNOWN` returns to a repair Worker.
+4. Only now obtain the reviewer; it runs the result gate. `FAIL/UNKNOWN` returns to a repair Worker.
 5. Supervisor checks direction and scope before integration.
 6. Freeze new integration writes. Git task verifies clean status and applies one bundle.
 7. Reviewer runs the integration gate against staged content.
 8. Git task commits a small atomic slice using repository/user commit-message conventions, then proves `git status --short` is empty.
-9. Record commit and evidence in RAG. Archive the Worker immediately.
+9. Record commit and evidence in RAG. Archive the Worker through section 6.
 10. Continue until ten milestones pass, then run final regression and closure review.
 
 Only the Git task may change the integration index or history. Task-mode
@@ -275,20 +323,30 @@ Use: `GOAL_INTAKE`, `BOOTSTRAP`, `GRILLING`, `PLAN_AUDIT`, `APPROVED`,
 
 Archive only after delivery, evidence registration, downstream acknowledgement, and
 no pending follow-up. Never archive `BLOCKED`, `NEEDS_INPUT`, or active conversations.
-Close completed conversations promptly; use stop only for active cancellation, and
-archive after close only when the host exposes it. Otherwise mark them `DONE` and
-report that the UI conversation remains visible.
+For each completed role, perform this explicit transaction in order:
 
-Final order:
+1. Create a concise, secret-free memory and run `session_memory.py checkpoint`.
+2. Run `session_memory.py archive`; verify the anchor is archived and any non-empty
+   changed memory produced its candidate record.
+3. Only after both memory steps succeed, close and archive the host conversation when
+   supported. If either memory step fails, leave the host conversation unarchived and
+   report a retryable failure. If host archive is unavailable, mark the role `DONE`
+   and report that it remains visible.
 
-1. Workers after their reviewed commits.
+Use stop only for active cancellation. Never treat dashboard refresh or archive-log
+scanning as the primary lifecycle path; those mechanisms are recovery aids only.
+
+For roles that were actually created, final order is:
+
+1. Workers after their reviewed results or commits.
 2. RAG after final refresh and candidate handoff.
 3. Reviewer after final regression `PASS`.
 4. Git task after commit hashes and clean status are recorded.
 5. Supervisor after final direction `PASS`.
 6. Progress reporter after final report; unpin first.
-7. Controller after all role conversations are archived. The activation conversation
-   remains open for the final user handoff.
-8. Launcher last.
+7. Controller after all created child roles are archived or explicitly marked `DONE`.
+8. Launcher last, after the final user handoff. Because the launcher cannot archive
+   itself while issuing that handoff, mark it `DONE`; a host lifecycle action or
+   external caller may archive it afterward. Never claim self-archival.
 
 On explicit pause/stop, send one stop message to active tasks and stop immediately. Do not poll, read, test, clean, commit, archive, deploy, or update knowledge until the user explicitly resumes.
