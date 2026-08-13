@@ -10,7 +10,7 @@ from platform_paths import default_knowledge_root
 
 
 QUERY_CLI = Path(__file__).with_name("global_session_query.py")
-QUERY_TIMEOUT_SECONDS = 30
+QUERY_TIMEOUT_SECONDS = 60
 
 
 def main() -> int:
@@ -18,6 +18,7 @@ def main() -> int:
     parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--session-id", required=True)
+    parser.add_argument("--expected-project-id", required=True)
     parser.add_argument("query")
     parser.add_argument("--limit", type=int, default=8)
     args = parser.parse_args()
@@ -29,13 +30,19 @@ def main() -> int:
         "--knowledge-root", str(root),
         "--project-root", str(project),
         "--session-id", args.session_id,
+        "--expected-project-id", args.expected_project_id,
         "--limit",
         str(args.limit),
     ]
     try:
         return subprocess.run(command, check=False, timeout=QUERY_TIMEOUT_SECONDS).returncode
     except subprocess.TimeoutExpired:
-        print(json.dumps({"ok": False, "error": "知识库查询超时，请稍后重试。"}, ensure_ascii=False))
+        print(json.dumps({
+            "ok": False,
+            "error": "知识库查询超时，请稍后重试。",
+            "retryable": True,
+            "timeout_seconds": QUERY_TIMEOUT_SECONDS,
+        }, ensure_ascii=False))
         return 1
 
 

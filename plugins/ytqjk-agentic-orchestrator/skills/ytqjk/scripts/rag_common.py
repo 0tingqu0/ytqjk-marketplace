@@ -3,19 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import sqlite3
-import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from file_lock import exclusive_file_lock
 from rag_security import (
     contains_high_confidence_secret,
     is_sensitive_path,
-    normalize_remote,
 )
+from project_source import project_identity, tracked_paths
 
 
 SCHEMA_VERSION = 2
@@ -53,104 +53,31 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def config_fingerprint(config: dict[str, Any]) -> str:
+    relevant = {key: config.get(key) for key in ("auto", "index", "embedding")}
+    payload = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    descriptor, name = tempfile.mkstemp(
+        dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
     )
-    os.replace(temporary, path)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def load_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def run_git(project: Path, *args: str, check: bool = True) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(project), *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="surrogateescape",
-        check=False,
-    )
-    if check and result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
-    return result.stdout
-
-
-def is_git_project(project: Path) -> bool:
-    return run_git(project, "rev-parse", "--is-inside-work-tree", check=False).strip() == "true"
-
-
-def _safe_project_name(root: Path) -> str:
-    return re.sub(r"[^a-zA-Z0-9._-]+", "-", root.name).strip("-_") or "project"
-
-
-def _directory_fingerprint(root: Path) -> str:
-    entries: list[str] = []
-    for path in root.rglob("*"):
-        if path.is_symlink() or not path.is_file():
-            continue
-        relative = path.relative_to(root).as_posix()
-        if is_sensitive_path(relative):
-            continue
-        stat = path.stat()
-        entries.append(f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}")
-    return hashlib.sha256("\n".join(sorted(entries)).encode("utf-8")).hexdigest()
-
-
-def project_identity(project: Path) -> dict[str, str]:
-    project = project.resolve()
-    if not project.is_dir():
-        raise ValueError("项目工作目录不存在或不是目录。")
-    if not is_git_project(project):
-        name = _safe_project_name(project)
-        identity = os.path.normcase(str(project))
-        return {
-            "id": f"{name}--{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:12]}",
-            "name": name,
-            "remote": "",
-            "root": str(project),
-            "head": "NON_GIT",
-            "source_fingerprint": _directory_fingerprint(project),
-            "dirty": "not-applicable",
-        }
-    root = Path(run_git(project, "rev-parse", "--show-toplevel").strip()).resolve()
-    raw_remote = run_git(root, "remote", "get-url", "origin", check=False).strip()
-    common_value = Path(run_git(root, "rev-parse", "--git-common-dir").strip())
-    common = (
-        common_value if common_value.is_absolute() else root / common_value
-    ).resolve()
-    canonical_root = (
-        common.parent
-        if os.path.normcase(common.name) == os.path.normcase(".git")
-        else common
-    )
-    normalized_remote = normalize_remote(raw_remote)
-    identity = normalized_remote or os.path.normcase(str(canonical_root))
-    short_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-    safe_name = _safe_project_name(root)
-    project_id = "p2604_soc" if safe_name.casefold() == "p2604_soc" else f"{safe_name}--{short_hash}"
-    head = run_git(root, "rev-parse", "--verify", "HEAD", check=False).strip() or "UNBORN"
-    diff_args = ("diff", "--binary", "--full-index", "--no-ext-diff", "--no-renames")
-    fingerprint_source = run_git(root, *diff_args, "HEAD", "--") if head != "UNBORN" else (
-        run_git(root, *diff_args, "--cached", "--") + run_git(root, *diff_args, "--")
-    )
-    return {
-        "id": project_id,
-        "name": safe_name,
-        "remote": normalized_remote,
-        "root": str(root),
-        "head": head,
-        "source_fingerprint": hashlib.sha256(
-            fingerprint_source.encode("utf-8", errors="surrogateescape")
-        ).hexdigest(),
-        "dirty": str(bool(run_git(root, "status", "--short").strip())).lower(),
-    }
 
 
 def ensure_layout(knowledge_root: Path, project: Path) -> tuple[Path, dict[str, Any]]:
@@ -174,37 +101,21 @@ def ensure_layout(knowledge_root: Path, project: Path) -> tuple[Path, dict[str, 
         (project_dir / relative).mkdir(parents=True, exist_ok=True)
 
     catalog_path = knowledge_root / "catalog.json"
-    catalog = load_json(catalog_path, {"schema_version": SCHEMA_VERSION, "projects": {}})
-    catalog["schema_version"] = SCHEMA_VERSION
-    existing = catalog["projects"].get(identity["id"], {})
-    aliases = sorted(set(existing.get("path_aliases", []) + [identity["root"]]))
-    catalog["projects"][identity["id"]] = {
-        "name": identity["name"],
-        "remote": identity["remote"],
-        "path_aliases": aliases,
-        "last_accessed": utc_now(),
-    }
-    atomic_json(catalog_path, catalog)
+    with exclusive_file_lock(catalog_path.with_suffix(".lock")):
+        catalog = load_json(
+            catalog_path, {"schema_version": SCHEMA_VERSION, "projects": {}}
+        )
+        catalog["schema_version"] = SCHEMA_VERSION
+        existing = catalog["projects"].get(identity["id"], {})
+        aliases = sorted(set(existing.get("path_aliases", []) + [identity["root"]]))
+        catalog["projects"][identity["id"]] = {
+            "name": identity["name"],
+            "remote": identity["remote"],
+            "path_aliases": aliases,
+            "last_accessed": utc_now(),
+        }
+        atomic_json(catalog_path, catalog)
     return project_dir, identity
-
-
-def tracked_paths(project: Path) -> list[str]:
-    project = project.resolve()
-    if not is_git_project(project):
-        paths = []
-        for path in project.rglob("*"):
-            if path.is_symlink() or not path.is_file():
-                continue
-            relative = path.relative_to(project).as_posix()
-            if not is_sensitive_path(relative):
-                paths.append(relative)
-        return sorted(paths)
-    output = subprocess.run(
-        ["git", "-C", str(project), "ls-files", "-z"],
-        capture_output=True,
-        check=True,
-    ).stdout
-    return [part.decode("utf-8", errors="strict") for part in output.split(b"\0") if part]
 
 
 def is_indexable(relative: str, full_path: Path, max_bytes: int) -> bool:
@@ -271,13 +182,18 @@ def split_chunks(
     return chunks
 
 
-def scan_project(project: Path, config: dict[str, Any], head: str) -> tuple[list[Chunk], dict[str, int]]:
+def scan_project(
+    project: Path,
+    config: dict[str, Any],
+    head: str,
+    excluded_root: Path | None = None,
+) -> tuple[list[Chunk], dict[str, int]]:
     index_config = config["index"]
     chunks: list[Chunk] = []
     text_bytes = 0
     files = 0
     skipped = 0
-    for relative in tracked_paths(project):
+    for relative in tracked_paths(project, excluded_root):
         full_path = project / Path(relative)
         if not is_indexable(relative, full_path, int(index_config["max_file_bytes"])):
             skipped += 1
@@ -304,9 +220,12 @@ def scan_project(project: Path, config: dict[str, Any], head: str) -> tuple[list
 
 
 def build_lexical(database: Path, chunks: Iterable[Chunk]) -> None:
-    temporary = database.with_suffix(".tmp.sqlite3")
-    if temporary.exists():
-        temporary.unlink()
+    database.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(
+        dir=database.parent, prefix=f"{database.name}.", suffix=".tmp.sqlite3"
+    )
+    os.close(descriptor)
+    temporary = Path(name)
     connection = sqlite3.connect(temporary)
     try:
         connection.execute(
@@ -328,32 +247,46 @@ def build_lexical(database: Path, chunks: Iterable[Chunk]) -> None:
             [(row[0], row[1], row[4]) for row in rows],
         )
         connection.commit()
-    finally:
         connection.close()
-    os.replace(temporary, database)
+        os.replace(temporary, database)
+    except BaseException:
+        connection.close()
+        raise
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
-def lexical_query(database: Path, query: str, limit: int) -> list[dict[str, Any]]:
+def lexical_query(
+    database: Path, query: str, limit: int, offset: int = 0
+) -> list[dict[str, Any]]:
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
     try:
         phrase = '"' + query.replace('"', '""') + '"'
         try:
-            rows = connection.execute(
-                "SELECT c.*, bm25(chunks_fts) AS score FROM chunks_fts "
-                "JOIN chunks c ON c.id = chunks_fts.id WHERE chunks_fts MATCH ? "
-                "ORDER BY score LIMIT ?",
-                (phrase, limit),
-            ).fetchall()
-            if not rows:
+            has_fts_match = connection.execute(
+                "SELECT 1 FROM chunks_fts WHERE chunks_fts MATCH ? LIMIT 1",
+                (phrase,),
+            ).fetchone()
+            if has_fts_match:
                 rows = connection.execute(
-                    "SELECT *, 0.0 AS score FROM chunks WHERE content LIKE ? LIMIT ?",
-                    (f"%{query}%", limit),
+                    "SELECT c.*, bm25(chunks_fts) AS score FROM chunks_fts "
+                    "JOIN chunks c ON c.id = chunks_fts.id "
+                    "WHERE chunks_fts MATCH ? ORDER BY score, c.id "
+                    "LIMIT ? OFFSET ?",
+                    (phrase, limit, offset),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT *, 0.0 AS score FROM chunks "
+                    "WHERE content LIKE ? ORDER BY id LIMIT ? OFFSET ?",
+                    (f"%{query}%", limit, offset),
                 ).fetchall()
         except sqlite3.OperationalError:
             rows = connection.execute(
-                "SELECT *, 0.0 AS score FROM chunks WHERE content LIKE ? LIMIT ?",
-                (f"%{query}%", limit),
+                "SELECT *, 0.0 AS score FROM chunks "
+                "WHERE content LIKE ? ORDER BY id LIMIT ? OFFSET ?",
+                (f"%{query}%", limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
     finally:

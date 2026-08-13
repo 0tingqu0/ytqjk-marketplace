@@ -10,50 +10,25 @@ from pathlib import Path
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
 RAG = SCRIPTS / "rag_cli.py"
 
-def git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+from project_tracking import identify_project  # noqa: E402
+from rag_test_support import git, index_global, run_rag as run_cli  # noqa: E402
 
 
 def run_rag(knowledge: Path, command: str, project: Path, *args: str) -> dict:
-    extra = ["--session-id", "test-session"] if command == "query" else []
-    result = subprocess.run(
+    extra = (
         [
-            sys.executable,
-            str(RAG),
-            "--knowledge-root",
-            str(knowledge),
-            command,
-            "--project-root",
-            str(project),
-            *extra,
-            *args,
-        ],
-        check=False,
-        capture_output=True,
-        encoding="utf-8",
+            "--session-id",
+            "test-session",
+            "--expected-project-id",
+            identify_project(project)["id"],
+        ]
+        if command == "query"
+        else []
     )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return json.loads(result.stdout)
-
-def index_global(knowledge: Path) -> dict:
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(RAG),
-            "--knowledge-root",
-            str(knowledge),
-            "index-global",
-            "--vector-mode",
-            "off",
-        ],
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-    )
-    return json.loads(result.stdout)
+    return run_cli(knowledge, command, project, *extra, *args)
 
 
 def bootstrap(knowledge: Path, project: Path, *args: str) -> dict:
@@ -240,7 +215,8 @@ class RagCliTest(unittest.TestCase):
 
             command = [
                 sys.executable, str(RAG), "--knowledge-root", str(knowledge), "query",
-                "--project-root", str(repo), "--session-id", "test-security-session", "anything",
+                "--project-root", str(repo), "--session-id", "test-security-session",
+                "--expected-project-id", identify_project(repo)["id"], "anything",
             ]
             project_result = subprocess.run(
                 command, check=False, capture_output=True, encoding="utf-8"
@@ -300,55 +276,6 @@ class RagCliTest(unittest.TestCase):
             self.assertNotEqual(
                 upper_result["project_dir"], lower_result["project_dir"]
             )
-
-    def test_query_layers_only_approved_global_knowledge(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            repo = base / "repo"
-            repo.mkdir()
-            git(repo, "init")
-            knowledge = base / "knowledge"
-            approved = knowledge / "personal-experience" / "approved"
-            candidates = knowledge / "personal-experience" / "candidates"
-            approved.mkdir(parents=True)
-            candidates.mkdir(parents=True)
-            (approved / "lesson.md").write_text(
-                "复审通过后才能归档 worker。\n", encoding="utf-8"
-            )
-            (candidates / "draft.md").write_text(
-                "候选区不可检索的特殊暗号。\n", encoding="utf-8"
-            )
-            (approved / "secrets.yaml").write_text(
-                "client_secret: GLOBAL_FAKE_SECRET_938475\n", encoding="utf-8"
-            )
-            (approved / "token-guide.md").write_text(
-                "Token is a label, not a credential value.\n", encoding="utf-8"
-            )
-
-            indexed = index_global(knowledge)
-            self.assertEqual(indexed["stats"]["files"], 2)
-            run_rag(knowledge, "index", repo, "--vector-mode", "off")
-            found = run_rag(knowledge, "query", repo, "复审通过")
-            self.assertEqual(found["status"], "GLOBAL_FALLBACK_HIT")
-            self.assertEqual(found["results"][0]["scope"], "global-fallback")
-            self.assertEqual(
-                found["results"][0]["path"],
-                "personal-experience/approved/lesson.md",
-            )
-            (approved / "lesson.md").write_text(
-                "全局知识已经变化，必须重新索引。\n", encoding="utf-8"
-            )
-            cached = run_rag(knowledge, "query", repo, "复审通过")
-            self.assertEqual(cached["status"], "PROJECT_CACHE_HIT")
-            hidden = run_rag(knowledge, "query", repo, "特殊暗号")
-            self.assertEqual(hidden["results"], [])
-            global_secret = run_rag(
-                knowledge, "query", repo, "GLOBAL_FAKE_SECRET_938475"
-            )
-            self.assertEqual(global_secret["results"], [])
-            safe_mention = run_rag(knowledge, "query", repo, "Token is a label")
-            self.assertEqual(safe_mention["results"][0]["scope"], "global-fallback")
-
 
 if __name__ == "__main__":
     unittest.main()

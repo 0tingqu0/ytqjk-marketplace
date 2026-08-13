@@ -18,6 +18,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 from global_session_query import query_global  # noqa: E402
+from global_store import chunks_fingerprint, scan_global  # noqa: E402
 from knowledge_intake_cli import submit_candidate  # noqa: E402
 from project_prefetch import (  # noqa: E402
     CACHE_NAME,
@@ -34,6 +35,7 @@ from rag_common import (  # noqa: E402
     SCHEMA_VERSION,
     atomic_json,
     build_lexical,
+    config_fingerprint,
     scan_project,
     utc_now,
 )
@@ -48,11 +50,26 @@ class ProjectTrackingTest(unittest.TestCase):
     def make_global_index(self, knowledge: Path, content: str = "") -> None:
         cache = knowledge / "global-cache"
         cache.mkdir(parents=True, exist_ok=True)
-        chunks = []
         if content:
-            chunks.append(Chunk("id-1", "verified/fact.md", 1, 2, content, "hash", utc_now(), "GLOBAL"))
+            verified = knowledge / "verified"
+            verified.mkdir(parents=True, exist_ok=True)
+            (verified / "fact.md").write_text(content, encoding="utf-8")
+        chunks, stats = scan_global(knowledge, DEFAULT_CONFIG)
         build_lexical(cache / "lexical.sqlite3", chunks)
-        atomic_json(cache / "manifest.json", {"schema_version": SCHEMA_VERSION, "indexed_at": utc_now()})
+        generation = chunks_fingerprint(chunks)
+        atomic_json(
+            cache / "manifest.json",
+            {
+                "schema_version": SCHEMA_VERSION,
+                "indexed_at": utc_now(),
+                "source_fingerprint": generation,
+                "generation": generation,
+                "config_fingerprint": config_fingerprint(DEFAULT_CONFIG),
+                "stats": stats,
+                "vector_mode": "off",
+                "vector": {"enabled": False, "status": "DISABLED"},
+            },
+        )
 
     def test_track_project_registers_cache_without_source_index(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +94,10 @@ class ProjectTrackingTest(unittest.TestCase):
 
             identified = MODULE.identify_project(workspace)
             chunks, stats = scan_project(workspace, DEFAULT_CONFIG, "NON_GIT")
-            result = query_global(knowledge, workspace, "总库知识", "non-git-session", 5)
+            result = query_global(
+                knowledge, workspace, "总库知识", "non-git-session",
+                identified["id"], 5,
+            )
 
             self.assertTrue(identified["id"].startswith("notes-workspace--"))
             self.assertEqual(stats["files"], 1)
@@ -123,13 +143,61 @@ class ProjectTrackingTest(unittest.TestCase):
             repo = self.make_repo(base / "repo")
             knowledge = base / "knowledge"
             tracked = MODULE.track_project(knowledge, repo)
-            update_prefetch(knowledge / "projects" / tracked["id"], "部署", [{"path": "verified/fact.md", "line_start": 1, "line_end": 1, "content": "部署缓存知识"}])
+            verified = knowledge / "verified"
+            verified.mkdir(parents=True)
+            (verified / "fact.md").write_text(
+                "部署缓存知识", encoding="utf-8"
+            )
+            update_prefetch(
+                knowledge / "projects" / tracked["id"],
+                "部署",
+                [{"path": "verified/fact.md", "line_start": 1, "line_end": 1, "content": "部署缓存知识"}],
+                generation="GLOBAL_INDEX_ABSENT",
+            )
 
-            result = query_global(knowledge, repo, "部署缓存", "thread-cache", 5)
+            result = query_global(
+                knowledge, repo, "部署缓存", "thread-cache", tracked["id"], 5
+            )
 
             self.assertEqual(result["status"], "PROJECT_CACHE_HIT")
             self.assertEqual(result["scope"], "current-project-cache-only")
             self.assertEqual(result["cache"]["policy"], "LFU_LRU")
+
+    def test_prefetch_rejects_stale_citation_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            knowledge = base / "knowledge"
+            project = knowledge / "projects" / "project-one"
+            verified = knowledge / "verified"
+            verified.mkdir(parents=True)
+            source = verified / "fact.md"
+            source.write_text("CACHED_MARKER\nsecond line", encoding="utf-8")
+            update_prefetch(
+                project,
+                "CACHED_MARKER",
+                [{
+                    "path": "verified/fact.md",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "content": "CACHED_MARKER",
+                }],
+            )
+            self.assertTrue(
+                query_prefetch(
+                    project, "CACHED_MARKER", 5, knowledge_root=knowledge
+                )
+            )
+
+            source.write_text(
+                "inserted one\ninserted two\nCACHED_MARKER\nsecond line",
+                encoding="utf-8",
+            )
+            stale = query_prefetch(
+                project, "CACHED_MARKER", 5, knowledge_root=knowledge
+            )
+
+            self.assertEqual(stale, [])
+            self.assertEqual(list_prefetch(project), [])
 
     def test_project_source_index_hit_stops_before_global_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -147,7 +215,9 @@ class ProjectTrackingTest(unittest.TestCase):
                 {"schema_version": SCHEMA_VERSION, "indexed_at": utc_now()},
             )
 
-            result = query_global(knowledge, repo, "项目子库", "thread-source", 5)
+            result = query_global(
+                knowledge, repo, "项目子库", "thread-source", tracked["id"], 5
+            )
 
             self.assertEqual(result["status"], "PROJECT_CACHE_HIT")
             self.assertEqual(result["results"][0]["scope"], "project-source-cache")
@@ -160,8 +230,13 @@ class ProjectTrackingTest(unittest.TestCase):
             knowledge = base / "knowledge"
             self.make_global_index(knowledge, "总库回源知识")
 
-            first = query_global(knowledge, repo_a, "总库回源", "thread-a", 5)
-            second = query_global(knowledge, repo_a, "总库回源", "thread-a", 5)
+            project_a = MODULE.identify_project(repo_a)
+            first = query_global(
+                knowledge, repo_a, "总库回源", "thread-a", project_a["id"], 5
+            )
+            second = query_global(
+                knowledge, repo_a, "总库回源", "thread-a", project_a["id"], 5
+            )
             tracked_b = MODULE.track_project(knowledge, repo_b)
 
             self.assertEqual(first["status"], "GLOBAL_FALLBACK_HIT")
@@ -175,7 +250,10 @@ class ProjectTrackingTest(unittest.TestCase):
             knowledge = base / "knowledge"
             self.make_global_index(knowledge)
 
-            result = query_global(knowledge, repo, "不存在的知识", "thread-miss", 5)
+            project = MODULE.identify_project(repo)
+            result = query_global(
+                knowledge, repo, "不存在的知识", "thread-miss", project["id"], 5
+            )
 
             self.assertEqual(result["status"], "KNOWLEDGE_MISS")
             self.assertEqual(result["next_action"], "SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE")
@@ -187,11 +265,16 @@ class ProjectTrackingTest(unittest.TestCase):
             repo_b = self.make_repo(base / "repo-b")
             knowledge = base / "knowledge"
             self.make_global_index(knowledge)
-            query_global(knowledge, repo_a, "初次查询", "thread-bound", 5)
+            project_a = MODULE.identify_project(repo_a)
+            query_global(
+                knowledge, repo_a, "初次查询", "thread-bound", project_a["id"], 5
+            )
             project_b = MODULE.identify_project(repo_b)
 
             with self.assertRaisesRegex(ValueError, "禁止访问其他项目子库"):
-                query_global(knowledge, repo_b, "跨项目查询", "thread-bound", 5)
+                query_global(
+                    knowledge, repo_b, "跨项目查询", "thread-bound", project_b["id"], 5
+                )
 
             catalog = json.loads((knowledge / "catalog.json").read_text(encoding="utf-8"))
             self.assertNotIn(project_b["id"], catalog["projects"])
@@ -200,8 +283,8 @@ class ProjectTrackingTest(unittest.TestCase):
     def test_cache_eviction_retains_frequently_hit_entry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
-            keep = {"path": "keep.md", "line_start": 1, "line_end": 1, "content": "保留" * 10000}
-            discard = {"path": "discard.md", "line_start": 1, "line_end": 1, "content": "淘汰" * 10000}
+            keep = {"path": "verified/keep.md", "line_start": 1, "line_end": 1, "content": "保留" * 10000}
+            discard = {"path": "personal-experience/approved/discard.md", "line_start": 1, "line_end": 1, "content": "淘汰" * 10000}
             update_prefetch(project, "保留", [keep])
             query_prefetch(project, "保留", 5)
             query_prefetch(project, "保留", 5)
@@ -209,12 +292,12 @@ class ProjectTrackingTest(unittest.TestCase):
             update_prefetch(project, "淘汰", [discard], max_bytes=int(one_entry_size) + 4096)
 
             paths = [entry["path"] for entry in list_prefetch(project)]
-            self.assertEqual(paths, ["keep.md"])
+            self.assertEqual(paths, ["verified/keep.md"])
 
     def test_capacity_falls_back_to_rebuildable_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
-            entry = {"path": "cached.md", "line_start": 1, "line_end": 1, "content": "缓存知识"}
+            entry = {"path": "verified/cached.md", "line_start": 1, "line_end": 1, "content": "缓存知识"}
             update_prefetch(project, "缓存", [entry])
             vectors = project / "vectors"
             vectors.mkdir()
