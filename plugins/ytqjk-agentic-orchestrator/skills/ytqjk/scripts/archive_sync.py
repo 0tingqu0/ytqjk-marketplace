@@ -53,7 +53,10 @@ def sync_archived_sessions(root: Path, codex_home: Path | None = None) -> list[s
         session_id = archived_session_id(path)
         if not session_id:
             continue
-        anchor = read_anchor(root, session_id)
+        try:
+            anchor = read_anchor(root, session_id)
+        except (OSError, ValueError):
+            continue
         if not anchor or anchor.get("archived_at"):
             continue
         memory = final_answer(path)

@@ -48,15 +48,30 @@ class SessionMemoryTest(unittest.TestCase):
 
             self.assertEqual(archived, [MODULE.session_key("thread-2")])
 
-    def test_knowledge_access_reopens_anchor_without_duplicate_export(self) -> None:
+    def test_knowledge_access_cannot_reopen_archived_anchor(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             MODULE.checkpoint(root, "thread-4", "project-a", "来源：测试记录。" * 20)
             MODULE.archive(root, "thread-4")
-            MODULE.write_anchor(root, "thread-4", "project-a")
-            MODULE.archive(root, "thread-4")
+
+            with self.assertRaisesRegex(ValueError, "已归档"):
+                MODULE.write_anchor(root, "thread-4", "project-a")
+            with self.assertRaisesRegex(ValueError, "已归档"):
+                MODULE.restore(root, "thread-4")
 
             self.assertEqual(len(list((root / "personal-experience/candidates").glob("*.md"))), 1)
+
+    def test_corrupt_anchor_is_not_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = MODULE.anchor_path(root, "thread-corrupt")
+            path.parent.mkdir(parents=True)
+            path.write_text("{broken", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "已损坏"):
+                MODULE.ensure_anchor(root, "thread-corrupt", "project-b")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "{broken")
 
     def test_repeated_anchor_uses_one_stable_anchor_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

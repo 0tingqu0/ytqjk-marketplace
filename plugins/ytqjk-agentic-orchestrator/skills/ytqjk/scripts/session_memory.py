@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import sys
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from file_lock import exclusive_file_lock
 from platform_paths import default_knowledge_root
 from rag_security import contains_high_confidence_secret
 
@@ -28,18 +30,44 @@ def anchor_path(root: Path, session_id: str) -> Path:
 
 def read_anchor(root: Path, session_id: str) -> dict[str, object]:
     path = anchor_path(root, session_id)
+    if not path.exists():
+        return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError("会话锚点已损坏，已拒绝覆盖。") from exc
 
 
-def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[str, object], bool]:
-    validate_session_id(session_id)
+def write_anchor_file(path: Path, anchor: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(anchor, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def ensure_active(anchor: dict[str, object]) -> None:
+    if anchor.get("archived_at"):
+        raise ValueError("会话已归档，不能重新锚定或恢复。")
+
+
+def _ensure_anchor(
+    root: Path, session_id: str, project_id: str
+) -> tuple[dict[str, object], bool]:
     existing = read_anchor(root, session_id)
     bound_project = existing.get("project_id")
     if existing and bound_project != project_id:
         raise ValueError(f"会话已绑定项目 {bound_project}，禁止访问其他项目子库。")
+    if existing:
+        ensure_active(existing)
     now = utc_now()
     anchor = {
         "schema_version": 1,
@@ -51,10 +79,15 @@ def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[st
         "memory": existing.get("memory", ""),
         "exported_memory_hash": existing.get("exported_memory_hash", ""),
     }
-    path = anchor_path(root, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(anchor, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_anchor_file(anchor_path(root, session_id), anchor)
     return anchor, not bool(existing)
+
+
+def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[str, object], bool]:
+    validate_session_id(session_id)
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        return _ensure_anchor(root, session_id, project_id)
 
 
 def write_anchor(root: Path, session_id: str, project_id: str) -> dict[str, object]:
@@ -64,63 +97,65 @@ def write_anchor(root: Path, session_id: str, project_id: str) -> dict[str, obje
 
 def checkpoint(root: Path, session_id: str, project_id: str, memory: str) -> dict[str, object]:
     validate_memory(memory)
-    anchor = write_anchor(root, session_id, project_id)
-    anchor["memory"] = memory.strip()
-    anchor["last_activity_at"] = utc_now()
-    anchor_path(root, session_id).write_text(
-        json.dumps(anchor, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return anchor
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor, _ = _ensure_anchor(root, session_id, project_id)
+        anchor["memory"] = memory.strip()
+        anchor["last_activity_at"] = utc_now()
+        write_anchor_file(path, anchor)
+        return anchor
 
 
 def restore(root: Path, session_id: str) -> dict[str, object]:
-    anchor = read_anchor(root, session_id)
-    if not anchor:
-        raise ValueError("未找到会话锚点。")
-    anchor["last_activity_at"] = utc_now()
-    anchor_path(root, session_id).write_text(
-        json.dumps(anchor, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return anchor
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor = read_anchor(root, session_id)
+        if not anchor:
+            raise ValueError("未找到会话锚点。")
+        ensure_active(anchor)
+        anchor["last_activity_at"] = utc_now()
+        write_anchor_file(path, anchor)
+        return anchor
 
 
 def archive(root: Path, session_id: str) -> dict[str, object]:
-    anchor = read_anchor(root, session_id)
-    if not anchor:
-        raise ValueError("未找到会话锚点。")
-    if anchor.get("archived_at"):
-        return anchor
-    memory = str(anchor.get("memory", "")).strip()
-    memory_hash = memory_digest(memory)
-    if memory and anchor.get("exported_memory_hash") != memory_hash:
-        write_experience(root, anchor, memory)
-        anchor["exported_memory_hash"] = memory_hash
-    anchor["archived_at"] = utc_now()
-    anchor_path(root, session_id).write_text(
-        json.dumps(anchor, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return anchor
-
-
-def sweep(root: Path, days: int) -> list[str]:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    archived = []
-    for path in (root / "sessions").glob("*/anchor.json"):
-        try:
-            anchor = json.loads(path.read_text(encoding="utf-8"))
-            last_activity = datetime.fromisoformat(str(anchor["last_activity_at"]))
-        except (OSError, KeyError, ValueError, json.JSONDecodeError):
-            continue
-        if anchor.get("archived_at") or last_activity > cutoff:
-            continue
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor = read_anchor(root, session_id)
+        if not anchor:
+            raise ValueError("未找到会话锚点。")
+        if anchor.get("archived_at"):
+            return anchor
         memory = str(anchor.get("memory", "")).strip()
         memory_hash = memory_digest(memory)
         if memory and anchor.get("exported_memory_hash") != memory_hash:
             write_experience(root, anchor, memory)
             anchor["exported_memory_hash"] = memory_hash
         anchor["archived_at"] = utc_now()
-        path.write_text(json.dumps(anchor, ensure_ascii=False, indent=2), encoding="utf-8")
-        archived.append(str(anchor["session_key"]))
+        write_anchor_file(path, anchor)
+        return anchor
+
+
+def sweep(root: Path, days: int) -> list[str]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    archived = []
+    for path in (root / "sessions").glob("*/anchor.json"):
+        with exclusive_file_lock(path.with_suffix(".lock")):
+            try:
+                anchor = json.loads(path.read_text(encoding="utf-8"))
+                last_activity = datetime.fromisoformat(str(anchor["last_activity_at"]))
+            except (OSError, KeyError, ValueError, json.JSONDecodeError):
+                continue
+            if anchor.get("archived_at") or last_activity > cutoff:
+                continue
+            memory = str(anchor.get("memory", "")).strip()
+            memory_hash = memory_digest(memory)
+            if memory and anchor.get("exported_memory_hash") != memory_hash:
+                write_experience(root, anchor, memory)
+                anchor["exported_memory_hash"] = memory_hash
+            anchor["archived_at"] = utc_now()
+            write_anchor_file(path, anchor)
+            archived.append(str(anchor["session_key"]))
     return archived
 
 
