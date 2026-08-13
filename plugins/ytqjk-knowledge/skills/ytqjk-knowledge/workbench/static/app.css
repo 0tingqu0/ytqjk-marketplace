@@ -1,0 +1,33 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+.shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr) 19rem;
+  min-height: 100vh; }
+.sidebar, .review { padding: 1rem; border-color: GrayText;
+  border-style: solid; border-width: 0 1px 0 0; }
+.review { border-width: 0 0 0 1px; }
+.content { min-width: 0; padding: 1rem; }
+header { align-items: center; display: flex; justify-content: space-between; }
+h1, h2 { font-size: 1rem; margin: 0 0 .75rem; }
+section { margin-top: 1.5rem; }
+dl { display: grid; gap: .3rem; margin: 0; }
+dt { color: GrayText; font-size: .8rem; }
+dd { margin: 0; overflow-wrap: anywhere; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid GrayText; padding: .55rem;
+  text-align: left; overflow-wrap: anywhere; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; padding: .4rem .6rem; }
+label { display: grid; gap: .25rem; margin: .7rem 0; }
+textarea { min-height: 9rem; resize: vertical; }
+dialog { max-width: min(34rem, 94vw); }
+menu { display: flex; gap: .5rem; justify-content: end; padding: 0; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar, .review { border-width: 0 0 1px; }
+  .review { border-width: 1px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important;
+    transition: none !important; }
+}

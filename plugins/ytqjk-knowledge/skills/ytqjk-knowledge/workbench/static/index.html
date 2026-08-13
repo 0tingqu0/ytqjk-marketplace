@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Knowledge Workbench</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="shell" aria-label="Knowledge workbench">
+    <aside class="sidebar">
+      <h1>Knowledge</h1><dl id="project"></dl>
+      <section><h2>Snapshot</h2><p id="snapshot">Loading</p></section>
+    </aside>
+    <section class="content">
+      <header><h2>Knowledge table</h2>
+        <button id="refresh" title="Refresh">Refresh</button></header>
+      <p id="degraded" role="status"></p>
+      <table><thead><tr><th>Snapshot document</th><th>Version</th>
+        <th>State</th></tr></thead>
+      <tbody id="documents"></tbody></table>
+    </section>
+    <aside class="review">
+      <h2>Tasks</h2><p id="jobs"></p><h2>Candidates</h2>
+      <ul id="pending-candidates" aria-live="polite"></ul>
+      <button id="new-candidate">New candidate</button>
+      <p>Promotion requests fail closed until persistent adapter configured.</p>
+    </aside>
+  </main>
+  <dialog id="candidate-dialog" aria-labelledby="candidate-title">
+    <form method="dialog" id="candidate-form">
+      <h2 id="candidate-title">New candidate</h2>
+      <label>Title<input name="title" required maxlength="16384"></label>
+      <label>Source<input name="source" required maxlength="16384"
+        value="manual"></label>
+      <label>Content<textarea name="content" required
+        maxlength="16384"></textarea></label>
+      <menu><button value="cancel">Cancel</button>
+        <button value="submit">Create</button></menu>
+    </form>
+  </dialog>
+  <dialog id="action-dialog" aria-labelledby="action-title">
+    <form method="dialog" id="action-form">
+      <h2 id="action-title">Candidate</h2>
+      <input name="document_id" type="hidden">
+      <label id="edit-content">Content<textarea name="content"
+        maxlength="16384"></textarea></label>
+      <label id="edit-source">Source<input name="source" value="manual"
+        maxlength="16384"></label>
+      <p id="action-status" role="status"></p>
+      <menu><button value="cancel">Cancel</button>
+        <button id="action-submit" value="submit">Continue</button></menu>
+    </form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>
