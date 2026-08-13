@@ -54,20 +54,28 @@ def write_anchor_file(path: Path, anchor: dict[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def ensure_active(anchor: dict[str, object]) -> None:
+def ensure_active(
+    anchor: dict[str, object], *, allow_prepared: bool = False
+) -> None:
     if anchor.get("archived_at"):
         raise ValueError("会话已归档，不能重新锚定或恢复。")
+    if anchor.get("archive_prepared_at") and not allow_prepared:
+        raise ValueError("会话正在等待归档完成，不能重新锚定或恢复。")
 
 
 def _ensure_anchor(
-    root: Path, session_id: str, project_id: str
+    root: Path,
+    session_id: str,
+    project_id: str,
+    *,
+    allow_prepared: bool = False,
 ) -> tuple[dict[str, object], bool]:
     existing = read_anchor(root, session_id)
     bound_project = existing.get("project_id")
     if existing and bound_project != project_id:
         raise ValueError(f"会话已绑定项目 {bound_project}，禁止访问其他项目子库。")
     if existing:
-        ensure_active(existing)
+        ensure_active(existing, allow_prepared=allow_prepared)
     now = utc_now()
     anchor = {
         "schema_version": 1,
@@ -76,6 +84,7 @@ def _ensure_anchor(
         "created_at": existing.get("created_at", now),
         "last_activity_at": now,
         "archived_at": None,
+        "archive_prepared_at": existing.get("archive_prepared_at"),
         "memory": existing.get("memory", ""),
         "exported_memory_hash": existing.get("exported_memory_hash", ""),
     }
@@ -90,6 +99,27 @@ def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[st
         return _ensure_anchor(root, session_id, project_id)
 
 
+def inspect_anchor(
+    root: Path, session_id: str, project_id: str
+) -> dict[str, object]:
+    validate_session_id(session_id)
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor = read_anchor(root, session_id)
+        if not anchor:
+            return {"state": "ABSENT", "session_key": session_key(session_id)}
+        if anchor.get("project_id") != project_id:
+            raise ValueError(
+                f"会话已绑定项目 {anchor.get('project_id')}，禁止作为当前项目会话复用。"
+            )
+        return {
+            "state": _anchor_state(anchor),
+            "session_key": anchor["session_key"],
+            "project_id": anchor["project_id"],
+            "has_memory": bool(str(anchor.get("memory", "")).strip()),
+        }
+
+
 def write_anchor(root: Path, session_id: str, project_id: str) -> dict[str, object]:
     anchor, _ = ensure_anchor(root, session_id, project_id)
     return anchor
@@ -99,8 +129,11 @@ def checkpoint(root: Path, session_id: str, project_id: str, memory: str) -> dic
     validate_memory(memory)
     path = anchor_path(root, session_id)
     with exclusive_file_lock(path.with_suffix(".lock")):
-        anchor, _ = _ensure_anchor(root, session_id, project_id)
+        anchor, _ = _ensure_anchor(
+            root, session_id, project_id, allow_prepared=True
+        )
         anchor["memory"] = memory.strip()
+        anchor["archive_prepared_at"] = None
         anchor["last_activity_at"] = utc_now()
         write_anchor_file(path, anchor)
         return anchor
@@ -118,7 +151,22 @@ def restore(root: Path, session_id: str) -> dict[str, object]:
         return anchor
 
 
-def archive(root: Path, session_id: str) -> dict[str, object]:
+def prepare_archive(root: Path, session_id: str) -> dict[str, object]:
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor = read_anchor(root, session_id)
+        if not anchor:
+            raise ValueError("未找到会话锚点。")
+        ensure_active(anchor)
+        if not str(anchor.get("memory", "")).strip():
+            raise ValueError("归档前必须先保存会话摘要。")
+        if not anchor.get("archive_prepared_at"):
+            anchor["archive_prepared_at"] = utc_now()
+            write_anchor_file(path, anchor)
+        return anchor
+
+
+def finalize_archive(root: Path, session_id: str) -> dict[str, object]:
     path = anchor_path(root, session_id)
     with exclusive_file_lock(path.with_suffix(".lock")):
         anchor = read_anchor(root, session_id)
@@ -126,14 +174,31 @@ def archive(root: Path, session_id: str) -> dict[str, object]:
             raise ValueError("未找到会话锚点。")
         if anchor.get("archived_at"):
             return anchor
-        memory = str(anchor.get("memory", "")).strip()
-        memory_hash = memory_digest(memory)
-        if memory and anchor.get("exported_memory_hash") != memory_hash:
-            write_experience(root, anchor, memory)
-            anchor["exported_memory_hash"] = memory_hash
-        anchor["archived_at"] = utc_now()
-        write_anchor_file(path, anchor)
-        return anchor
+        if not anchor.get("archive_prepared_at"):
+            raise ValueError("会话尚未进入待归档状态。")
+        return _archive_anchor(root, path, anchor)
+
+
+def _archive_anchor(
+    root: Path, path: Path, anchor: dict[str, object]
+) -> dict[str, object]:
+    memory = str(anchor.get("memory", "")).strip()
+    memory_hash = memory_digest(memory)
+    if memory and anchor.get("exported_memory_hash") != memory_hash:
+        write_experience(root, anchor, memory)
+        anchor["exported_memory_hash"] = memory_hash
+    anchor["archived_at"] = utc_now()
+    anchor["archive_prepared_at"] = None
+    write_anchor_file(path, anchor)
+    return anchor
+
+
+def _anchor_state(anchor: dict[str, object]) -> str:
+    if anchor.get("archived_at"):
+        return "ARCHIVED"
+    if anchor.get("archive_prepared_at"):
+        return "ARCHIVE_PREPARED"
+    return "ACTIVE"
 
 
 def sweep(root: Path, days: int) -> list[str]:
@@ -193,10 +258,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="YTQJK session-anchor memory store.")
     parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("anchor", "checkpoint", "restore", "archive"):
+    for name in (
+        "anchor",
+        "inspect",
+        "checkpoint",
+        "restore",
+        "prepare-archive",
+        "finalize-archive",
+    ):
         item = sub.add_parser(name)
         item.add_argument("--session-id", required=True)
-        if name in {"anchor", "checkpoint"}:
+        if name in {"anchor", "inspect", "checkpoint"}:
             item.add_argument("--project-id", required=True)
         if name == "checkpoint":
             item.add_argument("--memory-file", type=Path, required=True)
@@ -206,12 +278,16 @@ def main() -> None:
     root = args.knowledge_root.resolve()
     if args.command == "anchor":
         result = write_anchor(root, args.session_id, args.project_id)
+    elif args.command == "inspect":
+        result = inspect_anchor(root, args.session_id, args.project_id)
     elif args.command == "checkpoint":
         result = checkpoint(root, args.session_id, args.project_id, args.memory_file.read_text(encoding="utf-8"))
     elif args.command == "restore":
         result = restore(root, args.session_id)
-    elif args.command == "archive":
-        result = archive(root, args.session_id)
+    elif args.command == "prepare-archive":
+        result = prepare_archive(root, args.session_id)
+    elif args.command == "finalize-archive":
+        result = finalize_archive(root, args.session_id)
     else:
         result = {"archived": sweep(root, args.days)}
     print(json.dumps(result, ensure_ascii=False))

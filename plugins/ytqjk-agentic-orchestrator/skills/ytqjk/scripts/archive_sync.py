@@ -6,7 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from rag_security import contains_high_confidence_secret
-from session_memory import archive, checkpoint, read_anchor, session_key
+from session_memory import (
+    checkpoint,
+    finalize_archive,
+    prepare_archive,
+    read_anchor,
+    session_key,
+)
 
 
 ARCHIVE_NAME = re.compile(r".*-([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$", re.IGNORECASE)
@@ -66,6 +72,7 @@ def sync_archived_sessions(root: Path, codex_home: Path | None = None) -> list[s
         if not isinstance(project_id, str):
             continue
         checkpoint(root, session_id, project_id, memory)
-        archive(root, session_id)
+        prepare_archive(root, session_id)
+        finalize_archive(root, session_id)
         synced.append(session_key(session_id))
     return synced

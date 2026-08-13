@@ -25,13 +25,14 @@ ARCHIVE_SPEC.loader.exec_module(ARCHIVE_MODULE)
 
 
 class SessionMemoryTest(unittest.TestCase):
-    def test_anchor_checkpoint_restore_and_archive(self) -> None:
+    def test_anchor_checkpoint_restore_and_confirmed_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             MODULE.write_anchor(root, "thread-1", "project-a")
             MODULE.checkpoint(root, "thread-1", "project-a", "结论：测试通过；证据：commit abc。")
             restored = MODULE.restore(root, "thread-1")
-            archived = MODULE.archive(root, "thread-1")
+            MODULE.prepare_archive(root, "thread-1")
+            archived = MODULE.finalize_archive(root, "thread-1")
 
             self.assertIn("测试通过", restored["memory"])
             self.assertTrue(archived["archived_at"])
@@ -52,7 +53,8 @@ class SessionMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             MODULE.checkpoint(root, "thread-4", "project-a", "来源：测试记录。" * 20)
-            MODULE.archive(root, "thread-4")
+            MODULE.prepare_archive(root, "thread-4")
+            MODULE.finalize_archive(root, "thread-4")
 
             with self.assertRaisesRegex(ValueError, "已归档"):
                 MODULE.write_anchor(root, "thread-4", "project-a")
@@ -82,6 +84,68 @@ class SessionMemoryTest(unittest.TestCase):
             self.assertTrue(created_first)
             self.assertFalse(created_second)
             self.assertEqual(len(list((root / "sessions").glob("*/anchor.json"))), 1)
+
+    def test_inspect_distinguishes_legacy_active_and_archived_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            absent = MODULE.inspect_anchor(root, "legacy-thread", "project-a")
+            MODULE.write_anchor(root, "legacy-thread", "project-a")
+            active = MODULE.inspect_anchor(root, "legacy-thread", "project-a")
+            MODULE.checkpoint(
+                root, "legacy-thread", "project-a", "来源：流程复用测试。" * 20
+            )
+            MODULE.prepare_archive(root, "legacy-thread")
+            MODULE.finalize_archive(root, "legacy-thread")
+            archived = MODULE.inspect_anchor(root, "legacy-thread", "project-a")
+
+            self.assertEqual(absent["state"], "ABSENT")
+            self.assertEqual(active["state"], "ACTIVE")
+            self.assertEqual(archived["state"], "ARCHIVED")
+
+    def test_unconfirmed_legacy_archive_entrypoint_is_absent(self) -> None:
+        self.assertFalse(hasattr(MODULE, "archive"))
+
+    def test_inspect_rejects_cross_project_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            MODULE.write_anchor(root, "thread-inspect", "project-a")
+
+            with self.assertRaisesRegex(ValueError, "禁止作为当前项目会话复用"):
+                MODULE.inspect_anchor(root, "thread-inspect", "project-b")
+
+    def test_failed_host_archive_can_retry_from_prepared_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            MODULE.checkpoint(
+                root, "thread-retry", "project-a", "来源：首次归档尝试。" * 20
+            )
+
+            prepared = MODULE.prepare_archive(root, "thread-retry")
+            inspected = MODULE.inspect_anchor(root, "thread-retry", "project-a")
+            self.assertTrue(prepared["archive_prepared_at"])
+            self.assertEqual(inspected["state"], "ARCHIVE_PREPARED")
+            with self.assertRaisesRegex(ValueError, "等待归档完成"):
+                MODULE.restore(root, "thread-retry")
+            with self.assertRaisesRegex(ValueError, "等待归档完成"):
+                MODULE.write_anchor(root, "thread-retry", "project-a")
+            retried = MODULE.checkpoint(
+                root, "thread-retry", "project-a", "来源：归档失败后重试。" * 20
+            )
+            self.assertIsNone(retried["archive_prepared_at"])
+            MODULE.prepare_archive(root, "thread-retry")
+            archived = MODULE.finalize_archive(root, "thread-retry")
+            self.assertTrue(archived["archived_at"])
+
+    def test_finalize_requires_prepared_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            MODULE.checkpoint(
+                root, "thread-unprepared", "project-a", "来源：待归档摘要。" * 20
+            )
+
+            with self.assertRaisesRegex(ValueError, "尚未进入待归档状态"):
+                MODULE.finalize_archive(root, "thread-unprepared")
 
     def test_anchor_rejects_cross_project_access(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
