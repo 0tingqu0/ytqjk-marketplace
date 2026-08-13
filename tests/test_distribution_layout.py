@@ -29,15 +29,27 @@ class DistributionLayoutTest(unittest.TestCase):
             )
         )
         self.assertEqual(marketplace["name"], "ytqjk")
+        entry = marketplace["plugins"][0]
+        self.assertEqual(entry["name"], "ytqjk-agentic-orchestrator")
         self.assertEqual(
-            marketplace["plugins"][0]["source"]["path"],
+            entry["source"]["path"],
             "./plugins/ytqjk-agentic-orchestrator",
         )
+        self.assertEqual(entry["policy"]["installation"], "AVAILABLE")
+        self.assertEqual(entry["policy"]["authentication"], "ON_INSTALL")
+        self.assertEqual(entry["category"], "Productivity")
         manifest = json.loads(
             (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["name"], "ytqjk-agentic-orchestrator")
+        self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
+        self.assertNotIn("+codex.", manifest["version"])
         self.assertEqual(manifest["author"]["name"], "一听曲就困")
+        self.assertEqual(
+            manifest["repository"],
+            "https://github.com/0tingqu0/ytqjk-marketplace",
+        )
+        self.assertEqual(manifest["license"], "MIT")
         self.assertEqual(manifest["interface"]["developerName"], "一听曲就困")
         prompt = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(prompt.encode("utf-8")), 128)
@@ -62,6 +74,10 @@ class DistributionLayoutTest(unittest.TestCase):
         )
         self.assertIn("$ytqjk", readme)
         self.assertIn("/skills", readme)
+        self.assertIn("完整多会话编排", readme)
+        self.assertIn("Codex CLI 输入 `/plugins`", readme)
+        self.assertIn("codex plugin add ytqjk-agentic-orchestrator@ytqjk", readme)
+        self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
         self.assertIn("目标明确并由你显式确认前", readme)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
@@ -127,6 +143,41 @@ class DistributionLayoutTest(unittest.TestCase):
             protocol_normalized,
         )
 
+    def test_protocol_uses_jit_roles_and_bounded_recovery(self) -> None:
+        skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        protocol = (SKILL / "references" / "protocol.md").read_text(
+            encoding="utf-8"
+        )
+        normalized = " ".join(protocol.split())
+
+        self.assertIn("host-tool-driven", skill)
+        self.assertIn("not a background daemon", skill)
+        self.assertIn(
+            "create, list, read, wait, message, and title operations", normalized
+        )
+        self.assertIn("Pin and archive are optional enhancements", normalized)
+        self.assertIn("Read-only objectives never create it", normalized)
+        self.assertIn("No result means no reviewer conversation", normalized)
+        self.assertIn("Non-Git read-only work may continue", normalized)
+        self.assertIn("`NON_GIT_MUTATION` plan is `BLOCKED`", normalized)
+        self.assertIn("idempotent run token", normalized)
+        self.assertIn(
+            "An ambiguous delivery after the bounded retry is `BLOCKED`", normalized
+        )
+        self.assertIn("### Read-only loop", protocol)
+        self.assertIn("### Git mutation loop", protocol)
+        self.assertIn("mark it `DONE`; a host lifecycle action", normalized)
+        self.assertNotIn("Both must exist before Worker dispatch", protocol)
+        self.assertNotIn("list, read, wait, message, title, pin, and archive", protocol)
+        self.assertIn("Never overwrite a different active objective", normalized)
+
+        archive_rules = normalized[normalized.index("## 6. Status and archive rules") :]
+        checkpoint = archive_rules.index("session_memory.py checkpoint")
+        memory_archive = archive_rules.index("session_memory.py archive")
+        host_archive = archive_rules.index("archive the host conversation")
+        self.assertLess(checkpoint, memory_archive)
+        self.assertLess(memory_archive, host_archive)
+
     def test_repository_has_no_generated_python_cache(self) -> None:
         generated = [
             path
@@ -156,15 +207,17 @@ class DistributionLayoutTest(unittest.TestCase):
             "report that result instead of repeating queries", normalized_knowledge
         )
 
-    def test_readonly_knowledge_dashboard_is_packaged(self) -> None:
+    def test_local_knowledge_dashboard_is_packaged(self) -> None:
         dashboard = SKILL / "dashboard"
         for name in ("knowledge_dashboard.py", "index.html", "app.js", "style.css"):
             self.assertTrue((dashboard / name).is_file())
         knowledge = (SKILL / "references" / "knowledge-store.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("## Read-only dashboard", knowledge)
+        self.assertIn("## Local management dashboard", knowledge)
         self.assertIn("binds only to `127.0.0.1`", knowledge)
+        self.assertIn("explicitly approved by the user", knowledge)
+        self.assertIn("never auto-approves candidates", knowledge)
 
 
 if __name__ == "__main__":

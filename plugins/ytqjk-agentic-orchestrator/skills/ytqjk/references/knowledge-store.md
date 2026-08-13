@@ -161,18 +161,21 @@ run `index-global` when the global cache is missing, stale, or on an older secur
 schema. Then query once. If both current caches contain no matching evidence,
 report that result instead of repeating queries to force vector activation.
 
-## Read-only dashboard
+## Local management dashboard
 
 Use the bundled local dashboard to inspect project cache metadata plus verified,
-approved, and candidate Markdown entries. It binds only to `127.0.0.1` and never
-indexes, promotes, deletes, or modifies knowledge:
+approved, and candidate Markdown entries. It binds only to `127.0.0.1`. Verified
+and approved entries are read-only. Candidate entries may be added, edited, deleted,
+or explicitly approved by the user; the dashboard never auto-approves candidates or
+automatically rebuilds an index:
 
 ```text
 python dashboard/knowledge_dashboard.py --knowledge-root <knowledge-root>
 ```
 
-Open `http://127.0.0.1:8765`. Candidate entries must remain visibly labeled
-`CANDIDATE`; the dashboard is not evidence of approval or current-source state.
+Open `http://127.0.0.1:8765`. Candidate entries remain visibly labeled `CANDIDATE`
+until the user selects the approval action. The dashboard is not evidence of
+current-source state.
 
 The dashboard can accept a local file or pasted text into
 `personal-experience/candidates/imports`. It permits `.md`, `.txt`, `.json`,
