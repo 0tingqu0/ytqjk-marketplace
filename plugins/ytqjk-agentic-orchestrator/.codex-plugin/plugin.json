@@ -18,6 +18,6 @@
     "developerName": "\u4e00\u542c\u66f2\u5c31\u56f0",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Use $ytqjk. During GOAL_INTAKE, make no tool call; ask one objective question/turn; create no role until explicit confirmation."
+    "defaultPrompt": "Bare $ytqjk: ask one objective question first. Before confirmation: no file reads, tools, skills, or sessions."
   }
 }

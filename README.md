@@ -1,6 +1,6 @@
 # YTQJK Agentic Orchestrator
 
-面向复杂项目的 Codex 多任务总控。它负责十段式计划、并行 Worker、独立监督与复审、唯一 Git 提交者、单独进度报告者，以及本机 agentic RAG 知识缓存；总控本身不处理实现。
+面向复杂项目的 Codex 多任务总控。它负责按自然任务粒度加权的计划、并行 Worker、独立监督与复审、唯一 Git 提交者、单独进度报告者，以及本机 agentic RAG 知识缓存；总控本身不处理实现。
 
 知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
 extension 可加载独立 skills，但不加载 plugin；完整多会话编排还取决于宿主是否提供可见会话 API。
@@ -15,17 +15,17 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
 重启 Codex、新建任务，然后输入 `$ytqjk`；也可以通过 `/skills` 选择 `ytqjk`。仅当当前宿主
-明确提供 `/ytqjk` 快捷命令时才使用该写法，不把它作为可移植入口。目标明确并由你显式确认前，它会留在当前激活任务，
-每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色。确认后的首个工具调用
+明确提供 `/ytqjk` 快捷命令时才使用该写法，不把它作为可移植入口。裸调用尚未给出明确目标时，它会留在当前激活任务，
+每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色；调用中已包含可执行目标，或你随后给出明确目标时，不再重复要求确认。目标确认后的首个工具调用
 才读取协议并创建总控；目标确认不等于计划批准，后续仍执行 `grill-me`、监督和计划批准门。
 
 ### 宿主能力边界
 
 | 使用方式 | 可加载内容 | 完整多会话编排 |
 | --- | --- | --- |
-| Codex 桌面版 | plugin 与 bundled skills | 宿主提供会话创建、列出、读取、等待、消息和标题 API 时可用 |
-| Codex CLI | marketplace plugin 与 bundled skills | 需要同一组完整可见会话 API；能力检测不通过时返回 `BLOCKED` |
-| Codex IDE extension | 项目级 standalone skills；不加载 plugin | 需要同一组完整可见会话 API；能力检测不通过时返回 `BLOCKED`，改用具备这些 API 的桌面版或 CLI 宿主 |
+| Codex 桌面版 | plugin 与 bundled skills | 宿主提供会话创建、列出、读取、等待和消息 API 时可用；标题缺失只影响跨次复用 |
+| Codex CLI | marketplace plugin 与 bundled skills | 需要同一组核心可见会话 API；能力检测不通过时返回 `BLOCKED` |
+| Codex IDE extension | 项目级 standalone skills；不加载 plugin | 需要同一组核心可见会话 API；能力检测不通过时返回 `BLOCKED`，改用具备这些 API 的桌面版或 CLI 宿主 |
 
 安装成功只表示 skill 可被发现，不代表宿主具备完整多会话控制能力。置顶和归档属于可选增强；
 缺失时进度会话保持可见，完成会话标记为 `DONE`。YTQJK 不会用隐藏智能体或当前会话内角色扮演
@@ -49,6 +49,7 @@ Codex 桌面版在 Plugins 页面卸载后重新安装。Codex CLI 输入 `/plug
 在 `ytqjk` marketplace 中卸载后重新安装；也可从已配置的 marketplace 重新执行安装命令：
 
 ```bash
+codex plugin marketplace upgrade ytqjk
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
@@ -64,18 +65,18 @@ npx skills@latest update ytqjk caveman -p
 
 若更新命令无法识别旧安装记录，重新执行上面的项目级 `skills add` 命令。
 
-已有对应发布 tag 时，可将 marketplace 固定回指定版本；以下以 `v0.2.0` 为例：
+已有对应发布 tag 时，可将 marketplace 固定回该 tag；发布者未创建 tag 时不能使用此回滚流程：
 
 ```bash
 codex plugin marketplace remove ytqjk
-codex plugin marketplace add 0tingqu0/ytqjk-marketplace --ref v0.2.0
+codex plugin marketplace add 0tingqu0/ytqjk-marketplace --ref <release-tag>
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
 ```
 
 IDE 回滚使用相同 tag 的 skills 路径重新安装：
 
 ```bash
-npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/v0.2.0/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
+npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<release-tag>/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
 ```
 
 ## 环境要求
@@ -88,6 +89,8 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/v0.2.0/
 - `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
 - RAG 首次查询前会刷新缺失、过期或安全版本不兼容的项目与全局索引。`auto` 仅在文本达到
   10 MiB 或 2,000 个分块时启用向量；小知识库不会因连续空查询而自动下载模型。
+- 常规查询不重新扫描整个总库，只校验实际命中的来源文件；单次查询最多等待 60 秒，超时
+  返回可重试错误，避免会话长期卡住。
 - 所有会话检索都先查当前项目子库；命中即结束，未命中才回源总库。总库命中会写入当前
   项目子库，总库仍未命中则返回 `KNOWLEDGE_MISS`，由当前会话外部检索并通过候选接口提交。
   会话不能切换项目或读取其他项目子库。每个项目子库总容量为 1 GiB，按 LFU+LRU 淘汰，
@@ -153,12 +156,12 @@ Codex 未向插件开放全局新会话、自动压缩和闲置事件订阅时�
 仅对 YTQJK 创建并由其生命周期流程管理的会话执行锚定与回收。
 
 启用 `$ytqjk` 并确认目标后，会优先在 Codex 中复用当前项目已有、未归档的
-`[YTQJK][项目ID]` 职责会话，并恢复其锚点摘要；只有找不到合适会话、旧会话已归档或职责
-冲突时才创建新会话。它使用 Codex 会话协作，不把当前会话替换为智能体。
+`[YTQJK][项目ID]` 职责会话，并恢复其活动锚点摘要；只有找不到合适会话、旧会话或锚点已归档、
+会话持续失联或职责冲突时才创建新会话。它使用 Codex 会话协作，不把当前会话替换为智能体。
 
 ## 本地数据与安全
 
-- 插件在目标确认后自动构建当前会话工作目录的完整知识库：建立独立项目子库、索引项目安全文本，并刷新只包含已验证/已批准内容的总库索引。该流程不要求目录是 Git 仓库，且不会自动批准候选资料。Git 项目仅索引已跟踪的文本文件；普通目录会安全扫描其中的常规文本文件。两种模式都会在分块前排除常见敏感路径和高置信秘密内容；这不能替代项目自己的秘密扫描。
+- 插件在目标确认后保持轻量；首次出现可由项目回答的问题或首次索引需求时，才自动构建当前会话工作目录的完整知识库：建立独立项目子库、索引项目安全文本，并刷新只包含已验证/已批准内容的总库索引。该流程不要求目录是 Git 仓库，且不会自动批准候选资料。Git 项目仅索引已跟踪的文本文件；普通目录会安全扫描其中的常规文本文件。两种模式都会在分块前排除常见敏感路径和高置信秘密内容；这不能替代项目自己的秘密扫描。
 - 知识根保存源码检索缓存、项目绝对路径、脱敏后的网络 remote 或本地 remote 指纹，以及模型和隔离运行时。
 - 项目知识子库为可重建缓存，达到 1 GiB 硬上限时会按 LFU+LRU 自动淘汰回源知识，必要时
   丢弃可重建向量/词法索引。安全规则升级产生的旧缓存不因升级自动删除，任意手工删除仍需明确批准。

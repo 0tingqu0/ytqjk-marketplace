@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -54,9 +55,9 @@ class DistributionLayoutTest(unittest.TestCase):
         prompt = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(prompt.encode("utf-8")), 128)
         self.assertIn("$ytqjk", prompt)
-        self.assertIn("GOAL_INTAKE", prompt)
-        self.assertIn("make no tool call", prompt)
-        self.assertIn("until explicit confirmation", prompt)
+        self.assertIn("one objective question", prompt)
+        self.assertIn("no file reads, tools, skills, or sessions", prompt)
+        self.assertIn("Before confirmation", prompt)
         agent_metadata = (SKILL / "agents" / "openai.yaml").read_text(
             encoding="utf-8"
         )
@@ -76,9 +77,10 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("/skills", readme)
         self.assertIn("完整多会话编排", readme)
         self.assertIn("Codex CLI 输入 `/plugins`", readme)
+        self.assertIn("codex plugin marketplace upgrade ytqjk", readme)
         self.assertIn("codex plugin add ytqjk-agentic-orchestrator@ytqjk", readme)
         self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
-        self.assertIn("目标明确并由你显式确认前", readme)
+        self.assertIn("裸调用尚未给出明确目标时", readme)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
         caveman = PLUGIN / "skills" / "caveman" / "SKILL.md"
@@ -98,6 +100,12 @@ class DistributionLayoutTest(unittest.TestCase):
         skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertLessEqual(len(skill_text.encode("utf-8")), 2500)
         normalized = " ".join(skill_text.split())
+        description = normalized.split("---", 2)[1]
+        self.assertIn("immediately ask one objective question", description)
+        self.assertIn(
+            "do not read files, call tools, load other skills, or create sessions",
+            description,
+        )
         instant = normalized.index("## Activation objective gate")
         deferred = normalized.index("## Deferred initialization")
         self.assertLess(instant, deferred)
@@ -111,17 +119,20 @@ class DistributionLayoutTest(unittest.TestCase):
             "Ask exactly one objective question per response", instant_contract
         )
         self.assertIn(
-            "only an affirmative reply to that summary counts", instant_contract
+            "A clear actionable objective supplied in the activation request or a later user reply counts as explicit objective confirmation",
+            instant_contract,
         )
+        self.assertIn(
+            "do not restate it solely to request another confirmation",
+            instant_contract,
+        )
+        self.assertNotIn("Initial objective text is not confirmation", normalized)
         self.assertIn(
             "controller, supervisor, progress, RAG, reviewer, Git, or Worker",
             instant_contract,
         )
         self.assertNotIn("$caveman", instant_contract)
-        self.assertIn(
-            "Only after explicit objective confirmation, make reading",
-            normalized,
-        )
+        self.assertIn("After confirmation, first read the complete", normalized)
         self.assertIn("On explicit stop or pause, send the stop once", normalized)
         self.assertNotIn("Before creating any task, read", normalized)
 
@@ -142,6 +153,11 @@ class DistributionLayoutTest(unittest.TestCase):
             "Objective confirmation does not approve the plan",
             protocol_normalized,
         )
+        self.assertIn(
+            "A clear actionable objective supplied in the activation request or a later user reply counts as explicit objective confirmation",
+            protocol_normalized,
+        )
+        self.assertNotIn("Initial objective text never counts", protocol_normalized)
 
     def test_protocol_uses_jit_roles_and_bounded_recovery(self) -> None:
         skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
@@ -153,8 +169,14 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("host-tool-driven", skill)
         self.assertIn("not a background daemon", skill)
         self.assertIn(
-            "create, list, read, wait, message, and title operations", normalized
+            "create, list, read, wait, and message operations", normalized
         )
+        self.assertIn("Title is optional", normalized)
+        self.assertIn("do not block the current run", normalized)
+        self.assertIn(
+            "cross-activation discovery and reuse are unavailable", normalized
+        )
+        self.assertNotIn("message, and title operations", normalized)
         self.assertIn("Pin and archive are optional enhancements", normalized)
         self.assertIn("Read-only objectives never create it", normalized)
         self.assertIn("No result means no reviewer conversation", normalized)
@@ -170,19 +192,61 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertNotIn("Both must exist before Worker dispatch", protocol)
         self.assertNotIn("list, read, wait, message, title, pin, and archive", protocol)
         self.assertIn("Never overwrite a different active objective", normalized)
+        self.assertIn("an absent anchor is created for this project", normalized)
+        self.assertIn("an archived anchor is skipped", normalized)
+        self.assertIn("A memory-archived conversation is never a reuse candidate", normalized)
+        self.assertIn("the requesting role's stable host session ID", normalized)
+        self.assertIn("never its own ID", normalized)
+        self.assertIn("`--expected-project-id`", normalized)
+        self.assertIn("launcher host session ID", normalized)
+        self.assertIn("callback run token", normalized)
+        self.assertIn("cap each query at 60 seconds", normalized)
+        self.assertIn("launcher acknowledges the terminal run-token handoff", normalized)
+        self.assertIn("the Git role verifies the clean baseline", normalized)
+        self.assertIn("controller performs only the host control-plane call", normalized)
+        self.assertIn("Git role performs explicit `git worktree` provisioning", normalized)
+        self.assertIn("dirty paths do not overlap those scopes", normalized)
+        self.assertIn(
+            "continue from the recorded HEAD in a dedicated clean integration worktree",
+            normalized,
+        )
+        self.assertIn("If any dirty path overlaps", normalized)
+        self.assertNotIn("If dirty, stop", normalized)
+        self.assertIn("natural task granularity", normalized)
+        self.assertIn("all milestone weights must total 100%", normalized)
+        self.assertIn(
+            "reaches or crosses each 10-percentage-point boundary", normalized
+        )
+        self.assertNotIn("exactly ten evidence-gated milestones", normalized)
+        self.assertNotIn("each worth 10%", normalized)
 
         archive_rules = normalized[normalized.index("## 6. Status and archive rules") :]
         checkpoint = archive_rules.index("session_memory.py checkpoint")
-        memory_archive = archive_rules.index("session_memory.py archive")
+        prepare = archive_rules.index("session_memory.py prepare-archive")
         host_archive = archive_rules.index("archive the host conversation")
-        self.assertLess(checkpoint, memory_archive)
-        self.assertLess(memory_archive, host_archive)
+        finalize = archive_rules.index("session_memory.py finalize-archive")
+        self.assertLess(checkpoint, prepare)
+        self.assertLess(prepare, host_archive)
+        self.assertLess(host_archive, finalize)
+        self.assertIn(
+            "If host archive is unavailable, do not prepare or archive",
+            archive_rules,
+        )
 
     def test_repository_has_no_generated_python_cache(self) -> None:
+        tracked = subprocess.run(
+            ["git", "-C", str(REPOSITORY), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
         generated = [
-            path
-            for path in REPOSITORY.rglob("*")
-            if path.name == "__pycache__" or path.suffix in {".pyc", ".pyo"}
+            value.decode("utf-8")
+            for value in tracked
+            if value
+            and (
+                "__pycache__" in Path(value.decode("utf-8")).parts
+                or Path(value.decode("utf-8")).suffix in {".pyc", ".pyo"}
+            )
         ]
         self.assertEqual(generated, [])
 

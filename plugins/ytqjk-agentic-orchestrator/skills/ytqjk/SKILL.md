@@ -1,45 +1,44 @@
 ---
 name: ytqjk
-description: Start host-mediated YTQJK orchestration with gated planning, isolated work, review, Git, progress, and local RAG.
+description: Start YTQJK orchestration. On bare `$ytqjk`, immediately ask one objective question; before confirmation, do not read files, call tools, load other skills, or create sessions. After confirmation, coordinate planning, workers, review, Git, progress, and local RAG.
 ---
 
 # YTQJK Agentic Orchestrator
 
-Run a host-tool-driven Codex conversation control plane, not a background daemon.
-Controller never implements project work. Invoke as `$ytqjk` or through `/skills`.
+Run a host-tool-driven conversation control plane, not a background daemon. The
+controller coordinates only. Invoke with `$ytqjk` or `/skills`.
 
 ## Activation objective gate
 
-For a new activation, enter `GOAL_INTAKE` and make the first response visible
-immediately. Throughout `GOAL_INTAKE`, before explicit objective confirmation,
-make no tool call and stay in the current activation task. Do not create any
+For a bare activation without an actionable objective, enter `GOAL_INTAKE` and
+respond immediately. Throughout `GOAL_INTAKE`, before explicit objective confirmation, make
+no tool call and stay in the current activation task. Create no
 controller, supervisor, progress, RAG, reviewer, Git, or Worker session or role.
 
-Ask exactly one objective question per response with a recommended answer. Load no
-other skill. Once clear, restate the objective and ask for confirmation. Initial
-objective text is not confirmation; only an affirmative reply to that summary counts.
-State no work started. Never claim unsupported work or evidence.
+Ask exactly one objective question per response with a recommendation. Load no other skill.
+A clear actionable objective supplied in the activation request or a later user reply counts as explicit objective confirmation; do not restate it solely to request another confirmation. Continue intake only for material ambiguity. State no work started only while intake remains active.
 
 Existing-run `stop`, `pause`, `resume`, or `status` bypasses this gate. On explicit
 stop or pause, send the stop once, then perform no work until resumed.
 
 ## Deferred initialization
 
-Only after explicit objective confirmation, make reading
-[references/protocol.md](references/protocol.md) completely the first deferred tool
-call; call nothing else first. Reread after compaction/version change. Before RAG,
-read [references/knowledge-store.md](references/knowledge-store.md) completely.
+After confirmation, first read the complete [protocol](references/protocol.md).
+Reread after compaction/version changes. Before RAG, read
+[knowledge-store](references/knowledge-store.md).
 
-After confirmation, use bounded reuse and create roles just in time. Core host
-operations are required; pin/archive may degrade. Read-only work has no Git role;
-reviewer waits for a result. Git mutation uses worktrees; non-Git mutation blocks.
+Use bounded reuse and create roles just in time. Reuse only active or absent memory
+anchors, never archived ones. Core host operations are required; pin/archive may
+degrade. Read-only work has no Git role and reviewer waits for a result. Git mutation
+uses worktrees; non-Git mutation blocks.
 
 Before the first knowledge query, RAG runs `scripts/rag_cli.py bootstrap
---project-root <current-work-directory> --vector-mode auto`. Git and non-Git work
-directories both receive project sub-libraries. Candidates remain unapproved.
+--project-root <work-directory> --vector-mode auto`. Every work directory receives a
+project sub-library. Candidates remain unapproved.
 
 ## Session anchors
 
-Reuse matching `[YTQJK][project-id]` conversations after confirmation. Anchor each
-role. Archive in order: checkpoint, memory archive, host archive. Never claim
-unsupported automatic lifecycle or background execution.
+Reuse matching `[YTQJK][project-id]` conversations when title discovery is supported;
+otherwise reuse current-run IDs only. Anchor each role. Archive via checkpoint,
+prepare, confirmed host archive, then finalization. Without archive support, retain
+the checkpoint and mark `DONE`. Never claim unsupported lifecycle automation.

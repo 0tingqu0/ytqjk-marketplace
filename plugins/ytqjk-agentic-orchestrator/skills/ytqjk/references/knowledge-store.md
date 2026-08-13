@@ -45,11 +45,12 @@ not a knowledge source. Its `cache/global-knowledge.sqlite3` contains only globa
 chunks previously needed by that project; legacy `global-knowledge.json` entries
 are migrated automatically.
 
-After a YTQJK objective is confirmed, the RAG role automatically runs the
-`bootstrap` command for the current work directory. It creates or refreshes that
-directory's project sub-library, indexes its safe text files, and rebuilds the
-approved global index. This applies to Git and ordinary directories; candidates
-remain excluded and are never auto-approved.
+After a YTQJK objective is confirmed, initialization stays lightweight. Immediately
+before the first repository-answerable question or index operation, the RAG role
+automatically runs the `bootstrap` command for the current work directory. It creates
+or refreshes that directory's project sub-library, indexes its safe text files, and
+rebuilds the approved global index. This applies to Git and ordinary directories;
+candidates remain excluded and are never auto-approved.
 
 Use this strict lookup state machine:
 
@@ -130,11 +131,12 @@ Use the isolated interpreter afterward:
 ```powershell
 $ragPython = Join-Path $env:YTQJK_KNOWLEDGE_ROOT '.runtime\Scripts\python.exe'
 $repo = 'C:\absolute\path\to\repo'
+$projectId = '<resolved-project-id>'
 & $ragPython scripts\rag_cli.py init --project-root $repo
 & $ragPython scripts\rag_cli.py index --project-root $repo --vector-mode auto
 & $ragPython scripts\rag_cli.py index-global --vector-mode auto
 & $ragPython scripts\rag_cli.py bootstrap --project-root $repo --vector-mode auto
-& $ragPython scripts\session_query.py --project-root $repo --session-id $env:CODEX_THREAD_ID "<question>"
+& $ragPython scripts\session_query.py --project-root $repo --session-id $env:CODEX_THREAD_ID --expected-project-id $projectId "<question>"
 ```
 
 Linux or WSL2 Bash:
@@ -146,14 +148,21 @@ python3 scripts/bootstrap_runtime.py
 
 rag_python="$YTQJK_KNOWLEDGE_ROOT/.runtime/bin/python"
 repo="/absolute/path/to/repo"
+project_id="<resolved-project-id>"
 "$rag_python" scripts/rag_cli.py init --project-root "$repo"
 "$rag_python" scripts/rag_cli.py index --project-root "$repo" --vector-mode auto
 "$rag_python" scripts/rag_cli.py index-global --vector-mode auto
 "$rag_python" scripts/rag_cli.py bootstrap --project-root "$repo" --vector-mode auto
-"$rag_python" scripts/session_query.py --project-root "$repo" --session-id "$CODEX_THREAD_ID" "<question>"
+"$rag_python" scripts/session_query.py --project-root "$repo" --session-id "$CODEX_THREAD_ID" --expected-project-id "$project_id" "<question>"
 ```
 
 Before a first vector build, the RAG task must report the configured model, package versions, estimated download, and cache path. `off` never loads vector dependencies; `auto` builds them only after a configured threshold; `on` requests them immediately. Re-run project indexing after HEAD changes and global indexing after an approved knowledge promotion.
+
+`bootstrap` owns whole-corpus freshness checks. Normal queries do not rescan or
+decode the full approved store; they validate only matched source files before
+returning or caching evidence. Discard stale, moved, deleted, secret-bearing, or
+otherwise invalid matches. Cap each session query at 60 seconds and return a
+retryable timeout instead of waiting indefinitely.
 
 Before the first query in a run, the RAG task must inspect both manifests. Run
 `index` when the project cache is missing, stale, or on an older security schema;
