@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from install_external_grill import GRILL_COMMAND, grill_action
+
 Action = dict[str, object]
 Runner = Callable[[list[str], Path], str]
 
@@ -88,17 +90,6 @@ def codex_actions() -> tuple[Action, ...]:
             ["remove", "ytqjk-knowledge@ytqjk"],
         ),
     )
-
-
-def grill_action() -> Action:
-    return {
-        "kind": "third-party-stage",
-        "name": "skill:grill-me",
-        "command": ["npx", "skills@latest", "add", "mattpocock/skills"],
-        "verification": "unverified",
-        "confirmation_required": True,
-        "scope": "target-root staging",
-    }
 
 
 def tree_state(root: Path) -> dict[str, tuple[str, str]]:
@@ -185,10 +176,7 @@ def stage_grill(target: Path, runner: Runner) -> StagedSkill:
         if skills.exists():
             shutil.copytree(skills, backup, symlinks=True)
         target_may_need_restore = True
-        runner(
-            ["npx", "skills@latest", "add", "mattpocock/skills"],
-            work,
-        )
+        runner(list(GRILL_COMMAND), work)
         if tree_state(skills) != baseline:
             raise RuntimeError(
                 "third-party command changed target before promotion",

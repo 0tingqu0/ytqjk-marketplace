@@ -170,7 +170,7 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
   会话不能切换项目或读取其他项目子库。每个项目子库总容量为 1 GiB，按 LFU+LRU 淘汰，
   优先保留多次命中的知识。
 - 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
-  `npx skills@latest add mattpocock/skills`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
+  `npx skills@latest add mattpocock/skills --agent codex --skill grill-me --yes --copy`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 
 ## 知识库控制台
 

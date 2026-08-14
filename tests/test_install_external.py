@@ -94,6 +94,28 @@ class StatefulRunner:
 
 
 class ExternalInstallTest(unittest.TestCase):
+    def test_grill_uses_noninteractive_exact_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            runner = StatefulRunner()
+            apply_plan(build_plan("ide-only", target), target, runner=runner)
+            npx_calls = [
+                call[0] for call in runner.calls if call[0][0] == "npx"
+            ]
+            expected_command = [
+                "npx",
+                "skills@latest",
+                "add",
+                "mattpocock/skills",
+                "--agent",
+                "codex",
+                "--skill",
+                "grill-me",
+                "--yes",
+                "--copy",
+            ]
+            self.assertEqual(npx_calls, [expected_command])
+
     def test_clean_ide_installs_staged_grill(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
