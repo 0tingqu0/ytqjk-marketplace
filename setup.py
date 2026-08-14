@@ -121,6 +121,10 @@ def run_external(command: list[str], cwd: Path) -> str:
     allowed = {"codex", "npx"}
     if not command or command[0] not in allowed:
         raise RuntimeError("installer rejected external command")
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise RuntimeError(f"required command not found: {command[0]}")
+    resolved_command = [executable, *command[1:]]
     environment = None
     if command[0] == "npx":
         runtime = cwd / ".ytqjk-npm-runtime"
@@ -150,7 +154,7 @@ def run_external(command: list[str], cwd: Path) -> str:
         options["stdout"] = sys.stderr
         options["stderr"] = sys.stderr
     try:
-        completed = subprocess.run(command, **options)
+        completed = subprocess.run(resolved_command, **options)
         return completed.stdout or ""
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or "").strip()
@@ -182,6 +186,17 @@ def main(
             if args.uninstall else build_plan(args.mode, args.target_root)
         )
         applied = bool(args.apply)
+        if applied and runner is None:
+            required = {
+                "codex" if action.get("kind") == "codex" else "npx"
+                for action in plan.actions
+                if action.get("kind") in ("codex", "third-party-stage")
+            }
+            missing = sorted(name for name in required if not shutil.which(name))
+            if missing:
+                raise ValueError(
+                    "required command not found: " + ", ".join(missing)
+                )
         result = receipt(
             plan, args.target_root, applied, health(args.probe_local),
             vector_result(
