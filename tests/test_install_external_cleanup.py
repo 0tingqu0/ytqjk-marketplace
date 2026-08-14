@@ -25,6 +25,8 @@ def generate_dashboard_cache(codex_root: Path) -> list[Path]:
         codex_root / "plugins" / "ytqjk-knowledge"
         / "skills" / "ytqjk-knowledge"
     )
+    environment = os.environ.copy()
+    environment.pop("PYTHONDONTWRITEBYTECODE", None)
     subprocess.run(
         [
             sys.executable,
@@ -34,6 +36,7 @@ def generate_dashboard_cache(codex_root: Path) -> list[Path]:
         ],
         check=True,
         capture_output=True,
+        env=environment,
         text=True,
     )
     return list(skill_root.rglob("__pycache__/*.pyc"))
@@ -45,7 +48,11 @@ class GeneratedPluginCacheTest(unittest.TestCase):
             root = Path(directory)
             codex_root = root / "codex"
             source_root = root / "plugins"
-            shutil.copytree(SOURCE_ROOT, source_root)
+            shutil.copytree(
+                SOURCE_ROOT,
+                source_root,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
             materialize_plugins(codex_root, source_root)
 
             self.assertTrue(generate_dashboard_cache(codex_root))

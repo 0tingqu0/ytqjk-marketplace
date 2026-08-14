@@ -75,12 +75,9 @@ class FakeExecutor:
 
 class CliRuntimeBootstrapTest(unittest.TestCase):
     def test_default_root_is_scoped_to_local_app_data(self) -> None:
-        root = default_runtime_root(
-            {"LOCALAPPDATA": r"C:\Users\tester\AppData\Local"}, "Windows"
-        )
-        self.assertEqual(
-            root, Path(r"C:\Users\tester\AppData\Local\YTQJK\runtime")
-        )
+        local_app_data = r"C:\Users\tester\AppData\Local"
+        root = default_runtime_root({"LOCALAPPDATA": local_app_data}, "Windows")
+        self.assertEqual(root, Path(local_app_data) / "YTQJK" / "runtime")
 
     def test_missing_commands_install_verified_runtime(self) -> None:
         archive = node_archive()
