@@ -21,4 +21,19 @@ class DashboardDocumentationTest(unittest.TestCase):
             readme,
         )
         self.assertIn('url.path == "/api/snapshot"', dashboard)
+        self.assertIn('url.path == "/api/update"', dashboard)
+        self.assertIn('urlparse(self.path).path == "/api/update"', dashboard)
         self.assertIn('ThreadingHTTPServer(("127.0.0.1", args.port)', dashboard)
+
+    def test_dashboard_exposes_release_update_control(self) -> None:
+        dashboard = (
+            ROOT / "plugins" / "ytqjk-agentic-orchestrator" / "skills"
+            / "ytqjk" / "dashboard"
+        )
+        html = (dashboard / "index.html").read_text(encoding="utf-8")
+        script = (dashboard / "update.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="install-update"', html)
+        self.assertIn('<script src="update.js"></script>', html)
+        self.assertIn('fetch("/api/update"', script)
+        self.assertIn('method: "POST"', script)

@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">YK</span><div><p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p><h1>知识库控制台</h1></div></div>
-    <div class="actions"><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
+    <div class="actions"><div id="update-panel" class="update-panel" hidden><span id="update-status" role="status"></span><button id="install-update" type="button" title="安装最新版本">↓ 更新</button></div><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
   </header>
   <main>
     <section class="summary" aria-label="知识库摘要">
@@ -52,5 +52,6 @@
   </main>
   <dialog id="project-library-dialog"><header><div><span class="section-kicker">项目子库</span><h2 id="project-library-title">读取中</h2><p id="project-library-meta"></p></div><button id="close-project-library" title="关闭" aria-label="关闭">×</button></header><p id="project-library-empty" hidden>这个项目尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
   <script src="app.js"></script>
+  <script src="update.js"></script>
 </body>
 </html>

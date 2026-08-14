@@ -6,12 +6,14 @@ import binascii
 import json
 import mimetypes
 import re
+import secrets
 import sys
 import uuid
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from urllib.parse import parse_qs, unquote, urlparse
 
 DASHBOARD_DIR = Path(__file__).resolve().parent; SCRIPTS_DIR = DASHBOARD_DIR.parent / "scripts"
@@ -22,6 +24,7 @@ from approval_assessment import assess_for_approval  # noqa: E402
 from approval_promotion import promote  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
 from dashboard_snapshot import project_library, snapshot as build_snapshot  # noqa: E402
+from dashboard_update_http import handle_update_request, send_update_status  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
 from intake_formats import (  # noqa: E402
@@ -147,11 +150,17 @@ def validate_relative_path(relative_path: str) -> str:
 
 class KnowledgeHandler(SimpleHTTPRequestHandler):
     knowledge_root: Path
+    plugin_root: Path
+    update_lock: object
+    update_token: str
 
     def do_GET(self) -> None:  # noqa: N802 - inherited API name
         url = urlparse(self.path)
         if url.path == "/api/snapshot":
             self.send_json(snapshot(self.knowledge_root))
+            return
+        if url.path == "/api/update":
+            send_update_status(self)
             return
         if url.path == "/api/project-library":
             project = project_library(self.knowledge_root, parse_qs(url.query).get("id", [""])[0])
@@ -201,6 +210,9 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def do_POST(self) -> None:  # noqa: N802 - inherited API name
+        if urlparse(self.path).path == "/api/update":
+            handle_update_request(self)
+            return
         if urlparse(self.path).path == "/api/candidate/approve":
             try:
                 payload = self.read_payload()
@@ -277,12 +289,17 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Read-only YTQJK knowledge dashboard.")
+    parser = argparse.ArgumentParser(description="YTQJK knowledge dashboard.")
     parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     root = args.knowledge_root.resolve()
-    handler = type("RootHandler", (KnowledgeHandler,), {"knowledge_root": root})
+    handler = type("RootHandler", (KnowledgeHandler,), {
+        "knowledge_root": root,
+        "plugin_root": DASHBOARD_DIR.parents[2],
+        "update_lock": Lock(),
+        "update_token": secrets.token_urlsafe(32),
+    })
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     print(f"Knowledge dashboard: http://127.0.0.1:{args.port}")
     server.serve_forever()

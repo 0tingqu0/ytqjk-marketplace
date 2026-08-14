@@ -147,6 +147,8 @@ def import_codex_candidates(
                 receipt["parse_failed_count"] = (
                     int(receipt["parse_failed_count"]) + 1
                 )
+                if mode == "auto":
+                    continue
                 raise
             candidates.append(active.import_candidate(
                 title=relative,
@@ -167,10 +169,16 @@ def import_codex_candidates(
         )
         if service_receipt.status == "SKIPPED":
             apply_previous_result(receipt, service_receipt)
-            return receipt
-        apply_service_result(
-            receipt, service_receipt, replay=mode == "force"
-        )
+        else:
+            apply_service_result(
+                receipt, service_receipt, replay=mode == "force"
+            )
+        if receipt["parse_failed_count"]:
+            receipt.update({
+                "status": "SUCCEEDED_WITH_WARNINGS",
+                "failure_stage": "PARSING",
+                "failure_code": "PARSE_FAILED",
+            })
         return receipt
     except SourceBlockedError:
         receipt["blocked_count"] = int(receipt["blocked_count"]) + 1

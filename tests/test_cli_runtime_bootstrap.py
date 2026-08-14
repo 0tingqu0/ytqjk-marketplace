@@ -104,6 +104,29 @@ class CliRuntimeBootstrapTest(unittest.TestCase):
             self.assertEqual(result.status, "BOOTSTRAPPED")
         self.assertEqual(len(network.calls), 2)
 
+    def test_inaccessible_path_command_is_bootstrapped(self) -> None:
+        delegate = FakeExecutor()
+
+        def executor(
+            command: list[str], environment: dict[str, str]
+        ) -> subprocess.CompletedProcess[str]:
+            if "WindowsApps" in command[0]:
+                raise PermissionError("command alias is inaccessible")
+            return delegate(command, environment)
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = ensure_cli_runtime(
+                {"codex"},
+                runtime_root=Path(directory),
+                system="Windows",
+                which=lambda _: r"C:\WindowsApps\codex.exe",
+                downloader=FakeNetwork(node_archive()),
+                executor=executor,
+            )
+
+        self.assertEqual(result.status, "BOOTSTRAPPED")
+        self.assertEqual(result.provisioned, ("node", "codex"))
+
     def test_checksum_mismatch_stops_before_extraction(self) -> None:
         network = FakeNetwork(node_archive(), checksum="0" * 64)
         with tempfile.TemporaryDirectory() as directory:

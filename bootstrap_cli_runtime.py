@@ -15,6 +15,7 @@ from typing import Callable, Mapping
 import zipfile
 
 from runtime_download import download_node_file
+from system_command_probe import unavailable_commands
 from windows_paths import remove_tree
 
 NODE_VERSION = "24.15.0"
@@ -280,7 +281,10 @@ def ensure_cli_runtime(
     which: Callable[[str], str | None] = shutil.which,
     downloader: Downloader = download_node_file, executor: Executor = _execute,
 ) -> CliRuntime:
-    missing = {name for name in required if not which(name)}
+    base_environment = environment or os.environ
+    missing = unavailable_commands(
+        required, base_environment, which, executor
+    )
     if not missing:
         return CliRuntime("SYSTEM", None, {}, None)
     current_system = system or platform.system()
@@ -294,7 +298,6 @@ def ensure_cli_runtime(
     archive_name = _archive_name(machine or platform.machine())
     node_dir = root / archive_name.removesuffix(".zip")
     codex_dir = root / f"codex-{CODEX_VERSION}"
-    base_environment = environment or os.environ
     runtime_environment = _runtime_environment(
         root, node_dir, codex_dir, base_environment
     )

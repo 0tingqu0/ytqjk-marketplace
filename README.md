@@ -61,7 +61,9 @@ Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执�
 - `cli_runtime.status` 为 `SYSTEM`、`BOOTSTRAPPED` 或 `REUSED`；后两者表示使用用户目录中的
   便携运行时。
 - `knowledge_bootstrap.status` 为 `SUCCEEDED`。
-- `knowledge_import.status` 为 `SUCCEEDED`；重复安装可能为 `SKIPPED_MARKER`。
+- `knowledge_import.status` 为 `SUCCEEDED`；重复安装可能为 `SKIPPED_MARKER`。如果当前用户的
+  历史资料中有个别文件无法解析，则为 `SUCCEEDED_WITH_WARNINGS`，可用资料仍会导入，且不影响
+  插件和项目知识库部署。
 - `knowledge_import.discovered_count` 为 `0` 表示当前用户没有可导入资料，不是安装失败。
 - `apply.codex_plugins.stable_paths` 包含两个稳定插件目录。
 
@@ -114,8 +116,9 @@ python3 setup.py --mode all --target-root /path/to/install \
 
 `--target-root` 只决定安装位置，永远不会隐式成为知识索引项目。项目索引只读取显式
 `--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
-初始化。正常应用成功返回 `0`；候选资料导入失败返回 `3`，项目索引初始化失败返回 `4`，
-安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
+初始化。正常应用成功返回 `0`；默认自动导入中的单文件解析告警也返回 `0`，不可恢复的候选
+资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，安装或
+参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
 
 ## 卸载历史版本
 
@@ -141,7 +144,10 @@ session、日志、缓存、plugin、skill、worktree 和 archive 命名族永�
 目标按 `--knowledge-root`、`YTQJK_KNOWLEDGE_ROOT` 和平台默认目录的顺序解析，固定写入
 `<knowledge-root>/service/knowledge.sqlite3` 的 `global-candidates` 范围，不与检索缓存数据库
 混用。使用 `--codex-import off` 禁用，或使用 `--codex-import force` 重试已标记的导入。
-Dry-run 不读取 Codex 资料。导入失败不回滚已成功安装的文件，回执中 `apply.status` 仍为
+Dry-run 不读取 Codex 资料。默认 `auto` 模式会隔离无法解析的单个历史文件，继续导入其余安全
+资料；回执为 `SUCCEEDED_WITH_WARNINGS`，并保留 `parse_failed_count`、`failure_stage=PARSING`
+和 `failure_code=PARSE_FAILED`，进程返回码为 `0`。使用 `--codex-import force` 时仍严格失败，
+便于人工修复后重试。不可恢复的导入失败不会回滚已成功安装的文件，回执中 `apply.status` 仍为
 `APPLIED`、`knowledge_import.status` 为 `FAILED`，进程返回码为 `3`。
 
 ## Codex 桌面版与 CLI
@@ -210,7 +216,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.3.2`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.0`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
@@ -285,6 +291,15 @@ Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见
 格式（`.doc`、`.ppt`、`.xls`）需要先转换为现代格式后投递。
 候选资料可在控制台中编辑或删除，已验证和已批准知识不提供此入口；删除投递资料时会一并
 删除其关联原件。
+
+控制台启动后会检查 `0tingqu0/ytqjk-marketplace` 的最新正式 GitHub Release。发现更高版本时，
+页面顶部显示版本和“更新”按钮；确认后会下载固定仓库的 Release 包，校验安全路径及两个插件
+manifest 的版本一致性，再调用原子安装器更新 `~/.codex/plugins` 下的稳定插件目录。失败会保留
+当前版本，知识库数据不会删除；成功后重启 Codex 即可加载新版本。草稿、预发布版本、非纯
+SemVer tag 和其他下载地址不会进入自动更新。`0.3.2` 及更早版本尚无网页更新入口，需要先按
+[更新与回滚](#更新与回滚)执行一次 `git pull --ff-only` 和安装脚本，升级到 `0.4.0` 后才会收到
+后续网页更新提醒。
+
 每次投递后会自动评估是否具备批准条件，并在候选资料中记录结论和原因：需有可解析内容、
 至少 200 个有效字符，以及来源、证据或验证线索。评估通过仅表示“可提交批准审阅”，不会
 自动进入 `approved` 或参与全局索引。
