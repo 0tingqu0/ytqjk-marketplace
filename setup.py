@@ -22,6 +22,7 @@ from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
     require_python, target_has_grill_me,
 )
+from uninstall_core import UninstallPlan, apply_uninstall_plan, build_uninstall_plan
 
 VECTOR_LIMIT_BYTES = 10 * 1024 * 1024
 VECTOR_LIMIT_CHUNKS = 2000
@@ -52,15 +53,16 @@ def health(probe: bool) -> dict[str, str]:
 
 
 def receipt(
-    plan: Plan, target: Path | None, applied: bool,
-    health_info: dict[str, str], vector: str,
+    plan: Plan | UninstallPlan, target: Path | None, applied: bool,
+    health_info: dict[str, str], vector: str, operation: str = "install",
 ) -> dict[str, object]:
     return {
         "schema": "ytqjk-install-receipt/v1", "version": VERSION,
-        "mode": plan.mode, "dry_run": not applied,
+        "operation": operation, "mode": plan.mode, "dry_run": not applied,
         "target_root": "CONFIGURED" if target else "NOT_CONFIGURED",
         "actions": list(plan.actions),
         "copies": [source.name for source, _ in plan.files],
+        "removals": [path.name for path in getattr(plan, "paths", ())],
         "grill_me_present": target_has_grill_me(target) if target else False,
         "health": health_info, "vector": vector,
         "platform": platform.system(),
@@ -90,6 +92,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--apply", action="store_true")
     result.add_argument("--yes", action="store_true")
+    result.add_argument("--uninstall", action="store_true")
     result.add_argument("--json", action="store_true")
     result.add_argument("--health", action="store_true")
     result.add_argument("--probe-local", action="store_true")
@@ -153,7 +156,10 @@ def main(
             raise ValueError(
                 "non-interactive apply requires --apply --yes --target-root"
             )
-        plan = build_plan(args.mode, args.target_root)
+        plan = (
+            build_uninstall_plan(args.mode, args.target_root)
+            if args.uninstall else build_plan(args.mode, args.target_root)
+        )
         applied = bool(args.apply)
         result = receipt(
             plan, args.target_root, applied, health(args.probe_local),
@@ -161,15 +167,27 @@ def main(
                 args.vector, args.knowledge_bytes, args.knowledge_chunks,
                 args.vector_failed,
             ),
+            "uninstall" if args.uninstall else "install",
         )
         result["knowledge_import"] = empty_import_receipt(
-            "SKIPPED_DRY_RUN"
+            "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
         if applied:
-            result["apply"] = apply_plan(
-                plan, args.target_root, args.fail_after_copy,
-                runner=runner or run_external,
-            )
+            if args.uninstall:
+                result["apply"] = apply_uninstall_plan(
+                    plan, args.target_root, runner=runner or run_external,
+                )
+            else:
+                result["apply"] = apply_plan(
+                    plan, args.target_root, args.fail_after_copy,
+                    runner=runner or run_external,
+                )
+            if args.uninstall:
+                output = json_text(result) if args.json else json.dumps(
+                    result, indent=2, ensure_ascii=False
+                )
+                print(output)
+                return 0
             eligible = args.mode in ("all", "knowledge-only")
             if not eligible:
                 result["knowledge_import"] = empty_import_receipt(

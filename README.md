@@ -31,6 +31,18 @@ python setup.py --mode all --target-root /path/to/project
 确认计划后添加 `--apply --yes` 执行；非交互应用必须同时提供 `--target-root`。需要探测
 本机依赖并输出 JSON health receipt 时，添加 `--health --probe-local --json`。
 
+## 卸载历史版本
+
+已安装过的 YTQJK 版本可通过当前安装器统一卸载。默认仅输出将移除的插件和技能目录；确认后
+再执行。卸载只处理 YTQJK 自身的 Codex 插件、marketplace 和技能目录，不会删除第三方
+`grill-me`。
+
+```powershell
+.\install.ps1 --uninstall --mode all --apply --yes --target-root C:\path\to\project
+```
+
+可将 `all` 改为 `codex-only`、`ide-only` 或 `knowledge-only` 以缩小范围。
+
 `all` 和 `knowledge-only` 首次成功应用后默认执行 Codex 资料候选导入。来源根按
 `--codex-root`、`CODEX_HOME`、`~/.codex` 的顺序解析，不从 `--target-root` 推导；仅处理
 `mem.md` 以及 `memories/`、`knowledge/`、`attachments/` 中受支持且通过安全检查的文件。
