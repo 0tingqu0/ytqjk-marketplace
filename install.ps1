@@ -9,6 +9,7 @@ if ($null -eq $python) {
   exit 127
 }
 if ($Arguments.Count -eq 0) {
+  Write-Host 'YTQJK: 开始完整安装，首次下载依赖可能需要几分钟。'
   $Arguments = @('--mode', 'all', '--target-root', $PSScriptRoot, '--apply', '--yes', '--json')
 }
 & $python.Source "$PSScriptRoot/setup.py" @Arguments

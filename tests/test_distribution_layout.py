@@ -93,6 +93,8 @@ class DistributionLayoutTest(unittest.TestCase):
             self.assertIn("--target-root", text)
             self.assertIn("--apply", text)
             self.assertIn("--yes", text)
+        self.assertIn("开始完整安装", powershell)
+        self.assertIn("Starting full installation", shell)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
         caveman = PLUGIN / "skills" / "caveman" / "SKILL.md"

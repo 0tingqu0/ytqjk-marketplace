@@ -131,13 +131,22 @@ def run_external(command: list[str], cwd: Path) -> str:
             "npm_config_prefix": str(runtime / "prefix"),
             "npm_config_userconfig": str(runtime / "npmrc"),
         })
+    state_check = command[-2:] == ["list", "--json"]
+    options: dict[str, object] = {
+        "check": True,
+        "text": True,
+        "shell": False,
+        "cwd": cwd,
+        "env": environment,
+    }
+    if state_check:
+        options["capture_output"] = True
+    else:
+        options["stdout"] = sys.stderr
+        options["stderr"] = sys.stderr
     try:
-        completed = subprocess.run(
-            command, check=True, capture_output=True, text=True, shell=False,
-            cwd=cwd,
-            env=environment,
-        )
-        return completed.stdout
+        completed = subprocess.run(command, **options)
+        return completed.stdout or ""
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or error.stdout or "").strip()
         suffix = f": {detail}" if detail else ""

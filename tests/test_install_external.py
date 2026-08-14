@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -238,6 +239,8 @@ class ExternalInstallTest(unittest.TestCase):
             kwargs = run.call_args.kwargs
             self.assertEqual(kwargs["cwd"], staging)
             self.assertFalse(kwargs["shell"])
+            self.assertIs(kwargs["stdout"], sys.stderr)
+            self.assertIs(kwargs["stderr"], sys.stderr)
             environment = kwargs["env"]
             for name in (
                 "HOME",
