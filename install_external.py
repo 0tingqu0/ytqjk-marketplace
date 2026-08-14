@@ -280,7 +280,9 @@ def _compensate(
 
 
 def apply_codex(
-    actions: tuple[Action, ...], runner: Runner, cwd: Path
+    actions: tuple[Action, ...], runner: Runner, cwd: Path,
+    after_apply: Callable[[], None] | None = None,
+    after_name: str = "codex-materialization",
 ) -> list[list[str]]:
     existing: list[tuple[Action, bool]] = []
     try:
@@ -316,6 +318,9 @@ def apply_codex(
             if not _present(action, runner, cwd):
                 uncertain.append(f"verify:{failed_action}")
                 raise RuntimeError("external action did not create state")
+        if after_apply is not None:
+            failed_action = after_name
+            after_apply()
     except Exception as error:
         failures = list(_compensate(created, runner, cwd))
         failures.extend(uncertain)

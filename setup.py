@@ -197,14 +197,16 @@ def main(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
         if applied:
+            codex_root = default_codex_root(args.codex_root)
             if args.uninstall:
                 result["apply"] = apply_uninstall_plan(
                     plan, args.target_root, runner=runner or run_external,
+                    codex_root=codex_root,
                 )
             else:
                 result["apply"] = apply_plan(
                     plan, args.target_root, args.fail_after_copy,
-                    runner=runner or run_external,
+                    runner=runner or run_external, codex_root=codex_root,
                 )
             result["grill_me_present"] = target_has_grill_me(
                 args.target_root
@@ -228,7 +230,7 @@ def main(
                 importer = codex_importer or import_codex_candidates
                 try:
                     result["knowledge_import"] = importer(
-                        default_codex_root(args.codex_root),
+                        codex_root,
                         default_knowledge_root(args.knowledge_root),
                         args.codex_import,
                     )

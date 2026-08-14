@@ -184,13 +184,13 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
 Windows PowerShell：
 
 ```powershell
-python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py
+python "$HOME\.codex\plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py"
 ```
 
 Linux 或 WSL2：
 
 ```bash
-python3 plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/knowledge_dashboard.py
+python3 ~/.codex/plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/knowledge_dashboard.py
 ```
 
 打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
@@ -210,6 +210,12 @@ Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见
 外部资料会作为候选资料包保存：原件保留、总览记录分析结果，正文会优先按标题和段落拆为
 约 1,800 字符以内的知识片段。片段都含来源文件、片段序号和父资料 ID；删除总览会一并
 删除关联片段与原件。
+
+一键安装成功后，安装器从当前克隆的发布包复制并以 manifest 管理两个稳定用户目录：
+`~/.codex/plugins/ytqjk-agentic-orchestrator` 和
+`~/.codex/plugins/ytqjk-knowledge`（Windows 为 `$HOME\.codex\plugins\...`）。这些目录不依赖
+Codex marketplace 的版本化 cache；重复安装可安全更新本项目受管目录，卸载只删除清单明确
+拥有的上述两个目录。
 
 ## 会话锚定
 

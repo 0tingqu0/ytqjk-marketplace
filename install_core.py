@@ -20,6 +20,7 @@ from install_external import (
     grill_action,
     stage_grill,
 )
+from install_external_codex import materialize_plugins
 
 VERSION = "0.3.2"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
@@ -180,6 +181,7 @@ def apply_plan(
     runner: Runner | None = None,
     fail_on_copy: int | None = None,
     fault: Callable[[str, int, Path], None] | None = None,
+    codex_root: Path | None = None,
 ) -> dict[str, object]:
     target = target.resolve()
     state_dir = contained_path(target, target / ".ytqjk-install")
@@ -190,6 +192,7 @@ def apply_plan(
     changed = False
     copied = 0
     executed: list[list[str]] = []
+    materialized: dict[str, object] = {"changed": False, "stable_paths": []}
     codex = tuple(
         action for action in plan.actions if action.get("kind") == "codex"
     )
@@ -241,7 +244,14 @@ def apply_plan(
                 raise RuntimeError("injected copy failure")
         if codex:
             failed_action = "codex-actions"
-            executed.extend(apply_codex(codex, runner, target))
+            def materialize() -> None:
+                nonlocal materialized
+                if codex_root is not None:
+                    materialized = materialize_plugins(codex_root, fault=fault)
+
+            executed.extend(apply_codex(
+                codex, runner, target, materialize, "codex-stable-paths"
+            ))
     except Exception as error:
         failures = list(rollback_files(replacements, snapshot, state_dir))
         prior_status = "SUCCEEDED"
@@ -274,7 +284,7 @@ def apply_plan(
     cleanup = safe_cleanup(stage)
     return {
         "status": "APPLIED",
-        "changed": changed or bool(executed),
+        "changed": changed or bool(executed) or bool(materialized["changed"]),
         "external_commands": executed,
         "snapshot": (
             snapshot.relative_to(target).as_posix()
@@ -283,4 +293,5 @@ def apply_plan(
         "cleanup": cleanup.status,
         "staging_residue": cleanup.staging_residue,
         "cleanup_action": cleanup.action,
+        "codex_plugins": materialized,
     }
