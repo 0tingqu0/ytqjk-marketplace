@@ -201,6 +201,9 @@ def main(
                     plan, args.target_root, args.fail_after_copy,
                     runner=runner or run_external,
                 )
+            result["grill_me_present"] = target_has_grill_me(
+                args.target_root
+            )
             if args.uninstall:
                 output = json_text(result) if args.json else json.dumps(
                     result, indent=2, ensure_ascii=False

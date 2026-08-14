@@ -102,6 +102,7 @@ class CodexInstallTest(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(receipt["apply"]["status"], "APPLIED")
             self.assertEqual(receipt["apply"]["cleanup"], "FAILED")
+            self.assertTrue(receipt["grill_me_present"])
 
             error = io.StringIO()
             runner = StatefulRunner(fail_mutation=1)
