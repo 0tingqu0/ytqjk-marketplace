@@ -81,6 +81,7 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("codex plugin add ytqjk-agentic-orchestrator@ytqjk", readme)
         self.assertIn("codex plugin add ytqjk-knowledge@ytqjk", readme)
         self.assertIn("自动建立项目知识索引", readme)
+        self.assertIn("实时转发依赖下载和 Codex 插件安装输出", readme)
         self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
         self.assertIn("裸调用尚未给出明确目标时", readme)
 
