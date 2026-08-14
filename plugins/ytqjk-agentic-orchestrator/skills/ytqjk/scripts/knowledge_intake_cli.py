@@ -10,7 +10,7 @@ from pathlib import Path
 from platform_paths import default_knowledge_root
 from project_tracking import identify_project, track_project
 from rag_security import contains_high_confidence_secret
-from session_memory import ensure_anchor
+from session_memory import ensure_anchor, validate_session_binding
 
 
 MAX_CONTENT_CHARS = 24_000
@@ -32,8 +32,9 @@ def submit_candidate(
     sources: list[str],
 ) -> dict[str, object]:
     project = identify_project(project_root)
-    ensure_anchor(root, session_id, project["id"])
+    validate_session_binding(root, session_id, project["id"])
     track_project(root, project_root, project)
+    ensure_anchor(root, session_id, project["id"])
     normalized = content.strip()
     if not normalized or len(normalized) > MAX_CONTENT_CHARS or "\x00" in normalized:
         raise ValueError("检索知识必须非空且不超过 24000 字符。")

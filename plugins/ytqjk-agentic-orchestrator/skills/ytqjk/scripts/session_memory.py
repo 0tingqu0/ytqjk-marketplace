@@ -10,6 +10,8 @@ from pathlib import Path
 
 from file_lock import exclusive_file_lock
 from platform_paths import default_knowledge_root
+from project_tracking import require_tracked_project
+from rag_locks import maintenance_lock
 from rag_security import contains_high_confidence_secret
 
 
@@ -92,11 +94,17 @@ def _ensure_anchor(
     return anchor, not bool(existing)
 
 
-def ensure_anchor(root: Path, session_id: str, project_id: str) -> tuple[dict[str, object], bool]:
+def ensure_anchor(
+    root: Path,
+    session_id: str,
+    project_id: str,
+) -> tuple[dict[str, object], bool]:
     validate_session_id(session_id)
     path = anchor_path(root, session_id)
-    with exclusive_file_lock(path.with_suffix(".lock")):
-        return _ensure_anchor(root, session_id, project_id)
+    with exclusive_file_lock(maintenance_lock(root)):
+        require_tracked_project(root, project_id)
+        with exclusive_file_lock(path.with_suffix(".lock")):
+            return _ensure_anchor(root, session_id, project_id)
 
 
 def inspect_anchor(
@@ -120,23 +128,47 @@ def inspect_anchor(
         }
 
 
-def write_anchor(root: Path, session_id: str, project_id: str) -> dict[str, object]:
+def validate_session_binding(
+    root: Path,
+    session_id: str,
+    project_id: str,
+) -> None:
+    validate_session_id(session_id)
+    path = anchor_path(root, session_id)
+    with exclusive_file_lock(path.with_suffix(".lock")):
+        anchor = read_anchor(root, session_id)
+        if anchor and anchor.get("project_id") != project_id:
+            raise ValueError("会话已绑定其他项目，禁止访问其他项目子库。")
+
+
+def write_anchor(
+    root: Path,
+    session_id: str,
+    project_id: str,
+) -> dict[str, object]:
     anchor, _ = ensure_anchor(root, session_id, project_id)
     return anchor
 
 
-def checkpoint(root: Path, session_id: str, project_id: str, memory: str) -> dict[str, object]:
+def checkpoint(
+    root: Path,
+    session_id: str,
+    project_id: str,
+    memory: str,
+) -> dict[str, object]:
     validate_memory(memory)
     path = anchor_path(root, session_id)
-    with exclusive_file_lock(path.with_suffix(".lock")):
-        anchor, _ = _ensure_anchor(
-            root, session_id, project_id, allow_prepared=True
-        )
-        anchor["memory"] = memory.strip()
-        anchor["archive_prepared_at"] = None
-        anchor["last_activity_at"] = utc_now()
-        write_anchor_file(path, anchor)
-        return anchor
+    with exclusive_file_lock(maintenance_lock(root)):
+        require_tracked_project(root, project_id)
+        with exclusive_file_lock(path.with_suffix(".lock")):
+            anchor, _ = _ensure_anchor(
+                root, session_id, project_id, allow_prepared=True
+            )
+            anchor["memory"] = memory.strip()
+            anchor["archive_prepared_at"] = None
+            anchor["last_activity_at"] = utc_now()
+            write_anchor_file(path, anchor)
+            return anchor
 
 
 def restore(root: Path, session_id: str) -> dict[str, object]:
@@ -208,7 +240,9 @@ def sweep(root: Path, days: int) -> list[str]:
         with exclusive_file_lock(path.with_suffix(".lock")):
             try:
                 anchor = json.loads(path.read_text(encoding="utf-8"))
-                last_activity = datetime.fromisoformat(str(anchor["last_activity_at"]))
+                last_activity = datetime.fromisoformat(
+                    str(anchor["last_activity_at"])
+                )
             except (OSError, KeyError, ValueError, json.JSONDecodeError):
                 continue
             if anchor.get("archived_at") or last_activity > cutoff:
@@ -224,14 +258,20 @@ def sweep(root: Path, days: int) -> list[str]:
     return archived
 
 
-def write_experience(root: Path, anchor: dict[str, object], memory: str) -> Path:
+def write_experience(
+    root: Path,
+    anchor: dict[str, object],
+    memory: str,
+) -> Path:
     validate_memory(memory)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target = root / "personal-experience/candidates" / f"{stamp}-session-{anchor['session_key']}.md"
+    filename = f"{stamp}-session-{anchor['session_key']}.md"
+    target = root / "personal-experience/candidates" / filename
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         "---\nstatus: CANDIDATE\nsource: session-anchor\n"
-        f"session_key: {anchor['session_key']}\nproject_id: {anchor['project_id']}\n"
+        f"session_key: {anchor['session_key']}\n"
+        f"project_id: {anchor['project_id']}\n"
         f"archived_at: {utc_now()}\n---\n\n# 会话经验\n\n{memory}\n",
         encoding="utf-8",
     )
@@ -255,8 +295,14 @@ def validate_session_id(session_id: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="YTQJK session-anchor memory store.")
-    parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
+    parser = argparse.ArgumentParser(
+        description="YTQJK session-anchor memory store."
+    )
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=default_knowledge_root(),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     for name in (
         "anchor",
@@ -281,7 +327,13 @@ def main() -> None:
     elif args.command == "inspect":
         result = inspect_anchor(root, args.session_id, args.project_id)
     elif args.command == "checkpoint":
-        result = checkpoint(root, args.session_id, args.project_id, args.memory_file.read_text(encoding="utf-8"))
+        memory = args.memory_file.read_text(encoding="utf-8")
+        result = checkpoint(
+            root,
+            args.session_id,
+            args.project_id,
+            memory,
+        )
     elif args.command == "restore":
         result = restore(root, args.session_id)
     elif args.command == "prepare-archive":

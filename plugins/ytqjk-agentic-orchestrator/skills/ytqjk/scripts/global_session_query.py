@@ -30,7 +30,7 @@ from rag_common import (
 )
 from rag_locks import global_lock, project_id_lock
 from rag_query import build_vector_cache, query_vector_cache, vector_enabled
-from session_memory import ensure_anchor
+from session_memory import ensure_anchor, validate_session_binding
 
 
 GLOBAL_CACHE = "global-cache"
@@ -54,8 +54,9 @@ def query_global(
         raise ValueError(
             f"请求方项目标识与工作目录不匹配：expected={expected_project_id}。"
         )
-    anchor, created = ensure_anchor(knowledge_root, session_id, project_id)
+    validate_session_binding(knowledge_root, session_id, project_id)
     track_project(knowledge_root, project_root, project)
+    anchor, created = ensure_anchor(knowledge_root, session_id, project_id)
     project_dir = knowledge_root / "projects" / project_id
     config = load_json(knowledge_root / "config.json", DEFAULT_CONFIG)
     with exclusive_file_lock(project_id_lock(knowledge_root, project_id)):

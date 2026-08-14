@@ -16,3 +16,7 @@ def project_id_lock(knowledge_root: Path, project_id: str) -> Path:
 
 def global_lock(knowledge_root: Path) -> Path:
     return knowledge_root / ".locks" / "global-index.lock"
+
+
+def maintenance_lock(knowledge_root: Path) -> Path:
+    return knowledge_root / ".locks" / "maintenance.lock"

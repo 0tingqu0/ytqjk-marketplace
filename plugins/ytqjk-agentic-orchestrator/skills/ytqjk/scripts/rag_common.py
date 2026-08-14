@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from file_lock import exclusive_file_lock
+from path_safety import is_direct_directory, is_reparse
 from rag_security import (
     contains_high_confidence_secret,
     is_sensitive_path,
 )
 from project_source import project_identity, tracked_paths
+from rag_locks import maintenance_lock
 
 
 SCHEMA_VERSION = 2
@@ -92,29 +94,50 @@ def ensure_layout(knowledge_root: Path, project: Path) -> tuple[Path, dict[str, 
         "projects",
     ):
         (knowledge_root / relative).mkdir(parents=True, exist_ok=True)
-    config_path = knowledge_root / "config.json"
-    if not config_path.exists():
-        atomic_json(config_path, DEFAULT_CONFIG)
     identity = project_identity(project)
+    source_root = Path(identity["root"])
+    if not source_root.is_dir():
+        raise FileNotFoundError("PROJECT_SOURCE_MISSING")
     project_dir = knowledge_root / "projects" / identity["id"]
-    for relative in ("cache", "handoffs", "errors", "vectors"):
-        (project_dir / relative).mkdir(parents=True, exist_ok=True)
-
+    projects_dir = knowledge_root / "projects"
     catalog_path = knowledge_root / "catalog.json"
-    with exclusive_file_lock(catalog_path.with_suffix(".lock")):
-        catalog = load_json(
-            catalog_path, {"schema_version": SCHEMA_VERSION, "projects": {}}
-        )
-        catalog["schema_version"] = SCHEMA_VERSION
-        existing = catalog["projects"].get(identity["id"], {})
-        aliases = sorted(set(existing.get("path_aliases", []) + [identity["root"]]))
-        catalog["projects"][identity["id"]] = {
-            "name": identity["name"],
-            "remote": identity["remote"],
-            "path_aliases": aliases,
-            "last_accessed": utc_now(),
-        }
-        atomic_json(catalog_path, catalog)
+    with exclusive_file_lock(maintenance_lock(knowledge_root)):
+        if not source_root.is_dir():
+            raise FileNotFoundError("PROJECT_SOURCE_MISSING")
+        if is_reparse(projects_dir) or is_reparse(project_dir):
+            raise ValueError("UNSAFE_PROJECT_DIRECTORY")
+        project_dir.mkdir(exist_ok=True)
+        if not is_direct_directory(project_dir, projects_dir):
+            raise ValueError("UNSAFE_PROJECT_DIRECTORY")
+        config_path = knowledge_root / "config.json"
+        if not config_path.exists():
+            atomic_json(config_path, DEFAULT_CONFIG)
+        for relative in ("cache", "handoffs", "errors", "vectors"):
+            target = project_dir / relative
+            if is_reparse(target):
+                raise ValueError("UNSAFE_PROJECT_DIRECTORY")
+            target.mkdir(exist_ok=True)
+            if not is_direct_directory(target, project_dir):
+                raise ValueError("UNSAFE_PROJECT_DIRECTORY")
+        with exclusive_file_lock(catalog_path.with_suffix(".lock")):
+            catalog = load_json(
+                catalog_path,
+                {"schema_version": SCHEMA_VERSION, "projects": {}},
+            )
+            catalog["schema_version"] = SCHEMA_VERSION
+            existing = catalog["projects"].get(identity["id"], {})
+            aliases = sorted(
+                set(existing.get("path_aliases", []) + [identity["root"]])
+            )
+            catalog["projects"][identity["id"]] = {
+                "name": identity["name"],
+                "remote": identity["remote"],
+                "path_aliases": aliases,
+                "last_accessed": utc_now(),
+            }
+            if not source_root.is_dir():
+                raise FileNotFoundError("PROJECT_SOURCE_MISSING")
+            atomic_json(catalog_path, catalog)
     return project_dir, identity
 
 
