@@ -110,6 +110,15 @@ def read_catalog(path: Path) -> tuple[dict[str, Any], bytes]:
     return catalog, raw
 
 
+def _is_archived_legacy_global(anchor: dict[str, Any]) -> bool:
+    archived_at = anchor.get("archived_at")
+    return (
+        anchor.get("project_id") == "global"
+        and isinstance(archived_at, str)
+        and bool(archived_at.strip())
+    )
+
+
 def anchor_projects(
     root: Path,
     projects: dict[str, Any],
@@ -133,6 +142,8 @@ def anchor_projects(
         if not isinstance(project_id, str) or not project_id:
             raise CleanupRejected("INVALID_ANCHOR")
         if project_id not in projects:
+            if _is_archived_legacy_global(anchor):
+                continue
             raise CleanupRejected("ANCHOR_CATALOG_MISMATCH")
         result.add(project_id)
     return result
