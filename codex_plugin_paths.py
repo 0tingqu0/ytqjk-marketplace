@@ -175,12 +175,29 @@ def _hash_directory(root: Path, directory: Path, digest) -> None:
         if _link_or_reparse(path):
             raise PluginPathError("plugin tree contains a link or reparse point")
         if entry.is_dir(follow_symlinks=False):
-            _hash_directory(root, path, digest)
+            if entry.name == "__pycache__":
+                _validate_generated_cache(path)
+            else:
+                _hash_directory(root, path, digest)
         elif entry.is_file(follow_symlinks=False):
             digest.update(path.relative_to(root).as_posix().encode("utf-8"))
             digest.update(path.read_bytes())
         else:
             raise PluginPathError("plugin tree contains a non-regular entry")
+
+
+def _validate_generated_cache(directory: Path) -> None:
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            path = Path(entry.path)
+            if _link_or_reparse(path):
+                raise PluginPathError(
+                    "plugin tree contains a link or reparse point"
+                )
+            if not entry.is_file(follow_symlinks=False) or path.suffix != ".pyc":
+                raise PluginPathError(
+                    "plugin generated cache contains an unexpected entry"
+                )
 
 
 def _link_or_reparse(path: Path) -> bool:
