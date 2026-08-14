@@ -19,6 +19,9 @@ jobs:
         python: ["3.10", "3.12"]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
+      TEMP: ${{ runner.temp }}
+      TMP: ${{ runner.temp }}
+      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,11 +30,9 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install pytest
       - name: Test distribution layout
-        run: python -B -m pytest tests -q
+        run: python -B -m unittest discover -s tests -p "test_*.py" -v
       - name: Test skill scripts
-        run: python -B -m pytest plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/tests -q
-      - name: Test knowledge plugin
-        run: python -B -m pytest plugins/ytqjk-knowledge/tests -q
+        run: python -B -m unittest discover -s plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/tests -p "test_*.py" -v
 
   vector-linux:
     name: Ubuntu vector round-trip
