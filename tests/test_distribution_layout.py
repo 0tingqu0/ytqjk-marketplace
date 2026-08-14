@@ -79,6 +79,7 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("Codex CLI 输入 `/plugins`", readme)
         self.assertIn("codex plugin marketplace upgrade ytqjk", readme)
         self.assertIn("codex plugin add ytqjk-agentic-orchestrator@ytqjk", readme)
+        self.assertIn("codex plugin add ytqjk-knowledge@ytqjk", readme)
         self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
         self.assertIn("裸调用尚未给出明确目标时", readme)
 

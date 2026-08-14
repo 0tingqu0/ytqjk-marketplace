@@ -46,7 +46,8 @@ class CodexInstallTest(unittest.TestCase):
             self.assertTrue(result["changed"])
             self.assertEqual(runner.marketplaces, {"ytqjk"})
             self.assertEqual(
-                runner.plugins, {"ytqjk-agentic-orchestrator"}
+                runner.plugins,
+                {"ytqjk-agentic-orchestrator", "ytqjk-knowledge"},
             )
             npx_call = next(
                 call for call in runner.calls if call[0][0] == "npx"

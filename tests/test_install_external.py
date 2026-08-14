@@ -80,9 +80,8 @@ class StatefulRunner:
         if "marketplace" in command:
             self._change(self.marketplaces, "ytqjk", removing)
         else:
-            self._change(
-                self.plugins, "ytqjk-agentic-orchestrator", removing
-            )
+            identity = command[-1].split("@", maxsplit=1)[0]
+            self._change(self.plugins, identity, removing)
         return ""
 
     @staticmethod

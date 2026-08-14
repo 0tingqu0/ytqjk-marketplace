@@ -20,7 +20,10 @@ SETUP = ROOT / "setup.py"
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(SETUP), *args, "--json"], text=True,
+        [
+            sys.executable, str(SETUP), *args,
+            "--codex-import", "off", "--json",
+        ], text=True,
         capture_output=True, check=False, cwd=ROOT,
     )
 
@@ -58,7 +61,7 @@ class InstallTest(unittest.TestCase):
             [sys.executable, str(SETUP), "--version"], text=True,
             capture_output=True, check=False, cwd=ROOT,
         )
-        self.assertEqual(version.stdout.strip(), "0.3.0")
+        self.assertEqual(version.stdout.strip(), "0.3.1")
 
     def test_apply_needs_yes_and_target(self) -> None:
         self.assertNotEqual(run("--apply").returncode, 0)
@@ -147,7 +150,7 @@ class InstallTest(unittest.TestCase):
                   vector_result("auto", 0, 2000),
                   vector_result("on", 0, 0, True))
         self.assertEqual(values, ("lexical-only", "planned", "lexical-only"))
-        self.assertEqual(len(build_plan("codex-only", None).actions), 2)
+        self.assertEqual(len(build_plan("codex-only", None).actions), 3)
 
     def test_dry_run_never_calls_runner(self) -> None:
         recorded: list[list[str]] = []

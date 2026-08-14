@@ -11,6 +11,13 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from codex_bootstrap_import import (
+    default_codex_root,
+    default_knowledge_root,
+    empty_receipt as empty_import_receipt,
+    failed_receipt,
+    import_codex_candidates,
+)
 from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
     require_python, target_has_grill_me,
@@ -51,9 +58,9 @@ def receipt(
     return {
         "schema": "ytqjk-install-receipt/v1", "version": VERSION,
         "mode": plan.mode, "dry_run": not applied,
-        "target_root": str(target) if target else None,
+        "target_root": "CONFIGURED" if target else "NOT_CONFIGURED",
         "actions": list(plan.actions),
-        "copies": [str(destination) for _, destination in plan.files],
+        "copies": [source.name for source, _ in plan.files],
         "grill_me_present": target_has_grill_me(target) if target else False,
         "health": health_info, "vector": vector,
         "platform": platform.system(),
@@ -75,6 +82,12 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--version", action="version", version=VERSION)
     result.add_argument("--target-root", type=Path)
+    result.add_argument("--codex-root", type=Path)
+    result.add_argument("--knowledge-root", type=Path)
+    result.add_argument(
+        "--codex-import", choices=("auto", "off", "force"),
+        default="auto",
+    )
     result.add_argument("--apply", action="store_true")
     result.add_argument("--yes", action="store_true")
     result.add_argument("--json", action="store_true")
@@ -129,6 +142,9 @@ def run_external(command: list[str], cwd: Path) -> str:
 def main(
     argv: list[str] | None = None,
     runner: Callable[[list[str], Path], str] | None = None,
+    codex_importer: Callable[
+        [Path, Path, str], dict[str, object]
+    ] | None = None,
 ) -> int:
     args = parser().parse_args(argv)
     try:
@@ -146,16 +162,43 @@ def main(
                 args.vector_failed,
             ),
         )
+        result["knowledge_import"] = empty_import_receipt(
+            "SKIPPED_DRY_RUN"
+        )
         if applied:
             result["apply"] = apply_plan(
                 plan, args.target_root, args.fail_after_copy,
                 runner=runner or run_external,
             )
+            eligible = args.mode in ("all", "knowledge-only")
+            if not eligible:
+                result["knowledge_import"] = empty_import_receipt(
+                    "SKIPPED_MODE"
+                )
+            elif args.codex_import == "off":
+                result["knowledge_import"] = empty_import_receipt(
+                    "SKIPPED_OFF"
+                )
+            else:
+                importer = codex_importer or import_codex_candidates
+                try:
+                    result["knowledge_import"] = importer(
+                        default_codex_root(args.codex_root),
+                        default_knowledge_root(args.knowledge_root),
+                        args.codex_import,
+                    )
+                except Exception:
+                    result["knowledge_import"] = failed_receipt(
+                        "IMPORTER_CALL", "IMPORTER_FAILED"
+                    )
         output = json_text(result) if args.json else json.dumps(
             result, indent=2, ensure_ascii=False
         )
         print(output)
-        return 0
+        import_failed = (
+            result["knowledge_import"]["status"] == "FAILED"
+        )
+        return 3 if import_failed else 0
     except (ValueError, RuntimeError, OSError) as error:
         message = {
             "schema": "ytqjk-install-receipt/v1",

@@ -31,6 +31,20 @@ python setup.py --mode all --target-root /path/to/project
 确认计划后添加 `--apply --yes` 执行；非交互应用必须同时提供 `--target-root`。需要探测
 本机依赖并输出 JSON health receipt 时，添加 `--health --probe-local --json`。
 
+`all` 和 `knowledge-only` 首次成功应用后默认执行 Codex 资料候选导入。来源根按
+`--codex-root`、`CODEX_HOME`、`~/.codex` 的顺序解析，不从 `--target-root` 推导；仅处理
+`mem.md` 以及 `memories/`、`knowledge/`、`attachments/` 中受支持且通过安全检查的文件。
+`memories/` 中无扩展名的普通文件仅按严格 UTF-8 文本处理；未配置解析器的 Office、图片和
+音频只计入 `not_configured_count`，不会伪报为已导入。凭据、token、secret、auth、config、
+session、日志、缓存、plugin、skill、worktree 和 archive 命名族永久排除，不会打开读取。
+所有新来源都以独立 `CANDIDATE` 证明入库；内容即使与 approved/verified 文档重复，也不会
+继承批准状态或写入已批准版本的来源列表。
+目标按 `--knowledge-root`、`YTQJK_KNOWLEDGE_ROOT` 和平台默认目录的顺序解析，固定写入
+`<knowledge-root>/service/knowledge.sqlite3` 的 `global-candidates` 范围，不与检索缓存数据库
+混用。使用 `--codex-import off` 禁用，或使用 `--codex-import force` 重试已标记的导入。
+Dry-run 不读取 Codex 资料。导入失败不回滚已成功安装的文件，回执中 `apply.status` 仍为
+`APPLIED`、`knowledge_import.status` 为 `FAILED`，进程返回码为 `3`。
+
 ## Codex 桌面版与 CLI
 
 安装 plugin：
@@ -38,9 +52,11 @@ python setup.py --mode all --target-root /path/to/project
 ```powershell
 codex plugin marketplace add 0tingqu0/ytqjk-marketplace
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
+codex plugin add ytqjk-knowledge@ytqjk
+codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-重启 Codex、新建任务，然后输入 `$ytqjk`；也可以通过 `/skills` 选择 `ytqjk`。仅当当前宿主
+这会同时安装总控和本地知识库插件。重启 Codex、新建任务，然后输入 `$ytqjk`；也可以通过 `/skills` 选择 `ytqjk`。仅当当前宿主
 明确提供 `/ytqjk` 快捷命令时才使用该写法，不把它作为可移植入口。裸调用尚未给出明确目标时，它会留在当前激活任务，
 每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色；调用中已包含可执行目标，或你随后给出明确目标时，不再重复要求确认。目标确认后的首个工具调用
 才读取协议并创建总控；目标确认不等于计划批准，后续仍执行 `grill-me`、监督和计划批准门。
@@ -77,10 +93,12 @@ Codex 桌面版在 Plugins 页面卸载后重新安装。Codex CLI 输入 `/plug
 ```bash
 codex plugin marketplace upgrade ytqjk
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
+codex plugin add ytqjk-knowledge@ytqjk
+codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.3.0`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.3.1`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
@@ -96,6 +114,7 @@ npx skills@latest update ytqjk caveman -p
 codex plugin marketplace remove ytqjk
 codex plugin marketplace add 0tingqu0/ytqjk-marketplace --ref <release-tag>
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
+codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 IDE 回滚使用相同 tag 的 skills 路径重新安装：

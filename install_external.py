@@ -80,6 +80,13 @@ def codex_actions() -> tuple[Action, ...]:
             ["add", "ytqjk-agentic-orchestrator@ytqjk"],
             ["remove", "ytqjk-agentic-orchestrator@ytqjk"],
         ),
+        codex_action(
+            "plugin:knowledge",
+            ["list", "--json"],
+            "ytqjk-knowledge",
+            ["add", "ytqjk-knowledge@ytqjk"],
+            ["remove", "ytqjk-knowledge@ytqjk"],
+        ),
     )
 
 

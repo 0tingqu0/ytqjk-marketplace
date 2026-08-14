@@ -21,7 +21,7 @@ from install_external import (
     stage_grill,
 )
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 MODES = PUBLIC_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]
@@ -276,7 +276,10 @@ def apply_plan(
         "status": "APPLIED",
         "changed": changed or bool(executed),
         "external_commands": executed,
-        "snapshot": str(snapshot) if snapshot.exists() else None,
+        "snapshot": (
+            snapshot.relative_to(target).as_posix()
+            if snapshot.exists() else None
+        ),
         "cleanup": cleanup.status,
         "staging_residue": cleanup.staging_residue,
         "cleanup_action": cleanup.action,
