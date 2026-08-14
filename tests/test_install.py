@@ -62,7 +62,7 @@ class InstallTest(unittest.TestCase):
             [sys.executable, str(SETUP), "--version"], text=True,
             capture_output=True, check=False, cwd=ROOT,
         )
-        self.assertEqual(version.stdout.strip(), "0.4.0")
+        self.assertEqual(version.stdout.strip(), "0.4.1")
 
     def test_apply_needs_yes_and_target(self) -> None:
         self.assertNotEqual(run("--apply").returncode, 0)

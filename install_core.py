@@ -22,7 +22,7 @@ from install_external import (
 )
 from install_external_codex import materialize_plugins
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 MODES = PUBLIC_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]
