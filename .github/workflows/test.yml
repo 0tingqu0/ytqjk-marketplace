@@ -19,9 +19,9 @@ jobs:
         python: ["3.10", "3.12"]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      TEMP: ${{ github.workspace }}/.test-tmp
-      TMP: ${{ github.workspace }}/.test-tmp
-      TMPDIR: ${{ github.workspace }}/.test-tmp
+      TEMP: ${{ github.workspace }}/../.ytqjk-test-tmp
+      TMP: ${{ github.workspace }}/../.ytqjk-test-tmp
+      TMPDIR: ${{ github.workspace }}/../.ytqjk-test-tmp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
