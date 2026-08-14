@@ -215,14 +215,25 @@ def run_installer(
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise UpdateError("无法启动更新安装器。") from error
+    if completed.returncode != 0:
+        failure = _receipt(completed.stderr)
+        action = failure.get("failed_action") if failure else None
+        safe_action = (
+            action if isinstance(action, str)
+            and re.fullmatch(r"[A-Za-z0-9:_-]+", action) else None
+        )
+        detail = f"，失败步骤 {safe_action}" if safe_action else ""
+        raise UpdateError(
+            f"更新安装失败（退出码 {completed.returncode}{detail}）。"
+        )
     receipt = _receipt(completed.stdout)
     if (
-        completed.returncode != 0
+        receipt is None
         or receipt.get("version") != expected_version
         or not isinstance(receipt.get("apply"), dict)
         or receipt["apply"].get("status") != "APPLIED"
     ):
-        raise UpdateError(f"更新安装失败（退出码 {completed.returncode}）。")
+        raise UpdateError("更新安装器未返回有效成功回执。")
     return receipt
 
 
@@ -304,7 +315,7 @@ def _read_limited(response: object, limit: int) -> bytes:
     return content
 
 
-def _receipt(output: str) -> dict[str, object]:
+def _receipt(output: str) -> dict[str, object] | None:
     for line in reversed(output.splitlines()):
         try:
             value = json.loads(line)
@@ -312,4 +323,4 @@ def _receipt(output: str) -> dict[str, object]:
             continue
         if isinstance(value, dict):
             return value
-    raise UpdateError("更新安装器未返回有效回执。")
+    return None

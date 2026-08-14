@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -143,6 +144,25 @@ class DashboardUpdateTest(unittest.TestCase):
 
         self.assertEqual(handler.responses[0][0], {"ok": True, **installed})
         self.assertFalse(handler.update_lock.locked())
+
+    def test_installer_failure_uses_sanitized_stderr_receipt(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [],
+            2,
+            stdout="",
+            stderr=(
+                '{"error":"private path","failed_action":'
+                '"marketplace:ytqjk"}'
+            ),
+        )
+
+        with mock.patch.object(update.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(
+                update.UpdateError, "失败步骤 marketplace:ytqjk"
+            ) as raised:
+                update.run_installer(Path("source"), Path("codex"), "0.4.2")
+
+        self.assertNotIn("private path", str(raised.exception))
 
     @staticmethod
     def plugin_root(root: Path, version: str) -> Path:
