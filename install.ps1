@@ -1,4 +1,4 @@
-param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+﻿param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
 $ErrorActionPreference = 'Stop'
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($null -eq $python) {
