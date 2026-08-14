@@ -1,16 +1,20 @@
-"""Transactional v1/v2 SQLite migrations for YTQJK Knowledge."""
+"""Transactional v1-v3 SQLite migrations for YTQJK Knowledge."""
 
 from __future__ import annotations
 
 import sqlite3
 
+from .import_migration import DROPS as _IMPORT_DROPS
+from .import_migration import repair as _repair_import
+from .import_migration import upgrade as _upgrade_import
 
-LATEST_VERSION = 2
+
+LATEST_VERSION = 3
 
 
 def migrate(connection: sqlite3.Connection, target: int = LATEST_VERSION) -> None:
     """Lock, read version, migrate, and repair idempotently in one transaction."""
-    if target not in (1, 2):
+    if target not in (1, 2, 3):
         raise ValueError("unsupported schema version")
     connection.execute("BEGIN IMMEDIATE")
     try:
@@ -25,6 +29,8 @@ def migrate(connection: sqlite3.Connection, target: int = LATEST_VERSION) -> Non
             _repair_v1(connection)
         if current >= 2:
             _repair_v2(connection)
+        if current >= 3:
+            _repair_v3(connection)
         connection.execute(f"PRAGMA user_version = {current}")
         connection.commit()
     except BaseException:
@@ -43,10 +49,16 @@ def _upgrade(connection: sqlite3.Connection, version: int) -> None:
     if version == 2:
         _execute(connection, _V2_TABLES)
         return
+    if version == 3:
+        _upgrade_import(connection)
+        return
     raise ValueError("unsupported schema version")
 
 
 def _downgrade(connection: sqlite3.Connection, version: int) -> None:
+    if version == 3:
+        _execute(connection, _IMPORT_DROPS)
+        return
     if version != 2:
         raise ValueError("unsupported schema version")
     _execute(connection, _SNAPSHOT_TRIGGER_DROPS + _V2_TABLE_DROPS)
@@ -71,6 +83,10 @@ def _repair_v1(connection: sqlite3.Connection) -> None:
 
 def _repair_v2(connection: sqlite3.Connection) -> None:
     _execute(connection, _SNAPSHOT_TRIGGER_DROPS + _SNAPSHOT_TRIGGERS)
+
+
+def _repair_v3(connection: sqlite3.Connection) -> None:
+    _repair_import(connection)
 
 
 def _table_exists(connection: sqlite3.Connection, table: str) -> bool:

@@ -16,9 +16,12 @@ and LanceDB retrieval are not implemented in this release.
 ## Core guarantees
 
 - Schema v1 provides governed documents and durable writer jobs. Schema v2 adds
-  immutable snapshots. Transactional downgrade keeps v1 service writes usable.
+  immutable snapshots. Schema v3 adds atomic bootstrap candidates, provenance,
+  and schema-validated first-import receipt checksums.
 - Projects use immutable UUID, scope, and alias.
 - Originals are SHA-256 content-addressed and deduplicated.
+- Bootstrap imports accept only revalidated scan and parser proofs, always write
+  `CANDIDATE`, and never approve or verify knowledge automatically.
 - Candidates can be edited or soft deleted. Approved, verified, and tombstone
   states append a new version only.
 - Writes pass leased durable FIFO jobs with `QUEUED -> RUNNING -> SUCCEEDED|FAILED`.
@@ -33,6 +36,8 @@ from scripts.service import KnowledgeService
 
 service = KnowledgeService(Path("local-knowledge.sqlite3"))
 project_id = service.create_project("project", "my-project")
-document_id = service.create_candidate(project_id, "note", "manual")
+document_id = service.create_candidate(
+    project_id, "note", "manual", "local"
+)
 snapshot_id = service.create_snapshot(project_id)
 ```

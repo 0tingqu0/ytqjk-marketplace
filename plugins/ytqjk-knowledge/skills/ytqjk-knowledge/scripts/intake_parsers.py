@@ -29,12 +29,17 @@ class ParserRegistry:
     """Registry for deterministic parsers and declared adapters."""
 
     def __init__(
-        self, *, chunk_chars: int = 2000, scanner: ScannerPort | None = None
+        self,
+        *,
+        chunk_chars: int = 2000,
+        scanner: ScannerPort | None = None,
+        allow_extensionless_text: bool = False,
     ) -> None:
         if chunk_chars <= 0:
             raise ValueError("chunk size must be positive")
         self._chunk_chars = chunk_chars
         self._scanner = scanner or LocalScanner()
+        self._allow_extensionless_text = allow_extensionless_text
         self._parsers: dict[
             str, tuple[ParserCapability, Parser, frozenset[str]]
         ] = {}
@@ -45,7 +50,9 @@ class ParserRegistry:
         adapter: str = "builtin", media_types: frozenset[str] = frozenset()
     ) -> None:
         """Register configured parser for extension and media types."""
-        normalized = _extension(extension)
+        normalized = _extension(
+            extension, allow_empty=self._allow_extensionless_text
+        )
         capability = ParserCapability(
             normalized, media_kind, CapabilityState.CONFIGURED, adapter
         )
@@ -54,7 +61,9 @@ class ParserRegistry:
 
     def declare(self, extension: str, media_kind: str, adapter: str) -> None:
         """Declare unavailable parser adapter capability."""
-        normalized = _extension(extension)
+        normalized = _extension(
+            extension, allow_empty=self._allow_extensionless_text
+        )
         if normalized not in self._parsers:
             self._capabilities[normalized] = ParserCapability(
                 normalized, media_kind, CapabilityState.NOT_CONFIGURED, adapter
@@ -62,7 +71,9 @@ class ParserRegistry:
 
     def capability(self, extension: str) -> ParserCapability:
         """Return declared capability or reject unknown extension."""
-        normalized = _extension(extension)
+        normalized = _extension(
+            extension, allow_empty=self._allow_extensionless_text
+        )
         capability = self._capabilities.get(normalized)
         if capability is None:
             raise ValueError(f"unsupported parser extension: {normalized}")
@@ -82,7 +93,10 @@ class ParserRegistry:
             and source.media_type not in media_types
         ):
             raise ValueError("extension and media type conflict")
-        text = source.content.decode("utf-8", errors="replace")
+        if source.extension == "":
+            text = _extensionless_text(source.content)
+        else:
+            text = source.content.decode("utf-8", errors="replace")
         replacement_count = text.count("\ufffd")
         try:
             parsed = parser(text)
@@ -140,10 +154,19 @@ class ParserRegistry:
 
 
 def default_registry(
-    *, chunk_chars: int = 2000, scanner: ScannerPort | None = None
+    *,
+    chunk_chars: int = 2000,
+    scanner: ScannerPort | None = None,
+    allow_extensionless_text: bool = False,
 ) -> ParserRegistry:
     """Build registry containing safe parsers and optional adapters."""
-    registry = ParserRegistry(chunk_chars=chunk_chars, scanner=scanner)
+    registry = ParserRegistry(
+        chunk_chars=chunk_chars,
+        scanner=scanner,
+        allow_extensionless_text=allow_extensionless_text,
+    )
+    if allow_extensionless_text:
+        registry.register("", "text", _identity)
     for suffix in (".txt", ".md", ".markdown"):
         registry.register(
             suffix, "text", _identity,
@@ -213,11 +236,30 @@ def _delimited(text: str, delimiter: str) -> str:
     return output.getvalue()
 
 
-def _extension(value: str) -> str:
+def _extension(value: str, *, allow_empty: bool = False) -> str:
     normalized = value.strip().casefold()
     if not normalized:
+        if allow_empty:
+            return ""
         raise ValueError("parser extension is required")
     return normalized if normalized.startswith(".") else f".{normalized}"
+
+
+def _extensionless_text(content: bytes) -> str:
+    if b"\0" in content:
+        raise ValueError("extensionless input is not plain text")
+    try:
+        text = content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise ValueError("extensionless input is not UTF-8 text") from error
+    forbidden = any(
+        (ord(character) < 32 and character not in "\t\n\r")
+        or ord(character) == 127
+        for character in text
+    )
+    if forbidden:
+        raise ValueError("extensionless input is not plain text")
+    return text
 
 
 def _chunk(parent_id: str, ordinal: int, text: str) -> ParsedChunk:

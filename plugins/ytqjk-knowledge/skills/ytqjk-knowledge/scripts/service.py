@@ -7,10 +7,12 @@ import json
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .database import connection, read_row, read_rows, read_value
 from .domain import apply
+from .import_contracts import CandidateImport, ImportReceipt
+from .import_storage import import_candidates, read_receipt
 from .migrations import LATEST_VERSION, migrate
 from .queue import _WriteQueue
 
@@ -41,6 +43,30 @@ class KnowledgeService:
         self._submit("create_project", payload, key)
         rows = read_rows(self._database, "SELECT id FROM projects WHERE scope = ? AND alias = ?", (scope, alias))
         return str(rows[0]["id"])
+
+    def import_candidates(
+        self,
+        project_scope: str,
+        project_alias: str,
+        marker: str,
+        candidates: Sequence[CandidateImport],
+        *,
+        force: bool = False,
+    ) -> ImportReceipt:
+        """Atomically ensure project, candidates, provenance, and marker."""
+        with self._writer:
+            return import_candidates(
+                self._database,
+                project_scope,
+                project_alias,
+                marker,
+                candidates,
+                force=force,
+            )
+
+    def import_receipt(self, marker: str) -> ImportReceipt | None:
+        """Read one schema-validated bootstrap receipt checksum."""
+        return read_receipt(self._database, marker)
 
     def create_candidate(self, project_id: str, title: str, content: str, source: str) -> str:
         """Create or return deduplicated candidate document."""
@@ -77,7 +103,11 @@ class KnowledgeService:
         return read_rows(self._database, "SELECT * FROM versions WHERE document_id = ? ORDER BY ordinal", (document_id,))
 
     def count(self, table: str) -> int:
-        if table not in {"originals", "documents", "versions", "jobs", "snapshots", "audit"}:
+        if table not in {
+            "originals", "documents", "versions", "jobs", "snapshots",
+            "audit", "chunks", "sources", "governance",
+            "import_documents", "import_provenance", "import_receipts",
+        }:
             raise ValueError("unsupported table")
         return read_value(self._database, f"SELECT COUNT(*) FROM {table}")
 

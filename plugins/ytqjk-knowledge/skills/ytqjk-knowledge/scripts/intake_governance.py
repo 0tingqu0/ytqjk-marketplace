@@ -24,8 +24,14 @@ _TARGET_STATES = frozenset({"APPROVED", "VERIFIED"})
 class CandidateRegistry:
     """In-memory intake boundary; shared persistence integration is deferred."""
 
-    def __init__(self, scanner: ScannerPort | None = None) -> None:
+    def __init__(
+        self,
+        scanner: ScannerPort | None = None,
+        *,
+        allow_extensionless_text: bool = False,
+    ) -> None:
         self._scanner = scanner or LocalScanner()
+        self._allow_extensionless_text = allow_extensionless_text
         self._candidates: dict[str, IntakeCandidate] = {}
         self._dedupe: dict[tuple[str, str], str] = {}
 
@@ -39,7 +45,11 @@ class CandidateRegistry:
     ) -> IntakeCandidate:
         """Validate proofs and store project-isolated candidate."""
         project = _project_uuid(project_id)
-        replacement_count = _validate_proof(parsed, self._scanner)
+        replacement_count = _validate_proof(
+            parsed,
+            self._scanner,
+            self._allow_extensionless_text,
+        )
         key = (project, parsed.content_sha256)
         duplicate = self._dedupe.get(key)
         if duplicate is not None:
@@ -139,7 +149,11 @@ def _project_uuid(value: str) -> str:
         raise ValueError("project_id must be UUID") from error
 
 
-def _validate_proof(parsed: ParsedDocument, scanner: ScannerPort) -> int:
+def _validate_proof(
+    parsed: ParsedDocument,
+    scanner: ScannerPort,
+    allow_extensionless_text: bool,
+) -> int:
     source = parsed.source
     from .intake_parsers import default_registry
     from .intake_security import inspect_input
@@ -148,7 +162,10 @@ def _validate_proof(parsed: ParsedDocument, scanner: ScannerPort) -> int:
         live_source = inspect_input(
             source.root, source.path, purpose=source.purpose, scanner=scanner
         )[0]
-        live_parsed = default_registry(scanner=scanner).parse(live_source)
+        live_parsed = default_registry(
+            scanner=scanner,
+            allow_extensionless_text=allow_extensionless_text,
+        ).parse(live_source)
     except (OSError, RuntimeError, ValueError) as error:
         raise ValueError("source metadata proof is invalid") from error
     source_digest = hashlib.sha256(source.content).hexdigest()
