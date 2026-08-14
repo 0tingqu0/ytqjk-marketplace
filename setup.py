@@ -23,7 +23,11 @@ from install_core import (
     require_python, target_has_grill_me,
 )
 from project_bootstrap import bootstrap_project, bootstrap_receipt
-from uninstall_core import UninstallPlan, apply_uninstall_plan, build_uninstall_plan
+from uninstall_core import (
+    UninstallPlan,
+    apply_uninstall_plan,
+    build_uninstall_plan,
+)
 
 VECTOR_LIMIT_BYTES = 10 * 1024 * 1024
 VECTOR_LIMIT_CHUNKS = 2000
@@ -85,6 +89,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--version", action="version", version=VERSION)
     result.add_argument("--target-root", type=Path)
+    result.add_argument("--project-root", type=Path)
     result.add_argument("--codex-root", type=Path)
     result.add_argument("--knowledge-root", type=Path)
     result.add_argument(
@@ -239,12 +244,16 @@ def main(
                 result["knowledge_bootstrap"] = bootstrap_receipt(
                     "SKIPPED_OFF"
                 )
+            elif args.project_root is None:
+                result["knowledge_bootstrap"] = bootstrap_receipt(
+                    "NOT_CONFIGURED"
+                )
             else:
                 bootstrapper = project_bootstrapper or bootstrap_project
                 try:
                     result["knowledge_bootstrap"] = bootstrapper(
                         default_knowledge_root(args.knowledge_root),
-                        args.target_root, args.vector,
+                        args.project_root, args.vector,
                     )
                 except Exception:
                     result["knowledge_bootstrap"] = bootstrap_receipt(

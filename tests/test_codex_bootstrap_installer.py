@@ -119,7 +119,7 @@ def test_apply_calls_import_only_after_success(tmp_path: Path) -> None:
     assert len(calls) == 1
 
 
-def test_apply_bootstraps_target_project_after_import(tmp_path: Path) -> None:
+def test_apply_bootstraps_explicit_project_after_import(tmp_path: Path) -> None:
     events: list[str] = []
 
     def importer(
@@ -134,7 +134,7 @@ def test_apply_bootstraps_target_project_after_import(tmp_path: Path) -> None:
         events.append("bootstrap")
         assert (tmp_path / "target" / "skills").is_dir()
         assert (knowledge, target, vector_mode) == (
-            tmp_path / "knowledge", tmp_path / "target", "auto"
+            tmp_path / "knowledge", tmp_path / "project", "auto"
         )
         return {"status": "SUCCEEDED", "project_files": 1}
 
@@ -144,6 +144,7 @@ def test_apply_bootstraps_target_project_after_import(tmp_path: Path) -> None:
             [
                 "--apply", "--yes", "--mode", "knowledge-only",
                 "--target-root", str(tmp_path / "target"),
+                "--project-root", str(tmp_path / "project"),
                 "--knowledge-root", str(tmp_path / "knowledge"), "--json",
             ],
             codex_importer=importer,
@@ -152,9 +153,8 @@ def test_apply_bootstraps_target_project_after_import(tmp_path: Path) -> None:
     data = json.loads(output.getvalue())
     assert code == 0
     assert events == ["import", "bootstrap"]
-    assert data["knowledge_bootstrap"] == {
-        "status": "SUCCEEDED", "project_files": 1
-    }
+    expected = {"status": "SUCCEEDED", "project_files": 1}
+    assert data["knowledge_bootstrap"] == expected
 
 
 def test_project_bootstrap_can_be_disabled(tmp_path: Path) -> None:

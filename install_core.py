@@ -21,7 +21,7 @@ from install_external import (
     stage_grill,
 )
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 MODES = PUBLIC_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]

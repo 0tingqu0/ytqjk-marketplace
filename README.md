@@ -7,8 +7,9 @@ extension 可加载独立 skills，但不加载 plugin；完整多会话编排�
 
 ## 一键安装
 
-从 Git clone 后，在仓库根目录直接运行无参数入口。它以当前克隆目录作为目标项目，安装两个
-Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex 候选资料，并自动建立项目知识索引。
+从 Git clone 后，在仓库根目录直接运行无参数入口。它显式以当前克隆目录作为安装目标和
+知识索引项目，安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex
+候选资料，并自动建立项目知识索引。
 
 Windows PowerShell：
 
@@ -33,22 +34,25 @@ sh ./install.sh
 无参数安装会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。首次下载依赖可能
 需要几分钟；若安装失败，终端末尾会显示对应命令的错误信息。
 
-需要预览或指定另一个目标项目时，传入参数会保留 dry-run 行为：
+需要预览或分别指定安装目标和知识索引项目时，传入参数会保留 dry-run 行为：
 
 ```bash
-python setup.py --mode all --target-root /path/to/project --json
+python setup.py --mode all --target-root /path/to/install \
+  --project-root /path/to/project --json
 ```
 
 确认后显式应用：
 
 ```powershell
-.\install.ps1 --mode all --target-root C:\path\to\project --apply --yes --json
+.\install.ps1 --mode all --target-root C:\path\to\install `
+  --project-root C:\path\to\project --apply --yes --json
 ```
 
-`--project-bootstrap off` 可跳过项目索引初始化。安装不启动网页后台服务；用户或 AI 明确请求
-打开控制台时才会启动，并固定绑定 `127.0.0.1`。正常应用成功返回 `0`；候选资料导入失败返回
-`3`，项目索引初始化失败返回 `4`，安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或
-知识内容。
+`--target-root` 只决定安装位置，永远不会隐式成为知识索引项目。项目索引只读取显式
+`--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
+初始化。安装不启动网页后台服务；用户或 AI 明确请求打开控制台时才会启动，并固定绑定
+`127.0.0.1`。正常应用成功返回 `0`；候选资料导入失败返回 `3`，项目索引初始化失败返回 `4`，
+安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
 
 ## 卸载历史版本
 
@@ -128,7 +132,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.3.1`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.3.2`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
