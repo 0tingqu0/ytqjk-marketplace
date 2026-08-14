@@ -5,17 +5,36 @@
 知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
 extension 可加载独立 skills，但不加载 plugin；完整多会话编排还取决于宿主是否提供可见会话 API。
 
-## 一键安装
+## 推荐：Git clone 后一键部署
 
-从 Git clone 后，在仓库根目录直接运行无参数入口。它显式以当前克隆目录作为安装目标和
-知识索引项目，安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex
-候选资料，并自动建立项目知识索引。
+推荐使用仓库根目录的无参数安装入口。它会把当前克隆目录同时作为安装目标和知识索引项目，
+安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex 候选资料，并
+自动建立项目知识索引。安装只写入当前用户目录和本机知识根，不需要管理员或 root 权限，也不会下载
+发布者的私人知识内容。
+
+### 1. 检查运行环境
+
+必须安装 Git、Python 3.10+ 和可用的 Codex CLI。首次缺少 `grill-me` 时，安装器还会调用
+Node.js/npm 提供的 `npx`。先在准备运行 Codex 的同一环境中确认版本：
+
+```powershell
+git --version
+python --version
+codex --version
+node --version
+npm --version
+```
+
+Linux、macOS 或 WSL 将 `python` 改为 `python3`。使用 Remote SSH、Dev Container 或 WSL 时，
+必须在远端、容器或 WSL 终端内执行检查和安装，不能在 Windows 宿主安装后直接当作远端结果。
+
+### 2. 克隆并安装
 
 Windows PowerShell：
 
 ```powershell
 git clone https://github.com/0tingqu0/ytqjk-marketplace.git
-cd ytqjk-marketplace
+Set-Location .\ytqjk-marketplace
 .\install.ps1
 ```
 
@@ -27,17 +46,56 @@ cd ytqjk-marketplace
 sh ./install.sh
 ```
 
-安装要求 Git、Python 3.10+ 和可用的 Codex CLI；首次缺少 `grill-me` 时还需要 Node.js/npm。
-安装只写入当前用户的本机知识根，不复制发布者的私人知识内容。所有用户获得相同的插件功能和
-网页控制台，但各自的候选资料、项目索引和已批准资料相互独立。
+脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。首次运行可能需要几分钟；
+不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出 JSON 回执。
 
-无参数安装会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。首次下载依赖可能
-需要几分钟；若安装失败，终端末尾会显示对应命令的错误信息。
+### 3. 验证安装结果
+
+首次完整部署的回执应满足：
+
+- `apply.status` 为 `APPLIED`。
+- `knowledge_bootstrap.status` 为 `SUCCEEDED`。
+- `knowledge_import.status` 为 `SUCCEEDED`；重复安装可能为 `SKIPPED_MARKER`。
+- `knowledge_import.discovered_count` 为 `0` 表示当前用户没有可导入资料，不是安装失败。
+- `apply.codex_plugins.stable_paths` 包含两个稳定插件目录。
+
+Windows PowerShell 可进一步检查稳定插件和知识库布局：
+
+```powershell
+$knowledgeRoot = if (Test-Path 'D:\') {
+  'D:\knowledge'
+} else {
+  Join-Path $env:LOCALAPPDATA 'YTQJK\knowledge'
+}
+
+Test-Path "$HOME\.codex\plugins\ytqjk-agentic-orchestrator\.codex-plugin\plugin.json"
+Test-Path "$HOME\.codex\plugins\ytqjk-knowledge\.codex-plugin\plugin.json"
+Test-Path "$knowledgeRoot\config.json"
+Test-Path "$knowledgeRoot\catalog.json"
+Get-ChildItem "$knowledgeRoot\projects" -Directory
+```
+
+Linux、macOS 或 WSL：
+
+```bash
+knowledge_root="${YTQJK_KNOWLEDGE_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk}"
+
+test -f "$HOME/.codex/plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json"
+test -f "$HOME/.codex/plugins/ytqjk-knowledge/.codex-plugin/plugin.json"
+test -f "$knowledge_root/config.json"
+test -f "$knowledge_root/catalog.json"
+find "$knowledge_root/projects" -mindepth 1 -maxdepth 1 -type d -print
+```
+
+随后重启 Codex 或新建任务，输入 `$ytqjk`。网页端不会作为后台服务自动启动；需要时按
+[知识库控制台](#知识库控制台)中的命令启动，它只绑定 `127.0.0.1`。
+
+### 4. 自定义安装
 
 需要预览或分别指定安装目标和知识索引项目时，传入参数会保留 dry-run 行为：
 
 ```bash
-python setup.py --mode all --target-root /path/to/install \
+python3 setup.py --mode all --target-root /path/to/install \
   --project-root /path/to/project --json
 ```
 
@@ -50,8 +108,7 @@ python setup.py --mode all --target-root /path/to/install \
 
 `--target-root` 只决定安装位置，永远不会隐式成为知识索引项目。项目索引只读取显式
 `--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
-初始化。安装不启动网页后台服务；用户或 AI 明确请求打开控制台时才会启动，并固定绑定
-`127.0.0.1`。正常应用成功返回 `0`；候选资料导入失败返回 `3`，项目索引初始化失败返回 `4`，
+初始化。正常应用成功返回 `0`；候选资料导入失败返回 `3`，项目索引初始化失败返回 `4`，
 安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
 
 ## 卸载历史版本
@@ -121,13 +178,27 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 
 ## 更新与回滚
 
+通过 Git clone 一键部署的用户，在原克隆目录中只做快进更新，然后重新运行安装入口。安装器会
+更新本项目 manifest 管理的插件目录并复用已有知识库，不会删除候选资料或已批准资料：
+
+```powershell
+git pull --ff-only
+.\install.ps1
+```
+
+Linux、macOS 或 WSL：
+
+```bash
+git pull --ff-only
+sh ./install.sh
+```
+
 Codex 桌面版在 Plugins 页面卸载后重新安装。Codex CLI 输入 `/plugins` 打开插件浏览器，
 在 `ytqjk` marketplace 中卸载后重新安装；也可从已配置的 marketplace 重新执行安装命令：
 
 ```bash
 codex plugin marketplace upgrade ytqjk
 codex plugin add ytqjk-agentic-orchestrator@ytqjk
-codex plugin add ytqjk-knowledge@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
