@@ -13,6 +13,7 @@ from unittest import mock
 import install_core
 import install_external
 from install_core import InstallError, apply_plan, build_plan
+from install_external import StagedSkill, cleanup_stage
 from setup import main, run_external
 
 
@@ -94,6 +95,25 @@ class StatefulRunner:
 
 
 class ExternalInstallTest(unittest.TestCase):
+    def test_cleanup_removes_long_windows_staging_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / ".ytqjk-install"
+            stage_root = state / "staging" / "1"
+            deep = stage_root / "work"
+            while len(str(deep)) < 280:
+                deep /= "node_modules_segment"
+            writable = (
+                Path("\\\\?\\" + str(deep)) if sys.platform == "win32"
+                else deep
+            )
+            writable.mkdir(parents=True)
+            (writable / "package.json").write_text("{}", encoding="ascii")
+
+            result = cleanup_stage(StagedSkill(stage_root / "work", stage_root))
+
+            self.assertEqual(result.status, "SUCCEEDED")
+            self.assertFalse(state.exists())
+
     def test_grill_uses_noninteractive_exact_argv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
@@ -254,7 +274,8 @@ class ExternalInstallTest(unittest.TestCase):
             staging = Path(directory).resolve()
             completed = mock.Mock(stdout="")
             patched = mock.patch(
-                "setup.subprocess.run", return_value=completed
+                "external_command_runner.subprocess.run",
+                return_value=completed,
             )
             with patched as run:
                 run_external(["npx", "skills@latest", "add", "repo"], staging)

@@ -6,11 +6,11 @@ import json
 import os
 import platform
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
 
+from bootstrap_cli_runtime import CliRuntime, ensure_cli_runtime
 from codex_bootstrap_import import (
     default_codex_root,
     default_knowledge_root,
@@ -18,6 +18,8 @@ from codex_bootstrap_import import (
     failed_receipt,
     import_codex_candidates,
 )
+from codex_plugin_paths import prepare_codex_root
+from external_command_runner import run_external
 from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
     require_python, target_has_grill_me,
@@ -44,11 +46,17 @@ def vector_result(
     return "planned" if large else "lexical-only"
 
 
-def health(probe: bool) -> dict[str, str]:
+def health(
+    probe: bool, executable_overrides: dict[str, str] | None = None
+) -> dict[str, str]:
     names = ("python", "node", "npm", "codex")
+    overrides = executable_overrides or {}
     checks = {
-        name: ("AVAILABLE" if probe and shutil.which(name) else
-               "MISSING" if probe else "UNKNOWN")
+        name: (
+            "AVAILABLE"
+            if probe and (name in overrides or shutil.which(name))
+            else "MISSING" if probe else "UNKNOWN"
+        )
         for name in names
     }
     unknown = ("core_task_api", "plugin_discovery", "skill_discovery",
@@ -117,53 +125,6 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def run_external(command: list[str], cwd: Path) -> str:
-    allowed = {"codex", "npx"}
-    if not command or command[0] not in allowed:
-        raise RuntimeError("installer rejected external command")
-    executable = shutil.which(command[0])
-    if executable is None:
-        raise RuntimeError(f"required command not found: {command[0]}")
-    resolved_command = [executable, *command[1:]]
-    environment = None
-    if command[0] == "npx":
-        runtime = cwd / ".ytqjk-npm-runtime"
-        home = runtime / "home"
-        home.mkdir(parents=True, exist_ok=True)
-        environment = os.environ.copy()
-        environment.update({
-            "HOME": str(home),
-            "USERPROFILE": str(home),
-            "XDG_CACHE_HOME": str(runtime / "cache"),
-            "XDG_CONFIG_HOME": str(runtime / "config"),
-            "npm_config_cache": str(runtime / "npm-cache"),
-            "npm_config_prefix": str(runtime / "prefix"),
-            "npm_config_userconfig": str(runtime / "npmrc"),
-        })
-    state_check = command[-2:] == ["list", "--json"]
-    options: dict[str, object] = {
-        "check": True,
-        "text": True,
-        "shell": False,
-        "cwd": cwd,
-        "env": environment,
-    }
-    if state_check:
-        options["capture_output"] = True
-    else:
-        options["stdout"] = sys.stderr
-        options["stderr"] = sys.stderr
-    try:
-        completed = subprocess.run(resolved_command, **options)
-        return completed.stdout or ""
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or error.stdout or "").strip()
-        suffix = f": {detail}" if detail else ""
-        raise RuntimeError(
-            f"external command failed ({error.returncode}){suffix}"
-        ) from error
-
-
 def main(
     argv: list[str] | None = None,
     runner: Callable[[list[str], Path], str] | None = None,
@@ -186,25 +147,43 @@ def main(
             if args.uninstall else build_plan(args.mode, args.target_root)
         )
         applied = bool(args.apply)
+        cli_runtime = CliRuntime("NOT_REQUIRED", None, {}, None)
+        effective_runner = runner
+        codex_root = default_codex_root(args.codex_root)
         if applied and runner is None:
             required = {
                 "codex" if action.get("kind") == "codex" else "npx"
                 for action in plan.actions
                 if action.get("kind") in ("codex", "third-party-stage")
             }
-            missing = sorted(name for name in required if not shutil.which(name))
-            if missing:
-                raise ValueError(
-                    "required command not found: " + ", ".join(missing)
+            external_environment = os.environ.copy()
+            if "codex" in required:
+                codex_root = prepare_codex_root(codex_root)
+                external_environment["CODEX_HOME"] = str(codex_root)
+            cli_runtime = ensure_cli_runtime(required)
+            if cli_runtime.environment:
+                external_environment.update(cli_runtime.environment)
+                external_environment["CODEX_HOME"] = str(codex_root)
+
+            def production_runner(command: list[str], cwd: Path) -> str:
+                return run_external(
+                    command,
+                    cwd,
+                    dict(cli_runtime.executables),
+                    external_environment,
                 )
+
+            effective_runner = production_runner
         result = receipt(
-            plan, args.target_root, applied, health(args.probe_local),
+            plan, args.target_root, applied,
+            health(args.probe_local, dict(cli_runtime.executables)),
             vector_result(
                 args.vector, args.knowledge_bytes, args.knowledge_chunks,
                 args.vector_failed,
             ),
             "uninstall" if args.uninstall else "install",
         )
+        result["cli_runtime"] = cli_runtime.receipt()
         result["knowledge_import"] = empty_import_receipt(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
@@ -212,16 +191,17 @@ def main(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
         if applied:
-            codex_root = default_codex_root(args.codex_root)
             if args.uninstall:
                 result["apply"] = apply_uninstall_plan(
-                    plan, args.target_root, runner=runner or run_external,
+                    plan, args.target_root,
+                    runner=effective_runner or run_external,
                     codex_root=codex_root,
                 )
             else:
                 result["apply"] = apply_plan(
                     plan, args.target_root, args.fail_after_copy,
-                    runner=runner or run_external, codex_root=codex_root,
+                    runner=effective_runner or run_external,
+                    codex_root=codex_root,
                 )
             result["grill_me_present"] = target_has_grill_me(
                 args.target_root

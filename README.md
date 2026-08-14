@@ -14,19 +14,21 @@ extension 可加载独立 skills，但不加载 plugin；完整多会话编排�
 
 ### 1. 检查运行环境
 
-必须安装 Git、Python 3.10+ 和可用的 Codex CLI。首次缺少 `grill-me` 时，安装器还会调用
-Node.js/npm 提供的 `npx`。先在准备运行 Codex 的同一环境中确认版本：
+Windows 只需预先安装 Git 和 Python 3.10+。缺少 Node.js、npm、`npx` 或 Codex CLI 时，
+`install.ps1` 会自动在 `%LOCALAPPDATA%\YTQJK\runtime` 准备便携 Node.js 24.15.0，校验
+Node.js 官方 `SHASUMS256.txt`，再安装固定版 `@openai/codex@0.147.0`。该运行时不需要管理员
+权限、不修改系统 PATH，只在本次安装进程中使用；重复运行会验证并复用有效运行时。
+
+先确认 Git 和 Python：
 
 ```powershell
 git --version
 python --version
-codex --version
-node --version
-npm --version
 ```
 
-Linux、macOS 或 WSL 将 `python` 改为 `python3`。使用 Remote SSH、Dev Container 或 WSL 时，
-必须在远端、容器或 WSL 终端内执行检查和安装，不能在 Windows 宿主安装后直接当作远端结果。
+Linux、macOS 或 WSL 将 `python` 改为 `python3`，并仍需预先提供 Node.js/npm、`npx` 和
+Codex CLI。使用 Remote SSH、Dev Container 或 WSL 时，必须在远端、容器或 WSL 终端内
+执行检查和安装，不能在 Windows 宿主安装后直接当作远端结果。
 
 ### 2. 克隆并安装
 
@@ -46,7 +48,9 @@ cd ytqjk-marketplace
 sh ./install.sh
 ```
 
-脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。首次运行可能需要几分钟；
+脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。Windows 首次运行需要
+访问 `nodejs.org`、npm registry、GitHub 和 Codex 插件源，会下载并执行 Node.js、固定版本
+Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执行。首次运行可能需要几分钟，
 不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出 JSON 回执。
 
 ### 3. 验证安装结果
@@ -54,6 +58,8 @@ sh ./install.sh
 首次完整部署的回执应满足：
 
 - `apply.status` 为 `APPLIED`。
+- `cli_runtime.status` 为 `SYSTEM`、`BOOTSTRAPPED` 或 `REUSED`；后两者表示使用用户目录中的
+  便携运行时。
 - `knowledge_bootstrap.status` 为 `SUCCEEDED`。
 - `knowledge_import.status` 为 `SUCCEEDED`；重复安装可能为 `SKIPPED_MARKER`。
 - `knowledge_import.discovered_count` 为 `0` 表示当前用户没有可导入资料，不是安装失败。
@@ -115,7 +121,8 @@ python3 setup.py --mode all --target-root /path/to/install \
 
 已安装过的 YTQJK 版本可通过当前安装器统一卸载。默认仅输出将移除的插件和技能目录；确认后
 再执行。卸载只处理 YTQJK 自身的 Codex 插件、marketplace 和技能目录，不会删除第三方
-`grill-me`。
+`grill-me`、知识库数据或 `%LOCALAPPDATA%\YTQJK\runtime` 便携运行时。该运行时需要清理时，
+可在确认没有安装进程运行后手工删除这个精确目录。
 
 ```powershell
 .\install.ps1 --uninstall --mode all --apply --yes --target-root C:\path\to\project
@@ -231,7 +238,10 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
 ## 环境要求
 
 - Git、Python 3.10 或更高版本。
-- Node.js/npm 必须满足 `npm view skills@latest engines`；发布时 `skills@1.5.22` 要求 Node.js 22.20.0 或更高版本。
+- Windows 缺少 Node.js/npm、`npx` 或 Codex CLI 时会自动使用用户级便携运行时；Linux、macOS
+  和 WSL 仍需自行安装这些命令。
+- Node.js/npm 必须满足 `npm view skills@latest engines`；当前 Windows 自举版本为 Node.js
+  24.15.0，Codex CLI 固定为 0.147.0。发布时 `skills@1.5.22` 要求 Node.js 22.20.0 或更高版本。
 - Linux 需要可用的 Python `venv` 模块；Ubuntu/Debian 通常由 `python3-venv` 提供。
 - Windows 优先使用 `D:\knowledge`。没有 D 盘时使用 `%LOCALAPPDATA%\YTQJK\knowledge`。
 - Linux/WSL2 使用 `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`。

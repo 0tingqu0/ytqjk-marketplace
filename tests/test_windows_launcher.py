@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from bootstrap_cli_runtime import CliRuntime
 from setup import main, run_external
 
 
@@ -58,8 +59,14 @@ class WindowsLauncherTest(unittest.TestCase):
         completed = mock.Mock(stdout="")
         with tempfile.TemporaryDirectory() as directory:
             with (
-                mock.patch("setup.shutil.which", return_value=executable),
-                mock.patch("setup.subprocess.run", return_value=completed) as run,
+                mock.patch(
+                    "external_command_runner.shutil.which",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "external_command_runner.subprocess.run",
+                    return_value=completed,
+                ) as run,
             ):
                 run_external(["npx", "--version"], Path(directory))
 
@@ -68,20 +75,35 @@ class WindowsLauncherTest(unittest.TestCase):
     def test_external_runner_reports_missing_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with (
-                mock.patch("setup.shutil.which", return_value=None),
-                mock.patch("setup.subprocess.run") as run,
+                mock.patch(
+                    "external_command_runner.shutil.which", return_value=None
+                ),
+                mock.patch("external_command_runner.subprocess.run") as run,
                 self.assertRaisesRegex(RuntimeError, "command not found: npx"),
             ):
                 run_external(["npx", "--version"], Path(directory))
 
         run.assert_not_called()
 
-    def test_apply_reports_missing_npx_before_staging(self) -> None:
+    def test_apply_bootstraps_missing_npx_and_codex(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = io.StringIO()
-            available = lambda name: None if name == "npx" else name
+            runtime = CliRuntime(
+                status="BOOTSTRAPPED",
+                root=Path(directory) / "runtime",
+                executables={"codex": "codex.cmd", "npx": "npx.cmd"},
+                environment=os.environ.copy(),
+                provisioned=("node", "codex"),
+            )
+            codex_root = Path(directory) / "codex"
             with (
-                mock.patch("setup.shutil.which", side_effect=available),
+                mock.patch(
+                    "setup.ensure_cli_runtime", return_value=runtime
+                ) as bootstrap,
+                mock.patch(
+                    "setup.apply_plan",
+                    return_value={"status": "APPLIED"},
+                ),
                 redirect_stderr(output),
             ):
                 code = main(
@@ -89,16 +111,18 @@ class WindowsLauncherTest(unittest.TestCase):
                         "--apply",
                         "--yes",
                         "--json",
-                        "--mode",
-                        "ide-only",
+                        "--mode", "all",
                         "--target-root",
                         directory,
+                        "--codex-root", str(codex_root),
+                        "--codex-import", "off",
+                        "--project-bootstrap", "off",
                     ],
                 )
 
-        receipt = json.loads(output.getvalue())
-        self.assertEqual(code, 2)
-        self.assertEqual(receipt["error"], "required command not found: npx")
+            self.assertEqual(code, 0, output.getvalue())
+            bootstrap.assert_called_once_with({"codex", "npx"})
+            self.assertTrue(codex_root.is_dir())
 
 
 if __name__ == "__main__":

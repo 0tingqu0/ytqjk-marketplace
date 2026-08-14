@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from install_external_grill import GRILL_COMMAND, grill_action
+from windows_paths import remove_tree
 
 Action = dict[str, object]
 Runner = Callable[[list[str], Path], str]
@@ -225,7 +226,7 @@ def cleanup_stage(stage: StagedSkill | None) -> CleanupResult:
         return CleanupResult("NOT_NEEDED", False)
     try:
         if stage.root.exists():
-            shutil.rmtree(stage.root)
+            remove_tree(stage.root)
         staging = stage.root.parent
         if staging.exists() and not any(staging.iterdir()):
             staging.rmdir()

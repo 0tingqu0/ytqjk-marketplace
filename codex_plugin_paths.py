@@ -30,6 +30,16 @@ def plugins_root(codex_root: Path) -> Path:
     return codex_root.expanduser().resolve() / "plugins"
 
 
+def prepare_codex_root(codex_root: Path) -> Path:
+    root = codex_root.expanduser()
+    if root.exists() or root.is_symlink():
+        if not root.is_dir() or _link_or_reparse(root):
+            raise PluginPathError("Codex root is invalid")
+    else:
+        root.mkdir(parents=True)
+    return root.resolve()
+
+
 def manifest_path(codex_root: Path) -> Path:
     return plugins_root(codex_root) / MANIFEST_NAME
 
