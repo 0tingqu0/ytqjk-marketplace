@@ -8,5 +8,8 @@ if ($null -eq $python) {
   Write-Error 'Python 3.10+ is required.'
   exit 127
 }
+if ($Arguments.Count -eq 0) {
+  $Arguments = @('--mode', 'all', '--target-root', $PSScriptRoot, '--apply', '--yes', '--json')
+}
 & $python.Source "$PSScriptRoot/setup.py" @Arguments
 exit $LASTEXITCODE

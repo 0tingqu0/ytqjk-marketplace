@@ -80,8 +80,19 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("codex plugin marketplace upgrade ytqjk", readme)
         self.assertIn("codex plugin add ytqjk-agentic-orchestrator@ytqjk", readme)
         self.assertIn("codex plugin add ytqjk-knowledge@ytqjk", readme)
+        self.assertIn("自动建立项目知识索引", readme)
         self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
         self.assertIn("裸调用尚未给出明确目标时", readme)
+
+    def test_clone_entrypoints_default_to_full_local_setup(self) -> None:
+        powershell = (REPOSITORY / "install.ps1").read_text(encoding="utf-8")
+        shell = (REPOSITORY / "install.sh").read_text(encoding="utf-8")
+        for text in (powershell, shell):
+            self.assertIn("--mode", text)
+            self.assertIn("all", text)
+            self.assertIn("--target-root", text)
+            self.assertIn("--apply", text)
+            self.assertIn("--yes", text)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
         caveman = PLUGIN / "skills" / "caveman" / "SKILL.md"

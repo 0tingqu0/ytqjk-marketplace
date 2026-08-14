@@ -111,6 +111,7 @@ class CodexInstallTest(unittest.TestCase):
                         "--apply", "--yes", "--json",
                         "--mode", "all",
                         "--target-root", str(target / "failed"),
+                        "--project-bootstrap", "off",
                     ],
                     runner=runner,
                 )

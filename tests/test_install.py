@@ -22,7 +22,8 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable, str(SETUP), *args,
-            "--codex-import", "off", "--json",
+            "--codex-import", "off", "--project-bootstrap", "off",
+            "--json",
         ], text=True,
         capture_output=True, check=False, cwd=ROOT,
     )

@@ -12,7 +12,7 @@ from codex_bootstrap_import import (
     default_codex_root,
     import_codex_candidates,
 )
-from setup import main
+from setup import bootstrap_project, main
 
 
 def test_codex_root_contract_prefers_explicit_then_environment(
@@ -51,7 +51,8 @@ def test_dry_run_and_off_never_call_importer(tmp_path: Path) -> None:
             [
                 "--apply", "--yes", "--mode", "knowledge-only",
                 "--target-root", str(tmp_path / "target"),
-                "--codex-import", "off", "--json",
+                "--codex-import", "off", "--project-bootstrap", "off",
+                "--json",
             ],
             codex_importer=forbidden,
         )
@@ -116,6 +117,82 @@ def test_apply_calls_import_only_after_success(tmp_path: Path) -> None:
     )
     assert code == 2
     assert len(calls) == 1
+
+
+def test_apply_bootstraps_target_project_after_import(tmp_path: Path) -> None:
+    events: list[str] = []
+
+    def importer(
+        codex: Path, knowledge: Path, mode: str
+    ) -> dict[str, object]:
+        events.append("import")
+        return _receipt("SUCCEEDED")
+
+    def bootstrap(
+        knowledge: Path, target: Path, vector_mode: str
+    ) -> dict[str, object]:
+        events.append("bootstrap")
+        assert (tmp_path / "target" / "skills").is_dir()
+        assert (knowledge, target, vector_mode) == (
+            tmp_path / "knowledge", tmp_path / "target", "auto"
+        )
+        return {"status": "SUCCEEDED", "project_files": 1}
+
+    output = io.StringIO()
+    with redirect_stdout(output):
+        code = main(
+            [
+                "--apply", "--yes", "--mode", "knowledge-only",
+                "--target-root", str(tmp_path / "target"),
+                "--knowledge-root", str(tmp_path / "knowledge"), "--json",
+            ],
+            codex_importer=importer,
+            project_bootstrapper=bootstrap,
+        )
+    data = json.loads(output.getvalue())
+    assert code == 0
+    assert events == ["import", "bootstrap"]
+    assert data["knowledge_bootstrap"] == {
+        "status": "SUCCEEDED", "project_files": 1
+    }
+
+
+def test_project_bootstrap_can_be_disabled(tmp_path: Path) -> None:
+    def forbidden(*args: object) -> dict[str, object]:
+        raise AssertionError("bootstrap must be disabled")
+
+    output = io.StringIO()
+    with redirect_stdout(output):
+        code = main(
+            [
+                "--apply", "--yes", "--mode", "knowledge-only",
+                "--target-root", str(tmp_path / "target"),
+                "--codex-import", "off", "--project-bootstrap", "off",
+                "--json",
+            ],
+            project_bootstrapper=forbidden,
+        )
+    assert code == 0
+    assert json.loads(output.getvalue())["knowledge_bootstrap"]["status"] == (
+        "SKIPPED_OFF"
+    )
+
+
+def test_project_bootstrap_builds_cache_with_sanitized_receipt(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "private-project"
+    knowledge = tmp_path / "private-knowledge"
+    _write(project / "notes.md", "local project knowledge")
+
+    result = bootstrap_project(knowledge, project, "off")
+
+    assert result["status"] == "SUCCEEDED"
+    assert result["project_files"] == 1
+    assert result["vector_mode"] == "off"
+    assert "project_dir" not in result
+    assert str(project) not in json.dumps(result)
+    assert str(knowledge) not in json.dumps(result)
 
 
 def test_import_failure_keeps_apply_and_returns_three(tmp_path: Path) -> None:

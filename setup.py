@@ -22,6 +22,7 @@ from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
     require_python, target_has_grill_me,
 )
+from project_bootstrap import bootstrap_project, bootstrap_receipt
 from uninstall_core import UninstallPlan, apply_uninstall_plan, build_uninstall_plan
 
 VECTOR_LIMIT_BYTES = 10 * 1024 * 1024
@@ -90,6 +91,9 @@ def parser() -> argparse.ArgumentParser:
         "--codex-import", choices=("auto", "off", "force"),
         default="auto",
     )
+    result.add_argument(
+        "--project-bootstrap", choices=("auto", "off"), default="auto",
+    )
     result.add_argument("--apply", action="store_true")
     result.add_argument("--yes", action="store_true")
     result.add_argument("--uninstall", action="store_true")
@@ -148,6 +152,9 @@ def main(
     codex_importer: Callable[
         [Path, Path, str], dict[str, object]
     ] | None = None,
+    project_bootstrapper: Callable[
+        [Path, Path, str], dict[str, object]
+    ] | None = None,
 ) -> int:
     args = parser().parse_args(argv)
     try:
@@ -170,6 +177,9 @@ def main(
             "uninstall" if args.uninstall else "install",
         )
         result["knowledge_import"] = empty_import_receipt(
+            "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
+        )
+        result["knowledge_bootstrap"] = bootstrap_receipt(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
         if applied:
@@ -209,6 +219,29 @@ def main(
                     result["knowledge_import"] = failed_receipt(
                         "IMPORTER_CALL", "IMPORTER_FAILED"
                     )
+            if not eligible:
+                result["knowledge_bootstrap"] = bootstrap_receipt(
+                    "SKIPPED_MODE"
+                )
+            elif args.project_bootstrap == "off":
+                result["knowledge_bootstrap"] = bootstrap_receipt(
+                    "SKIPPED_OFF"
+                )
+            else:
+                bootstrapper = project_bootstrapper or bootstrap_project
+                try:
+                    result["knowledge_bootstrap"] = bootstrapper(
+                        default_knowledge_root(args.knowledge_root),
+                        args.target_root, args.vector,
+                    )
+                except Exception:
+                    result["knowledge_bootstrap"] = bootstrap_receipt(
+                        "FAILED"
+                    )
+                    result["knowledge_bootstrap"].update({
+                        "failure_stage": "BOOTSTRAPPER_CALL",
+                        "failure_code": "BOOTSTRAPPER_FAILED",
+                    })
         output = json_text(result) if args.json else json.dumps(
             result, indent=2, ensure_ascii=False
         )
@@ -216,7 +249,12 @@ def main(
         import_failed = (
             result["knowledge_import"]["status"] == "FAILED"
         )
-        return 3 if import_failed else 0
+        bootstrap_failed = (
+            result["knowledge_bootstrap"]["status"] == "FAILED"
+        )
+        if import_failed:
+            return 3
+        return 4 if bootstrap_failed else 0
     except (ValueError, RuntimeError, OSError) as error:
         message = {
             "schema": "ytqjk-install-receipt/v1",

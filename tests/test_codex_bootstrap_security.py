@@ -200,7 +200,8 @@ def test_setup_receipt_never_exposes_target_path(tmp_path: Path) -> None:
     target = tmp_path / "private-user-target"
     arguments = [
         "--apply", "--yes", "--mode", "knowledge-only",
-        "--target-root", str(target), "--codex-import", "off", "--json",
+        "--target-root", str(target), "--codex-import", "off",
+        "--project-bootstrap", "off", "--json",
     ]
     output = io.StringIO()
     with redirect_stdout(output):
