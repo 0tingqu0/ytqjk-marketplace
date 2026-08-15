@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import secrets
-import shlex
 import subprocess
 import sys
 import time
@@ -17,6 +15,10 @@ from threading import Lock, Thread
 
 from knowledge_dashboard import KnowledgeHandler
 from platform_paths import default_knowledge_root
+from desktop_autostart import install as install_autostart
+from desktop_autostart import path as autostart_path
+from windows_task import TASK_NAME, register as register_task
+from windows_task import unregister as unregister_task
 
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
@@ -98,6 +100,20 @@ def run_command(root: Path, port: int) -> list[str]:
     ]
 
 
+def scheduled_task_enabled() -> bool:
+    return sys.platform == "win32" and not os.environ.get(
+        "YTQJK_DASHBOARD_AUTOSTART_DIR", ""
+    ).strip()
+
+
+def wait_for_service(root: Path, port: int) -> bool:
+    for _ in range(60):
+        if healthy(port, root):
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def spawn(root: Path, port: int) -> int:
     directory = service_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
@@ -142,10 +158,8 @@ def start(root: Path, port: int) -> dict[str, object]:
         state_path(root),
         {"schema": 1, "pid": pid, "port": port, "stop_file": str(marker)},
     )
-    for _ in range(60):
-        if healthy(port, root):
-            return {"status": "RUNNING", "port": port, "changed": True}
-        time.sleep(0.1)
+    if wait_for_service(root, port):
+        return {"status": "RUNNING", "port": port, "changed": True}
     return {"status": "FAILED", "port": port, "changed": True}
 
 
@@ -160,82 +174,38 @@ def stop(root: Path, port: int) -> dict[str, object]:
     marker.touch()
     for _ in range(60):
         if not healthy(port, root):
-            state_path(root).unlink(missing_ok=True)
-            marker.unlink(missing_ok=True)
-            return {"status": "STOPPED", "port": port, "changed": True}
+            for _ in range(60):
+                if not state_path(root).exists():
+                    marker.unlink(missing_ok=True)
+                    return {
+                        "status": "STOPPED",
+                        "port": port,
+                        "changed": True,
+                    }
+                time.sleep(0.1)
+            return {"status": "FAILED", "port": port, "changed": True}
         time.sleep(0.1)
     return {"status": "FAILED", "port": port, "changed": True}
 
 
-def _validated_line(value: str) -> str:
-    if any(character in value for character in ('\r', '\n', '"')):
-        raise ValueError("service path contains unsupported characters")
-    return value
-
-
-def install_autostart(root: Path, port: int) -> Path:
-    command = service_command(root, port)
-    configured = os.environ.get("YTQJK_DASHBOARD_AUTOSTART_DIR", "").strip()
-    override = Path(configured).expanduser().resolve() if configured else None
-    encoding = "utf-8"
-    if sys.platform == "win32":
-        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
-        target = override or appdata / "Microsoft/Windows/Start Menu/Programs/Startup"
-        path = target / "YTQJK Knowledge Dashboard.vbs"
-        line = subprocess.list2cmdline([_validated_line(item) for item in command])
-        escaped = line.replace('"', '""')
-        content = (
-            'Set shell = CreateObject("WScript.Shell")\r\n'
-            f'shell.Run "{escaped}", 0, False\r\n'
-        )
-        encoding = "utf-16"
-    elif sys.platform == "darwin":
-        target = override or Path.home() / "Library/LaunchAgents"
-        path = target / "com.yitingqujiukun.ytqjk-knowledge.plist"
-        arguments = "".join(
-            f"      <string>{html.escape(item)}</string>\n" for item in command
-        )
-        content = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-            '<plist version="1.0"><dict>\n'
-            '  <key>Label</key><string>com.yitingqujiukun.ytqjk-knowledge</string>\n'
-            f"  <key>ProgramArguments</key><array>\n{arguments}  </array>\n"
-            '  <key>RunAtLoad</key><true/>\n'
-            '</dict></plist>\n'
-        )
-    else:
-        target = override or Path.home() / ".config/autostart"
-        path = target / "ytqjk-knowledge.desktop"
-        line = shlex.join(command)
-        content = (
-            "[Desktop Entry]\nType=Application\nName=YTQJK Knowledge Dashboard\n"
-            f"Exec={line}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
-        )
-    target.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding=encoding)
-    return path
-
-
-def autostart_path() -> Path:
-    configured = os.environ.get("YTQJK_DASHBOARD_AUTOSTART_DIR", "").strip()
-    override = Path(configured).expanduser().resolve() if configured else None
-    if sys.platform == "win32":
-        appdata = Path(os.environ.get("APPDATA", Path.home() / "AppData/Roaming"))
-        target = override or appdata / (
-            "Microsoft/Windows/Start Menu/Programs/Startup/"
-        )
-        return target / "YTQJK Knowledge Dashboard.vbs"
-    if sys.platform == "darwin":
-        target = override or Path.home() / "Library/LaunchAgents"
-        return target / "com.yitingqujiukun.ytqjk-knowledge.plist"
-    target = override or Path.home() / ".config/autostart"
-    return target / "ytqjk-knowledge.desktop"
-
-
 def install(root: Path, port: int) -> dict[str, object]:
-    path = install_autostart(root.resolve(), port)
+    if scheduled_task_enabled():
+        autostart_path().unlink(missing_ok=True)
+        marker = stop_path(root.resolve())
+        marker.unlink(missing_ok=True)
+        register_task(run_command(root.resolve(), port))
+        running = wait_for_service(root.resolve(), port)
+        if not running:
+            unregister_task()
+        return {
+            "status": "RUNNING" if running else "FAILED",
+            "port": port,
+            "changed": True,
+            "autostart": "INSTALLED" if running else "ROLLED_BACK",
+            "autostart_kind": "scheduled-task",
+            "autostart_name": TASK_NAME,
+        }
+    path = install_autostart(service_command(root.resolve(), port))
     result = start(root, port)
     if result["status"] == "FAILED":
         path.unlink(missing_ok=True)
@@ -248,6 +218,19 @@ def install(root: Path, port: int) -> dict[str, object]:
 
 
 def uninstall(root: Path, port: int) -> dict[str, object]:
+    if scheduled_task_enabled():
+        legacy = autostart_path()
+        legacy_removed = legacy.exists()
+        legacy.unlink(missing_ok=True)
+        result = stop(root, port)
+        removed = unregister_task()
+        result["autostart"] = "REMOVED"
+        result["autostart_kind"] = "scheduled-task"
+        result["autostart_name"] = TASK_NAME
+        result["changed"] = (
+            legacy_removed or removed or bool(result["changed"])
+        )
+        return result
     path = autostart_path()
     changed = path.exists()
     path.unlink(missing_ok=True)
@@ -283,6 +266,30 @@ def serve(root: Path, port: int) -> None:
         server.server_close()
 
 
+def run_service(root: Path, port: int) -> None:
+    """Wait out a same-root legacy server, then own the scheduled task."""
+    marker = stop_path(root)
+    while healthy(port, root):
+        if marker.exists():
+            return
+        time.sleep(0.2)
+    if healthy(port):
+        raise RuntimeError("dashboard port is already in use")
+    atomic_json(
+        state_path(root),
+        {
+            "schema": 1,
+            "pid": os.getpid(),
+            "port": port,
+            "stop_file": str(marker),
+        },
+    )
+    try:
+        serve(root, port)
+    finally:
+        state_path(root).unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="YTQJK dashboard service.")
     parser.add_argument("command", choices=("install", "start", "run", "stop", "status", "uninstall"))
@@ -291,7 +298,7 @@ def main() -> int:
     args = parser.parse_args()
     root = args.knowledge_root.resolve()
     if args.command == "run":
-        serve(root, args.port)
+        run_service(root, args.port)
         return 0
     if args.command == "install":
         result = install(root, args.port)

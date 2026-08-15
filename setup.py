@@ -4,8 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
-import shutil
 import sys
 from pathlib import Path
 from typing import Callable
@@ -19,77 +17,19 @@ from codex_bootstrap_import import (
     import_codex_candidates,
 )
 from codex_plugin_paths import prepare_codex_root
+from codex_guidance import configure as configure_guidance
+from codex_guidance import receipt as guidance_receipt
 from dashboard_service_install import (
     apply_dashboard_configuration, configure_dashboard, dashboard_receipt,
 )
 from external_command_runner import run_external
 from install_core import (
-    MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
+    MODES, PUBLIC_MODES, VERSION, InstallError, apply_plan, build_plan,
     require_python, target_has_grill_me,
 )
+from install_receipt import health, json_text, receipt, vector_result
 from project_bootstrap import bootstrap_project, bootstrap_receipt
-from uninstall_core import (
-    UninstallPlan,
-    apply_uninstall_plan,
-    build_uninstall_plan,
-)
-
-VECTOR_LIMIT_BYTES = 10 * 1024 * 1024
-VECTOR_LIMIT_CHUNKS = 2000
-
-
-def vector_result(
-    mode: str, size: int, chunks: int, failed: bool = False
-) -> str:
-    if failed:
-        return "lexical-only"
-    if mode in ("off", "on"):
-        return "off" if mode == "off" else "planned"
-    large = size >= VECTOR_LIMIT_BYTES or chunks >= VECTOR_LIMIT_CHUNKS
-    return "planned" if large else "lexical-only"
-
-
-def health(
-    probe: bool, executable_overrides: dict[str, str] | None = None
-) -> dict[str, str]:
-    names = ("python", "node", "npm", "codex")
-    overrides = executable_overrides or {}
-    checks = {
-        name: (
-            "AVAILABLE"
-            if probe and (name in overrides or shutil.which(name))
-            else "MISSING" if probe else "UNKNOWN"
-        )
-        for name in names
-    }
-    unknown = ("core_task_api", "plugin_discovery", "skill_discovery",
-               "knowledge_service", "loopback_workbench", "vector")
-    checks.update({name: "UNKNOWN" for name in unknown})
-    return checks
-
-
-def receipt(
-    plan: Plan | UninstallPlan, target: Path | None, applied: bool,
-    health_info: dict[str, str], vector: str, operation: str = "install",
-) -> dict[str, object]:
-    return {
-        "schema": "ytqjk-install-receipt/v1", "version": VERSION,
-        "operation": operation, "mode": plan.mode, "dry_run": not applied,
-        "target_root": "CONFIGURED" if target else "NOT_CONFIGURED",
-        "actions": list(plan.actions),
-        "copies": [source.name for source, _ in plan.files],
-        "removals": [path.name for path in getattr(plan, "paths", ())],
-        "grill_me_present": target_has_grill_me(target) if target else False,
-        "health": health_info, "vector": vector,
-        "platform": platform.system(),
-        "sqlite_note": (
-            "SQLite caches are not shared across Windows, Linux, WSL."
-        ),
-    }
-
-
-def json_text(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+from uninstall_core import apply_uninstall_plan, build_uninstall_plan
 
 
 def parser() -> argparse.ArgumentParser:
@@ -196,6 +136,9 @@ def main(
         result["dashboard_service"] = dashboard_receipt(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
+        result["codex_guidance"] = guidance_receipt(
+            "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
+        )
         if applied:
             if args.uninstall:
                 result["dashboard_service"] = apply_dashboard_configuration(
@@ -208,11 +151,19 @@ def main(
                     runner=effective_runner or run_external,
                     codex_root=codex_root,
                 )
+                result["codex_guidance"] = configure_guidance(
+                    codex_root, default_knowledge_root(args.knowledge_root),
+                    args.mode, "uninstall",
+                )
             else:
                 result["apply"] = apply_plan(
                     plan, args.target_root, args.fail_after_copy,
                     runner=effective_runner or run_external,
                     codex_root=codex_root,
+                )
+                result["codex_guidance"] = configure_guidance(
+                    codex_root, default_knowledge_root(args.knowledge_root),
+                    args.mode, "install",
                 )
             result["grill_me_present"] = target_has_grill_me(
                 args.target_root
@@ -222,11 +173,12 @@ def main(
                     result, indent=2, ensure_ascii=False
                 )
                 print(output)
-                return (
-                    5
-                    if result["dashboard_service"]["status"] == "FAILED"
-                    else 0
+                if result["codex_guidance"]["status"] == "FAILED":
+                    return 6
+                dashboard_failed = (
+                    result["dashboard_service"]["status"] == "FAILED"
                 )
+                return 5 if dashboard_failed else 0
             eligible = args.mode in ("all", "knowledge-only")
             if not eligible:
                 result["knowledge_import"] = empty_import_receipt(
@@ -291,10 +243,13 @@ def main(
             result["knowledge_bootstrap"]["status"] == "FAILED"
         )
         dashboard_failed = result["dashboard_service"]["status"] == "FAILED"
+        guidance_failed = result["codex_guidance"]["status"] == "FAILED"
         if import_failed:
             return 3
         if bootstrap_failed:
             return 4
+        if guidance_failed:
+            return 6
         return 5 if dashboard_failed else 0
     except (ValueError, RuntimeError, OSError) as error:
         message = {

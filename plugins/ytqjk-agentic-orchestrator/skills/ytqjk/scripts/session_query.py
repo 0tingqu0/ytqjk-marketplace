@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from platform_paths import default_knowledge_root
+from project_tracking import identify_project
 
 
 QUERY_CLI = Path(__file__).with_name("global_session_query.py")
@@ -18,11 +19,14 @@ def main() -> int:
     parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--session-id", required=True)
-    parser.add_argument("--expected-project-id", required=True)
+    parser.add_argument("--expected-project-id", default="")
     parser.add_argument("query")
     parser.add_argument("--limit", type=int, default=8)
     args = parser.parse_args()
     root, project = args.knowledge_root.resolve(), args.project_root.resolve()
+    expected = args.expected_project_id.strip()
+    if not expected:
+        expected = identify_project(project)["id"]
     command = [
         sys.executable,
         str(QUERY_CLI),
@@ -30,7 +34,7 @@ def main() -> int:
         "--knowledge-root", str(root),
         "--project-root", str(project),
         "--session-id", args.session_id,
-        "--expected-project-id", args.expected_project_id,
+        "--expected-project-id", expected,
         "--limit",
         str(args.limit),
     ]

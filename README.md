@@ -104,10 +104,14 @@ test -f "$knowledge_root/catalog.json"
 find "$knowledge_root/projects" -mindepth 1 -maxdepth 1 -type d -print
 ```
 
-安装结束后可直接打开 `http://127.0.0.1:8765`，关闭安装终端不会中断网页。随后重启 Codex，
-输入 `/hooks`，审阅并信任 YTQJK 的 `SessionStart` 钩子，再新建任务。Codex 官方安全策略禁止
-安装器替用户自动信任插件钩子；这一步只需在钩子内容未变化时确认一次。确认后，Git 项目中的
-新建、恢复、清空和压缩会话都会自动建立匿名锚点。
+安装结束后可直接打开 `http://127.0.0.1:8765`，关闭安装终端不会中断网页。安装器还会在
+Codex 全局 `AGENTS.md`（存在非空 `AGENTS.override.md` 时使用该文件）写入带明确起止标记的
+YTQJK 受管块；新会话会自动发现知识库、注册当前 Git 项目，并建立匿名锚点，卸载时仅删除
+该受管块而保留用户原有内容。重启 Codex 后即可生效。
+
+还可输入 `/hooks`，审阅并信任 YTQJK 的 `SessionStart` 钩子，使锚定在首轮回答前完成。
+Codex 官方安全策略禁止安装器替用户自动信任插件钩子；不信任 hook 不影响上述全局指引在
+新会话首次项目操作前接入知识库。
 
 ### 4. 自定义安装
 
@@ -129,20 +133,24 @@ python3 setup.py --mode all --target-root /path/to/install \
 `--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
 初始化。正常应用成功返回 `0`；默认自动导入中的单文件解析告警也返回 `0`，不可恢复的候选
 资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，后台
-控制台配置失败返回 `5`，安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
+控制台配置失败返回 `5`，全局知识指引配置失败返回 `6`，安装或参数错误返回 `2`。JSON
+回执不包含项目绝对路径或知识内容。
 
 ## 卸载历史版本
 
 已安装过的 YTQJK 版本可通过当前安装器统一卸载。默认仅输出将移除的插件和技能目录；确认后
 再执行。卸载只处理 YTQJK 自身的 Codex 插件、marketplace 和技能目录，不会删除第三方
 `grill-me`、知识库数据、`%LOCALAPPDATA%\YTQJK\runtime` 便携运行时或由 `winget` 安装的
-Python。运行时或 Python 需要清理时，应在确认没有后台控制台及安装进程运行后单独卸载。
+Python。卸载同时只移除全局 `AGENTS.md` 中带 YTQJK 标记的受管块。运行时或 Python 需要
+清理时，应在确认没有后台控制台及安装进程运行后单独卸载。
 
 ```powershell
-.\install.cmd --uninstall --mode all --apply --yes --target-root C:\path\to\project
+.\install.cmd --uninstall
 ```
 
-可将 `all` 改为 `codex-only`、`ide-only` 或 `knowledge-only` 以缩小范围。
+该入口自动使用当前仓库作为 `--target-root`，并补齐 `--mode all --apply --yes --json`。
+需要缩小范围时可显式追加 `--mode codex-only`、`--mode ide-only` 或
+`--mode knowledge-only`。不要直接复制 `C:\path\to\project` 之类的占位路径。
 
 `all` 和 `knowledge-only` 首次成功应用后默认执行 Codex 资料候选导入。来源根按
 `--codex-root`、`CODEX_HOME`、`~/.codex` 的顺序解析，不从 `--target-root` 推导；仅处理

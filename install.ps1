@@ -67,6 +67,22 @@ if ($Arguments.Count -eq 0) {
     '--project-root', $PSScriptRoot,
     '--apply', '--yes', '--json'
   )
+} elseif ($Arguments -contains '--uninstall') {
+  if ($Arguments -notcontains '--mode') {
+    $Arguments += @('--mode', 'all')
+  }
+  if ($Arguments -notcontains '--target-root') {
+    $Arguments += @('--target-root', $PSScriptRoot)
+  }
+  if ($Arguments -notcontains '--apply') {
+    $Arguments += '--apply'
+  }
+  if ($Arguments -notcontains '--yes') {
+    $Arguments += '--yes'
+  }
+  if ($Arguments -notcontains '--json') {
+    $Arguments += '--json'
+  }
 }
 & $python.Executable @($python.Prefix) "$PSScriptRoot/setup.py" @Arguments
 exit $LASTEXITCODE

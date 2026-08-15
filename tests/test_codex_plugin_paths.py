@@ -130,7 +130,16 @@ class StablePluginPathReceiptTest(unittest.TestCase):
             target = Path(directory) / "target"
             codex_root = Path(directory) / "codex"
             output = io.StringIO()
-            with redirect_stdout(output):
+            dashboard = {
+                "status": "RUNNING",
+                "port": 8765,
+                "autostart": "INSTALLED",
+                "changed": True,
+            }
+            with (
+                mock.patch("setup.configure_dashboard", return_value=dashboard),
+                redirect_stdout(output),
+            ):
                 code = main(
                     [
                         "--apply", "--yes", "--json", "--mode", "codex-only",

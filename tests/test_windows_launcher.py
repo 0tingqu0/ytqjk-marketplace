@@ -62,6 +62,14 @@ class WindowsLauncherTest(unittest.TestCase):
         self.assertIn("--scope user", launcher)
         self.assertIn("--disable-interactivity", launcher)
 
+    def test_uninstall_defaults_to_current_repository(self) -> None:
+        launcher = LAUNCHER.read_text(encoding="utf-8-sig")
+
+        self.assertIn("$Arguments -contains '--uninstall'", launcher)
+        self.assertIn("@('--target-root', $PSScriptRoot)", launcher)
+        for option in ("--mode", "--apply", "--yes", "--json"):
+            self.assertIn(f"$Arguments -notcontains '{option}'", launcher)
+
     def test_external_runner_resolves_windows_command_shim(self) -> None:
         executable = r"C:\Program Files\nodejs\npx.CMD"
         completed = mock.Mock(stdout="")
@@ -121,6 +129,14 @@ class WindowsLauncherTest(unittest.TestCase):
                         "changed": True,
                     },
                 ) as dashboard,
+                mock.patch(
+                    "setup.configure_guidance",
+                    return_value={
+                        "status": "INSTALLED",
+                        "changed": True,
+                        "target": "AGENTS.md",
+                    },
+                ),
                 redirect_stderr(output),
             ):
                 code = main(
