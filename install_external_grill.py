@@ -4,6 +4,7 @@ from __future__ import annotations
 
 GRILL_COMMAND: tuple[str, ...] = (
     "npx",
+    "--yes",
     "skills@latest",
     "add",
     "mattpocock/skills",

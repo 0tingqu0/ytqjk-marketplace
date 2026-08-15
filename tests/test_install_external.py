@@ -124,6 +124,7 @@ class ExternalInstallTest(unittest.TestCase):
             ]
             expected_command = [
                 "npx",
+                "--yes",
                 "skills@latest",
                 "add",
                 "mattpocock/skills",

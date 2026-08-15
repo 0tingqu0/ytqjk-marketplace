@@ -14,7 +14,8 @@ extension 可加载独立 skills，但不加载 plugin；完整多会话编排�
 
 ### 1. 检查运行环境
 
-Windows 只需预先安装 Git。缺少 Python 3.10+ 时，`install.ps1` 会通过 `winget` 静默安装当前
+Windows 只需预先安装 Git。`install.cmd` 会仅为本次安装绕过 PowerShell 脚本执行策略，不修改
+系统或用户策略。缺少 Python 3.10+ 时，`install.ps1` 会通过 `winget` 静默安装当前
 用户级 Python 3.12；缺少 Node.js、npm、`npx` 或 Codex CLI 时，
 `install.ps1` 会自动在 `%LOCALAPPDATA%\YTQJK\runtime` 准备便携 Node.js 24.15.0，校验
 Node.js 官方 `SHASUMS256.txt`，再安装固定版 `@openai/codex@0.147.0`。该运行时不需要管理员
@@ -38,7 +39,13 @@ Windows PowerShell：
 ```powershell
 git clone https://github.com/0tingqu0/ytqjk-marketplace.git
 Set-Location .\ytqjk-marketplace
-.\install.ps1
+.\install.cmd
+```
+
+也可以显式调用 PowerShell；必须带当前进程级执行策略参数：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 Linux、macOS 或 WSL：
@@ -114,7 +121,7 @@ python3 setup.py --mode all --target-root /path/to/install \
 确认后显式应用：
 
 ```powershell
-.\install.ps1 --mode all --target-root C:\path\to\install `
+.\install.cmd --mode all --target-root C:\path\to\install `
   --project-root C:\path\to\project --apply --yes --json
 ```
 
@@ -132,7 +139,7 @@ python3 setup.py --mode all --target-root /path/to/install \
 Python。运行时或 Python 需要清理时，应在确认没有后台控制台及安装进程运行后单独卸载。
 
 ```powershell
-.\install.ps1 --uninstall --mode all --apply --yes --target-root C:\path\to\project
+.\install.cmd --uninstall --mode all --apply --yes --target-root C:\path\to\project
 ```
 
 可将 `all` 改为 `codex-only`、`ide-only` 或 `knowledge-only` 以缩小范围。
@@ -186,7 +193,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 Codex IDE extension 当前不加载 plugins，但支持 standalone skills。请在目标项目的终端执行以下项目级安装；使用 Remote SSH、Dev Container 或 WSL 时，要在远端/容器/WSL 工作区终端执行：
 
 ```bash
-npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
+npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
 ```
 
 重载 IDE 或新建聊天，然后输入 `$ytqjk`，也可以通过 `/skills` 选择 `ytqjk`。IDE 中不要使用 `/ytqjk`。
@@ -200,7 +207,7 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/pl
 
 ```powershell
 git pull --ff-only
-.\install.ps1
+.\install.cmd
 ```
 
 Linux、macOS 或 WSL：
@@ -225,7 +232,7 @@ SemVer `0.4.3`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、�
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
 ```bash
-npx skills@latest update ytqjk caveman -p
+npx --yes skills@latest update ytqjk caveman -p
 ```
 
 若更新命令无法识别旧安装记录，重新执行上面的项目级 `skills add` 命令。
@@ -242,7 +249,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 IDE 回滚使用相同 tag 的 skills 路径重新安装：
 
 ```bash
-npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<release-tag>/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
+npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<release-tag>/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
 ```
 
 ## 环境要求
@@ -266,7 +273,7 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
   会话不能切换项目或读取其他项目子库。每个项目子库总容量为 1 GiB，按 LFU+LRU 淘汰，
   优先保留多次命中的知识。
 - 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
-  `npx skills@latest add mattpocock/skills --agent codex --skill grill-me --yes --copy`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
+  `npx --yes skills@latest add mattpocock/skills --agent codex --skill grill-me --yes --copy`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
 
 ## 知识库控制台
 
@@ -364,7 +371,7 @@ Codex 未向插件开放全局新会话、自动压缩和闲置事件订阅时�
 
 ## 引用与致谢
 
-- 计划拷问使用 Matt Pocock 的 [`grill-me`](https://github.com/mattpocock/skills)，由用户指定的 `npx skills@latest add mattpocock/skills` 在缺失时安装；版权和许可证归原作者。
+- 计划拷问使用 Matt Pocock 的 [`grill-me`](https://github.com/mattpocock/skills)，由用户指定的 `npx --yes skills@latest add mattpocock/skills` 在缺失时安装；版权和许可证归原作者。
 - 精简输出使用 Matt Pocock 历史版 `caveman` 的 MIT 授权快照。当前上游已移除此 skill，因此本插件随包分发审计版本；完整来源、改动说明与许可证见 [第三方声明](plugins/ytqjk-agentic-orchestrator/THIRD_PARTY_NOTICES.md)。
 - skill 安装命令使用 Vercel Labs 的开源 [`skills` CLI](https://github.com/vercel-labs/skills)。插件和 skill 结构遵循 [OpenAI Codex Plugins](https://developers.openai.com/codex/plugins) 与 [Skills](https://developers.openai.com/codex/skills) 规范。
 - OpenAI 的 `plugin-creator` 仅用于本项目的脚手架、cachebuster 和校验，不是运行时依赖。除以上明确列出的 skill 外，本插件没有内嵌其他人的插件代码。

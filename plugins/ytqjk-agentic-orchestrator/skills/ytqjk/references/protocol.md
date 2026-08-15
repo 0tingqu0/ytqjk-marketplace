@@ -44,7 +44,7 @@ below. Objective confirmation is not plan approval. Active-run `stop`, `pause`,
    supplies the attributed `caveman` skill.
 5. Only when `grill-me` is unavailable, run
    `npm view skills@latest engines --json` and verify the active Node.js satisfies it.
-   Disclose that `npx skills@latest add mattpocock/skills` executes the latest
+   Disclose that `npx --yes skills@latest add mattpocock/skills` executes the latest
    third-party package and writes skill files plus installer metadata. Require
    explicit confirmation unless that exact command was already approved in the
    current task. Run that exact command from the operating-system user home, never

@@ -82,7 +82,7 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("codex plugin add ytqjk-knowledge@ytqjk", readme)
         self.assertIn("自动建立项目知识索引", readme)
         self.assertIn("实时转发依赖下载和 Codex 插件安装输出", readme)
-        self.assertIn("npx skills@latest update ytqjk caveman -p", readme)
+        self.assertIn("npx --yes skills@latest update ytqjk caveman -p", readme)
         self.assertIn("%LOCALAPPDATA%\\YTQJK\\runtime", readme)
         self.assertIn("@openai/codex@0.147.0", readme)
         self.assertIn("cli_runtime.status", readme)
@@ -90,6 +90,7 @@ class DistributionLayoutTest(unittest.TestCase):
 
     def test_clone_entrypoints_default_to_full_local_setup(self) -> None:
         powershell = (REPOSITORY / "install.ps1").read_text(encoding="utf-8")
+        command = (REPOSITORY / "install.cmd").read_text(encoding="utf-8")
         shell = (REPOSITORY / "install.sh").read_text(encoding="utf-8")
         for text in (powershell, shell):
             self.assertIn("--mode", text)
@@ -98,6 +99,8 @@ class DistributionLayoutTest(unittest.TestCase):
             self.assertIn("--apply", text)
             self.assertIn("--yes", text)
         self.assertIn("开始完整安装", powershell)
+        self.assertIn("-ExecutionPolicy Bypass", command)
+        self.assertIn('"%~dp0install.ps1" %*', command)
         self.assertIn("Starting full installation", shell)
 
     def test_bundled_caveman_has_attribution_and_license(self) -> None:
