@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -31,6 +32,53 @@ def free_port() -> int:
 
 
 class DashboardServiceTest(unittest.TestCase):
+    def test_start_does_not_lock_plugin_directory(self) -> None:
+        port = free_port()
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            skill = base / "ytqjk"
+            plugin = skill / "dashboard"
+            moved_plugin = skill / "dashboard-moved"
+            root = base / "knowledge"
+            shutil.copytree(SERVICE.parent.parent, skill)
+            script = plugin / SERVICE.name
+            common = [
+                "--knowledge-root",
+                str(root),
+                "--port",
+                str(port),
+            ]
+            started = subprocess.run(
+                [sys.executable, str(script), "start", *common],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+                timeout=20,
+            )
+            self.assertEqual(
+                started.returncode, 0, started.stderr or started.stdout
+            )
+            try:
+                plugin.rename(moved_plugin)
+            finally:
+                stop_script = (
+                    moved_plugin / SERVICE.name
+                    if moved_plugin.exists()
+                    else script
+                )
+                stopped = subprocess.run(
+                    [sys.executable, str(stop_script), "stop", *common],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                    timeout=20,
+                )
+                self.assertEqual(
+                    stopped.returncode, 0, stopped.stderr or stopped.stdout
+                )
+
     def test_start_survives_launcher_exit_and_stop_cleans_process(self) -> None:
         port = free_port()
         with tempfile.TemporaryDirectory() as temporary:

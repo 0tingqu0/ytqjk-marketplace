@@ -107,7 +107,7 @@ def spawn(root: Path, port: int) -> int:
         "stdout": log,
         "stderr": subprocess.STDOUT,
         "close_fds": True,
-        "cwd": str(DASHBOARD_DIR),
+        "cwd": str(directory),
     }
     if sys.platform == "win32":
         options["creationflags"] = (
