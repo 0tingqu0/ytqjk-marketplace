@@ -41,7 +41,10 @@ def _download_with_curl(
         str(destination),
         url,
     ]
-    subprocess.run(command, check=True, shell=False)
+    try:
+        subprocess.run(command, check=True, shell=False)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("runtime download failed") from error
 
 
 def _download_with_python(url: str, destination: Path) -> None:

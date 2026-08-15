@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -40,6 +41,26 @@ class RuntimeDownloadTest(unittest.TestCase):
                 download_node_file(
                     "https://example.com/node.zip", destination
                 )
+            self.assertFalse(destination.exists())
+
+    def test_curl_failure_is_reported_without_command_details(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "node.zip"
+            failure = subprocess.CalledProcessError(
+                6, ["curl.exe", "https://nodejs.org/private-detail"]
+            )
+            with mock.patch(
+                "runtime_download.subprocess.run", side_effect=failure
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "^runtime download failed$"
+                ):
+                    download_node_file(
+                        "https://nodejs.org/dist/test.zip",
+                        destination,
+                        system="Windows",
+                        which=lambda _: r"C:\Windows\System32\curl.exe",
+                    )
             self.assertFalse(destination.exists())
 
 
