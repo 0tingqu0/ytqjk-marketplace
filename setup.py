@@ -19,6 +19,9 @@ from codex_bootstrap_import import (
     import_codex_candidates,
 )
 from codex_plugin_paths import prepare_codex_root
+from dashboard_service_install import (
+    apply_dashboard_configuration, configure_dashboard, dashboard_receipt,
+)
 from external_command_runner import run_external
 from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
@@ -190,8 +193,16 @@ def main(
         result["knowledge_bootstrap"] = bootstrap_receipt(
             "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
         )
+        result["dashboard_service"] = dashboard_receipt(
+            "SKIPPED_UNINSTALL" if args.uninstall else "SKIPPED_DRY_RUN"
+        )
         if applied:
             if args.uninstall:
+                result["dashboard_service"] = apply_dashboard_configuration(
+                    configure_dashboard, codex_root,
+                    default_knowledge_root(args.knowledge_root),
+                    args.mode, "uninstall",
+                )
                 result["apply"] = apply_uninstall_plan(
                     plan, args.target_root,
                     runner=effective_runner or run_external,
@@ -211,7 +222,11 @@ def main(
                     result, indent=2, ensure_ascii=False
                 )
                 print(output)
-                return 0
+                return (
+                    5
+                    if result["dashboard_service"]["status"] == "FAILED"
+                    else 0
+                )
             eligible = args.mode in ("all", "knowledge-only")
             if not eligible:
                 result["knowledge_import"] = empty_import_receipt(
@@ -260,6 +275,11 @@ def main(
                         "failure_stage": "BOOTSTRAPPER_CALL",
                         "failure_code": "BOOTSTRAPPER_FAILED",
                     })
+            result["dashboard_service"] = apply_dashboard_configuration(
+                configure_dashboard, codex_root,
+                default_knowledge_root(args.knowledge_root),
+                args.mode, "install",
+            )
         output = json_text(result) if args.json else json.dumps(
             result, indent=2, ensure_ascii=False
         )
@@ -270,9 +290,12 @@ def main(
         bootstrap_failed = (
             result["knowledge_bootstrap"]["status"] == "FAILED"
         )
+        dashboard_failed = result["dashboard_service"]["status"] == "FAILED"
         if import_failed:
             return 3
-        return 4 if bootstrap_failed else 0
+        if bootstrap_failed:
+            return 4
+        return 5 if dashboard_failed else 0
     except (ValueError, RuntimeError, OSError) as error:
         message = {
             "schema": "ytqjk-install-receipt/v1",

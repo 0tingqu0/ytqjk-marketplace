@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import urllib.request
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SERVICE = (
+    ROOT
+    / "plugins"
+    / "ytqjk-agentic-orchestrator"
+    / "skills"
+    / "ytqjk"
+    / "dashboard"
+    / "dashboard_service.py"
+)
+
+
+def free_port() -> int:
+    with socket.socket() as current:
+        current.bind(("127.0.0.1", 0))
+        return int(current.getsockname()[1])
+
+
+class DashboardServiceTest(unittest.TestCase):
+    def test_start_survives_launcher_exit_and_stop_cleans_process(self) -> None:
+        port = free_port()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "knowledge"
+            start = subprocess.run(
+                [
+                    sys.executable,
+                    str(SERVICE),
+                    "start",
+                    "--knowledge-root",
+                    str(root),
+                    "--port",
+                    str(port),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+                timeout=20,
+            )
+            self.assertEqual(start.returncode, 0, start.stderr or start.stdout)
+            receipt = json.loads(start.stdout)
+            self.assertEqual(receipt["status"], "RUNNING")
+
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/snapshot", timeout=3
+                ) as response:
+                    payload = json.load(response)
+                self.assertIn("root", payload)
+            finally:
+                stop = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SERVICE),
+                        "stop",
+                        "--knowledge-root",
+                        str(root),
+                        "--port",
+                        str(port),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                    timeout=20,
+                )
+                self.assertEqual(stop.returncode, 0, stop.stderr or stop.stdout)
+
+            for _ in range(20):
+                try:
+                    urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/api/snapshot", timeout=0.2
+                    )
+                except OSError:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("dashboard process remained reachable after stop")
+
+    def test_install_registers_autostart_and_uninstall_removes_it(self) -> None:
+        port = free_port()
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "knowledge"
+            startup = base / "startup"
+            environment = os.environ.copy()
+            environment["YTQJK_DASHBOARD_AUTOSTART_DIR"] = str(startup)
+            common = [
+                "--knowledge-root",
+                str(root),
+                "--port",
+                str(port),
+            ]
+            try:
+                installed = subprocess.run(
+                    [sys.executable, str(SERVICE), "install", *common],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    env=environment,
+                    check=False,
+                    timeout=20,
+                )
+                self.assertEqual(
+                    installed.returncode,
+                    0,
+                    installed.stderr or installed.stdout,
+                )
+                receipt = json.loads(installed.stdout)
+                self.assertEqual(receipt["autostart"], "INSTALLED")
+                self.assertEqual(len(list(startup.iterdir())), 1)
+            finally:
+                removed = subprocess.run(
+                    [sys.executable, str(SERVICE), "uninstall", *common],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    env=environment,
+                    check=False,
+                    timeout=20,
+                )
+                self.assertEqual(
+                    removed.returncode, 0, removed.stderr or removed.stdout
+                )
+            self.assertEqual(list(startup.iterdir()), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

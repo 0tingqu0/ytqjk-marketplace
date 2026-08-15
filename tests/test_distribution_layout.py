@@ -301,6 +301,17 @@ class DistributionLayoutTest(unittest.TestCase):
         self.assertIn("explicitly approved by the user", knowledge)
         self.assertIn("never auto-approves candidates", knowledge)
 
+    def test_session_start_hook_is_packaged_for_automatic_anchors(self) -> None:
+        hooks = PLUGIN / "hooks"
+        config = json.loads((hooks / "hooks.json").read_text(encoding="utf-8"))
+        handlers = config["hooks"]["SessionStart"][0]["hooks"]
+
+        self.assertTrue((hooks / "session_start.py").is_file())
+        self.assertTrue((hooks / "session_start.ps1").is_file())
+        self.assertEqual(handlers[0]["type"], "command")
+        self.assertIn("${PLUGIN_ROOT}", handlers[0]["command"])
+        self.assertIn("commandWindows", handlers[0])
+
 
 if __name__ == "__main__":
     unittest.main()

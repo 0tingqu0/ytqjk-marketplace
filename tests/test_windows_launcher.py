@@ -54,6 +54,14 @@ class WindowsLauncherTest(unittest.TestCase):
         output = (completed.stdout + completed.stderr).decode(errors="replace")
         self.assertEqual(completed.returncode, 0, output)
 
+    def test_launcher_bootstraps_python_after_executable_probe(self) -> None:
+        launcher = LAUNCHER.read_text(encoding="utf-8-sig")
+
+        self.assertIn("Test-PythonRuntime", launcher)
+        self.assertIn("Python.Python.3.12", launcher)
+        self.assertIn("--scope user", launcher)
+        self.assertIn("--disable-interactivity", launcher)
+
     def test_external_runner_resolves_windows_command_shim(self) -> None:
         executable = r"C:\Program Files\nodejs\npx.CMD"
         completed = mock.Mock(stdout="")
@@ -104,6 +112,15 @@ class WindowsLauncherTest(unittest.TestCase):
                     "setup.apply_plan",
                     return_value={"status": "APPLIED"},
                 ),
+                mock.patch(
+                    "setup.configure_dashboard",
+                    return_value={
+                        "status": "RUNNING",
+                        "port": 8765,
+                        "autostart": "INSTALLED",
+                        "changed": True,
+                    },
+                ) as dashboard,
                 redirect_stderr(output),
             ):
                 code = main(
@@ -123,6 +140,7 @@ class WindowsLauncherTest(unittest.TestCase):
             self.assertEqual(code, 0, output.getvalue())
             bootstrap.assert_called_once_with({"codex", "npx"})
             self.assertTrue(codex_root.is_dir())
+            dashboard.assert_called_once()
 
 
 if __name__ == "__main__":

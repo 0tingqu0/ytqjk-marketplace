@@ -8,18 +8,19 @@ extension 可加载独立 skills，但不加载 plugin；完整多会话编排�
 ## 推荐：Git clone 后一键部署
 
 推荐使用仓库根目录的无参数安装入口。它会把当前克隆目录同时作为安装目标和知识索引项目，
-安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex 候选资料，并
-自动建立项目知识索引。安装只写入当前用户目录和本机知识根，不需要管理员或 root 权限，也不会下载
-发布者的私人知识内容。
+安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex 候选资料，
+自动建立项目知识索引，并将知识库网页注册为当前用户登录自启动的后台进程。安装只写入当前用户目录和
+本机知识根，不需要管理员或 root 权限，也不会下载发布者的私人知识内容。
 
 ### 1. 检查运行环境
 
-Windows 只需预先安装 Git 和 Python 3.10+。缺少 Node.js、npm、`npx` 或 Codex CLI 时，
+Windows 只需预先安装 Git。缺少 Python 3.10+ 时，`install.ps1` 会通过 `winget` 静默安装当前
+用户级 Python 3.12；缺少 Node.js、npm、`npx` 或 Codex CLI 时，
 `install.ps1` 会自动在 `%LOCALAPPDATA%\YTQJK\runtime` 准备便携 Node.js 24.15.0，校验
 Node.js 官方 `SHASUMS256.txt`，再安装固定版 `@openai/codex@0.147.0`。该运行时不需要管理员
 权限、不修改系统 PATH，只在本次安装进程中使用；重复运行会验证并复用有效运行时。
 
-先确认 Git 和 Python：
+可先确认 Git；已有 Python 时也可检查其版本：
 
 ```powershell
 git --version
@@ -49,8 +50,8 @@ sh ./install.sh
 ```
 
 脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。Windows 首次运行需要
-访问 `nodejs.org`、npm registry、GitHub 和 Codex 插件源，会下载并执行 Node.js、固定版本
-Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执行。首次运行可能需要几分钟，
+访问 `winget` 软件源、`nodejs.org`、npm registry、GitHub 和 Codex 插件源，会按需下载并执行
+Python、Node.js、固定版本 Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执行。首次运行可能需要几分钟，
 不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出 JSON 回执。
 
 ### 3. 验证安装结果
@@ -66,6 +67,7 @@ Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执�
   插件和项目知识库部署。
 - `knowledge_import.discovered_count` 为 `0` 表示当前用户没有可导入资料，不是安装失败。
 - `apply.codex_plugins.stable_paths` 包含两个稳定插件目录。
+- `dashboard_service.status` 为 `RUNNING`，且 `dashboard_service.autostart` 为 `INSTALLED`。
 
 Windows PowerShell 可进一步检查稳定插件和知识库布局：
 
@@ -95,8 +97,10 @@ test -f "$knowledge_root/catalog.json"
 find "$knowledge_root/projects" -mindepth 1 -maxdepth 1 -type d -print
 ```
 
-随后重启 Codex 或新建任务，输入 `$ytqjk`。网页端不会作为后台服务自动启动；需要时按
-[知识库控制台](#知识库控制台)中的命令启动，它只绑定 `127.0.0.1`。
+安装结束后可直接打开 `http://127.0.0.1:8765`，关闭安装终端不会中断网页。随后重启 Codex，
+输入 `/hooks`，审阅并信任 YTQJK 的 `SessionStart` 钩子，再新建任务。Codex 官方安全策略禁止
+安装器替用户自动信任插件钩子；这一步只需在钩子内容未变化时确认一次。确认后，Git 项目中的
+新建、恢复、清空和压缩会话都会自动建立匿名锚点。
 
 ### 4. 自定义安装
 
@@ -117,15 +121,15 @@ python3 setup.py --mode all --target-root /path/to/install \
 `--target-root` 只决定安装位置，永远不会隐式成为知识索引项目。项目索引只读取显式
 `--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
 初始化。正常应用成功返回 `0`；默认自动导入中的单文件解析告警也返回 `0`，不可恢复的候选
-资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，安装或
-参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
+资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，后台
+控制台配置失败返回 `5`，安装或参数错误返回 `2`。JSON 回执不包含项目绝对路径或知识内容。
 
 ## 卸载历史版本
 
 已安装过的 YTQJK 版本可通过当前安装器统一卸载。默认仅输出将移除的插件和技能目录；确认后
 再执行。卸载只处理 YTQJK 自身的 Codex 插件、marketplace 和技能目录，不会删除第三方
-`grill-me`、知识库数据或 `%LOCALAPPDATA%\YTQJK\runtime` 便携运行时。该运行时需要清理时，
-可在确认没有安装进程运行后手工删除这个精确目录。
+`grill-me`、知识库数据、`%LOCALAPPDATA%\YTQJK\runtime` 便携运行时或由 `winget` 安装的
+Python。运行时或 Python 需要清理时，应在确认没有后台控制台及安装进程运行后单独卸载。
 
 ```powershell
 .\install.ps1 --uninstall --mode all --apply --yes --target-root C:\path\to\project
@@ -216,7 +220,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.4.2`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.3`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
@@ -243,7 +247,8 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
 
 ## 环境要求
 
-- Git、Python 3.10 或更高版本。
+- Git；Linux、macOS 和 WSL 还需 Python 3.10 或更高版本。Windows 缺失 Python 时由安装入口
+  通过 `winget` 安装当前用户级 Python 3.12。
 - Windows 缺少 Node.js/npm、`npx` 或 Codex CLI 时会自动使用用户级便携运行时；Linux、macOS
   和 WSL 仍需自行安装这些命令。
 - Node.js/npm 必须满足 `npm view skills@latest engines`；当前 Windows 自举版本为 Node.js
@@ -266,18 +271,25 @@ npx skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<releas
 ## 知识库控制台
 
 在本机管理控制台查看知识根、项目索引、已验证/已批准经验和候选经验，并投递、编辑、删除或
-人工批准候选资料。
+人工批准候选资料。一键安装会立即在后台启动控制台，并注册为当前用户登录自启动；关闭安装
+终端不会停止服务。
 
-Windows PowerShell：
+Windows PowerShell 可检查、重启或停止服务：
 
 ```powershell
-python "$HOME\.codex\plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\knowledge_dashboard.py"
+$service = "$HOME\.codex\plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\dashboard_service.py"
+python $service status
+python $service start
+python $service stop
 ```
 
-Linux 或 WSL2：
+Linux、macOS 或 WSL2：
 
 ```bash
-python3 ~/.codex/plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/knowledge_dashboard.py
+service="$HOME/.codex/plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/dashboard_service.py"
+python3 "$service" status
+python3 "$service" start
+python3 "$service" stop
 ```
 
 打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
@@ -315,7 +327,8 @@ Codex marketplace 的版本化 cache；重复安装可安全更新本项目受�
 
 ## 会话锚定
 
-YTQJK 创建的总控、监督、复审、Git、进度、RAG 和 Worker 会话会在知识根建立匿名锚点。
+Codex 信任插件的 `SessionStart` 钩子后，Git 项目中的普通会话，以及 YTQJK 创建的总控、监督、
+复审、Git、进度、RAG 和 Worker 会话，都会在知识根建立匿名锚点。
 压缩恢复时取回该会话的脱敏任务摘要；归档时将可复用经验写入候选知识区。锚点不保存原始
 会话 ID 或完整对话。同一会话每次调用知识库只刷新同一个匿名锚点，不会重复建立或重复导出
 未变化的经验。支持定时任务的宿主可运行以下命令，回收 30 天未活动且有摘要的会话：

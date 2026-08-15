@@ -118,7 +118,15 @@ class UninstallTest(unittest.TestCase):
             runner = StatefulRunner()
             output = StringIO()
 
-            with redirect_stdout(output):
+            with redirect_stdout(output), mock.patch(
+                "setup.configure_dashboard",
+                return_value={
+                    "status": "STOPPED",
+                    "port": 8765,
+                    "autostart": "REMOVED",
+                    "changed": True,
+                },
+            ):
                 code = main(
                     [
                         "--uninstall", "--apply", "--yes", "--json",
@@ -135,6 +143,7 @@ class UninstallTest(unittest.TestCase):
             self.assertEqual(
                 receipt["knowledge_import"]["status"], "SKIPPED_UNINSTALL"
             )
+            self.assertEqual(receipt["dashboard_service"]["status"], "STOPPED")
 
     def test_uninstall_removes_only_manifest_owned_stable_plugins(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -22,7 +22,7 @@ from install_external import (
 )
 from install_external_codex import materialize_plugins
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 MODES = PUBLIC_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]
@@ -273,7 +273,7 @@ def apply_plan(
         else:
             status = prior_status
         raise InstallError(
-            "installation failed",
+            f"installation failed [{type(error).__name__}]",
             status,
             failed_action,
             tuple(failures),

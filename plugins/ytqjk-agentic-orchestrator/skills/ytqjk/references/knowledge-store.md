@@ -176,10 +176,13 @@ Use the bundled local dashboard to inspect project cache metadata plus verified,
 approved, and candidate Markdown entries. It binds only to `127.0.0.1`. Verified
 and approved entries are read-only. Candidate entries may be added, edited, deleted,
 or explicitly approved by the user; the dashboard never auto-approves candidates or
-automatically rebuilds an index:
+automatically rebuilds an index. The full installer starts it detached from the
+install terminal and registers user-login autostart. Inspect or control it with:
 
 ```text
-python dashboard/knowledge_dashboard.py --knowledge-root <knowledge-root>
+python dashboard/dashboard_service.py status --knowledge-root <knowledge-root>
+python dashboard/dashboard_service.py start --knowledge-root <knowledge-root>
+python dashboard/dashboard_service.py stop --knowledge-root <knowledge-root>
 ```
 
 Open `http://127.0.0.1:8765`. Candidate entries remain visibly labeled `CANDIDATE`
@@ -227,12 +230,15 @@ and linked original attachment; this package remains in candidates until approva
 
 ## Session anchors
 
-YTQJK-created or reused Codex conversations can be anchored in
+After the user reviews and trusts the bundled `SessionStart` hook, every Git
+project conversation can be anchored in
 `<knowledge-root>/sessions/<session-key>/`.
 The session key is a one-way hash; the anchor stores project identity, activity times,
 and a concise sanitized memory, never raw session IDs or full transcripts. On context
 compaction, the role checkpoints then restores this memory. On archive, it exports a
 candidate experience record. A scheduled `sweep --days 30` can archive inactive
 anchors; it requires a host scheduler and never approves or indexes resulting records.
-Every knowledge query uses the same session key to refresh one anchor; duplicate
-anchors and duplicate exports of an unchanged memory are prevented.
+The hook runs for startup, resume, clear, and compact events. Codex does not allow
+plugin installers to trust command hooks on the user's behalf. Every knowledge
+query uses the same session key to refresh one anchor; duplicate anchors and
+duplicate exports of an unchanged memory are prevented.
