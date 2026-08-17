@@ -98,6 +98,7 @@ class DistributionLayoutTest(unittest.TestCase):
             self.assertIn("--target-root", text)
             self.assertIn("--apply", text)
             self.assertIn("--yes", text)
+            self.assertNotIn("--json", text)
         self.assertIn("开始完整安装", powershell)
         self.assertIn("-ExecutionPolicy Bypass", command)
         self.assertIn('"%~dp0install.ps1" %*', command)

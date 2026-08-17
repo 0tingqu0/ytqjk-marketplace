@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
@@ -27,7 +26,9 @@ from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, apply_plan, build_plan,
     require_python, target_has_grill_me,
 )
-from install_receipt import health, json_text, receipt, vector_result
+from install_receipt import (
+    health, json_text, receipt, summary_text, vector_result,
+)
 from project_bootstrap import bootstrap_project, bootstrap_receipt
 from uninstall_core import apply_uninstall_plan, build_uninstall_plan
 
@@ -169,9 +170,7 @@ def main(
                 args.target_root
             )
             if args.uninstall:
-                output = json_text(result) if args.json else json.dumps(
-                    result, indent=2, ensure_ascii=False
-                )
+                output = json_text(result) if args.json else summary_text(result)
                 print(output)
                 if result["codex_guidance"]["status"] == "FAILED":
                     return 6
@@ -232,9 +231,7 @@ def main(
                 default_knowledge_root(args.knowledge_root),
                 args.mode, "install",
             )
-        output = json_text(result) if args.json else json.dumps(
-            result, indent=2, ensure_ascii=False
-        )
+        output = json_text(result) if args.json else summary_text(result)
         print(output)
         import_failed = (
             result["knowledge_import"]["status"] == "FAILED"

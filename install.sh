@@ -7,6 +7,6 @@ if [ "$#" -eq 0 ]; then
   set -- --mode all \
     --target-root "$script_dir" \
     --project-root "$script_dir" \
-    --apply --yes --json
+    --apply --yes
 fi
 exec "$python_bin" "$script_dir/setup.py" "$@"

@@ -148,9 +148,11 @@ Python。卸载同时只移除全局 `AGENTS.md` 中带 YTQJK 标记的受管块
 .\install.cmd --uninstall
 ```
 
-该入口自动使用当前仓库作为 `--target-root`，并补齐 `--mode all --apply --yes --json`。
+该入口自动使用当前仓库作为 `--target-root`，并补齐 `--mode all --apply --yes`。
 需要缩小范围时可显式追加 `--mode codex-only`、`--mode ide-only` 或
 `--mode knowledge-only`。不要直接复制 `C:\path\to\project` 之类的占位路径。
+
+默认安装和卸载只打印简洁结果；排查失败或供自动化解析时显式追加 `--json` 获取完整结构化回执。
 
 `all` 和 `knowledge-only` 首次成功应用后默认执行 Codex 资料候选导入。来源根按
 `--codex-root`、`CODEX_HOME`、`~/.codex` 的顺序解析，不从 `--target-root` 推导；仅处理
@@ -235,7 +237,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.4.4`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.5`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 

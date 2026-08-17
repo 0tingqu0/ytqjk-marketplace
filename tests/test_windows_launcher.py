@@ -67,8 +67,9 @@ class WindowsLauncherTest(unittest.TestCase):
 
         self.assertIn("$Arguments -contains '--uninstall'", launcher)
         self.assertIn("@('--target-root', $PSScriptRoot)", launcher)
-        for option in ("--mode", "--apply", "--yes", "--json"):
+        for option in ("--mode", "--apply", "--yes"):
             self.assertIn(f"$Arguments -notcontains '{option}'", launcher)
+        self.assertNotIn("$Arguments -notcontains '--json'", launcher)
 
     def test_external_runner_resolves_windows_command_shim(self) -> None:
         executable = r"C:\Program Files\nodejs\npx.CMD"

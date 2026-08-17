@@ -12,6 +12,7 @@ from install_core import (
     PUBLIC_MODES, VERSION, InstallError, Plan, apply_plan, build_plan,
     contained_path, target_has_grill_me,
 )
+from install_receipt import summary_text
 from setup import main, vector_result
 
 
@@ -50,6 +51,37 @@ def file_plan(mode: str, target: Path) -> Plan:
 
 
 class InstallTest(unittest.TestCase):
+    def test_human_summary_highlights_warnings_and_failure(self) -> None:
+        result = {
+            "version": "0.4.5",
+            "operation": "install",
+            "dry_run": False,
+            "apply": {"status": "APPLIED"},
+            "knowledge_bootstrap": {
+                "status": "SUCCEEDED",
+                "global_files": 40,
+                "project_files": 177,
+            },
+            "knowledge_import": {
+                "status": "SUCCEEDED_WITH_WARNINGS",
+                "imported_count": 165,
+                "parse_failed_count": 131,
+            },
+            "codex_guidance": {
+                "status": "INSTALLED",
+                "target": "AGENTS.md",
+            },
+            "dashboard_service": {"status": "FAILED", "port": 8765},
+        }
+
+        output = summary_text(result)
+
+        self.assertIn("YTQJK v0.4.5：安装未完全成功", output)
+        self.assertIn("资料导入：165 个成功，131 个未解析", output)
+        self.assertIn("后台网页：启动失败（端口 8765）", output)
+        self.assertIn("追加 --json", output)
+        self.assertNotIn("external_commands", output)
+
     def test_dry_run_all_modes_and_schema(self) -> None:
         for mode in PUBLIC_MODES:
             result = run("--mode", mode)
@@ -62,7 +94,7 @@ class InstallTest(unittest.TestCase):
             [sys.executable, str(SETUP), "--version"], text=True,
             capture_output=True, check=False, cwd=ROOT,
         )
-        self.assertEqual(version.stdout.strip(), "0.4.4")
+        self.assertEqual(version.stdout.strip(), "0.4.5")
 
     def test_apply_needs_yes_and_target(self) -> None:
         self.assertNotEqual(run("--apply").returncode, 0)
