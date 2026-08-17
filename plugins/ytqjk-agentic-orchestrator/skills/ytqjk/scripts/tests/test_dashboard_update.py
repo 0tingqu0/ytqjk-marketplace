@@ -17,6 +17,7 @@ sys.path.insert(0, str(DASHBOARD))
 
 import dashboard_update as update  # noqa: E402
 import dashboard_update_http as update_http  # noqa: E402
+import knowledge_dashboard as dashboard  # noqa: E402
 
 
 class DashboardUpdateTest(unittest.TestCase):
@@ -166,8 +167,26 @@ class DashboardUpdateTest(unittest.TestCase):
             update_http.handle_update_request(handler)
 
         self.assertEqual(handler.responses[0][0], {"ok": True, **installed})
-        self.assertEqual(handler.events, ["response", "restart"])
+        self.assertEqual(handler.events, ["response"])
+        self.assertTrue(handler.restart_after_response)
         self.assertFalse(handler.update_lock.locked())
+
+    def test_handler_schedules_restart_only_after_response_finishes(
+        self,
+    ) -> None:
+        events: list[str] = []
+        handler = object.__new__(dashboard.KnowledgeHandler)
+        handler.restart_after_response = True
+        handler.schedule_restart = lambda: events.append("restart")
+
+        with mock.patch.object(
+            dashboard.SimpleHTTPRequestHandler,
+            "finish",
+            side_effect=lambda: events.append("finish"),
+        ):
+            handler.finish()
+
+        self.assertEqual(events, ["finish", "restart"])
 
     def test_installer_disables_inline_dashboard_restart(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -289,6 +308,7 @@ class _FakeHandler:
         self.update_lock = Lock()
         self.responses: list[tuple[dict[str, object], HTTPStatus]] = []
         self.events: list[str] = []
+        self.restart_after_response = False
 
     def read_payload(self) -> dict[str, object]:
         return self.payload

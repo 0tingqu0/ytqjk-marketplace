@@ -11,6 +11,26 @@
     trigger.setAttribute("aria-expanded", String(open));
   }
 
+  async function recoverCompletedUpdate(expectedVersion) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      try {
+        const response = await fetch("/api/update", { cache: "no-store" });
+        const result = await response.json();
+        if (String(result.current_version || "") === expectedVersion) {
+          return {
+            status: "UPDATED",
+            latest_version: expectedVersion,
+            restart_required: true,
+          };
+        }
+      } catch (_error) {
+        // The local service may still be restarting.
+      }
+    }
+    return null;
+  }
+
   async function checkUpdate() {
     const response = await fetch("/api/update", { cache: "no-store" });
     const result = await response.json();
@@ -42,12 +62,20 @@
   }
 
   async function postUpdate(retryToken = true) {
-    const response = await fetch("/api/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const result = await response.json();
+    let response;
+    let result;
+    try {
+      response = await fetch("/api/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      result = await response.json();
+    } catch (error) {
+      const recovered = await recoverCompletedUpdate(latestVersion);
+      if (recovered) return recovered;
+      throw error;
+    }
     if (
       !response.ok
       && retryToken

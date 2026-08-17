@@ -126,6 +126,6 @@ def schedule_dashboard_restart(
     subprocess.Popen([
         str(executable), str(script),
         "--knowledge-root", str(knowledge_root.resolve()),
-        "--port", "8765", "--delay", "2.0",
+        "--port", "8765", "--delay", "30.0",
     ], **options)
     return dashboard_receipt("RESTART_SCHEDULED")

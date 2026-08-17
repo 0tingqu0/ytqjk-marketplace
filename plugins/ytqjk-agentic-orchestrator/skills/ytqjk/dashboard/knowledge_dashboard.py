@@ -154,6 +154,13 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
     update_lock: object
     update_token: str
     schedule_restart: object
+    restart_after_response = False
+
+    def finish(self) -> None:
+        super().finish()
+        if self.restart_after_response:
+            self.restart_after_response = False
+            self.schedule_restart()
 
     def do_GET(self) -> None:  # noqa: N802 - inherited API name
         url = urlparse(self.path)
