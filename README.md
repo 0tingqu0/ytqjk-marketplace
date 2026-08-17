@@ -37,15 +37,19 @@ Codex CLI。使用 Remote SSH、Dev Container 或 WSL 时，必须在远端、�
 Windows PowerShell：
 
 ```powershell
-git clone https://github.com/0tingqu0/ytqjk-marketplace.git
-Set-Location .\ytqjk-marketplace
-.\install.cmd
+$repo = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ytqjk-marketplace'
+git clone https://github.com/0tingqu0/ytqjk-marketplace.git $repo
+& "$repo\install.cmd"
 ```
+
+默认安装目录固定为系统实际桌面下的 `ytqjk-marketplace`。`install.cmd` 会自动使用自身所在
+仓库作为安装目标和知识索引项目，因此从桌面或其他目录打开终端都不需要先执行 `cd`。
+如需安装到其他位置，将上面 `$repo` 改为目标绝对路径。
 
 也可以显式调用 PowerShell；必须带当前进程级执行策略参数：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo\install.ps1"
 ```
 
 Linux、macOS 或 WSL：
@@ -59,7 +63,8 @@ sh ./install.sh
 脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。Windows 首次运行需要
 访问 `winget` 软件源、`nodejs.org`、npm registry、GitHub 和 Codex 插件源，会按需下载并执行
 Python、Node.js、固定版本 Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执行。首次运行可能需要几分钟，
-不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出 JSON 回执。
+不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出简洁中文回执；排障或
+自动化解析时显式追加 `--json`。
 
 ### 3. 验证安装结果
 
@@ -214,13 +219,17 @@ npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/m
 
 ## 更新与回滚
 
-通过 Git clone 一键部署的用户，在原克隆目录中只做快进更新，然后重新运行安装入口。安装器会
-更新本项目 manifest 管理的插件目录并复用已有知识库，不会删除候选资料或已批准资料：
+通过 Git clone 一键部署的 Windows 用户，后续优先调用首次安装使用的默认桌面目录；命令从
+任意目录执行，无需先切换路径。安装器会更新本项目 manifest 管理的插件目录并复用已有知识库，
+不会删除候选资料或已批准资料：
 
 ```powershell
-git pull --ff-only
-.\install.cmd
+$repo = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ytqjk-marketplace'
+git -C $repo pull --ff-only
+& "$repo\install.cmd"
 ```
+
+首次安装时使用了自定义 `$repo` 的用户，更新时继续填写同一绝对路径。
 
 Linux、macOS 或 WSL：
 
