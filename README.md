@@ -135,6 +135,8 @@ python3 setup.py --mode all --target-root /path/to/install \
 资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，后台
 控制台配置失败返回 `5`，全局知识指引配置失败返回 `6`，安装或参数错误返回 `2`。JSON
 回执不包含项目绝对路径或知识内容。
+Windows 优先使用当前用户计划任务常驻后台控制台；若系统拒绝创建计划任务，安装器会自动
+回退到当前用户“启动”目录，不需要管理员权限。
 
 ## 卸载历史版本
 
@@ -237,7 +239,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.4.5`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.6`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 

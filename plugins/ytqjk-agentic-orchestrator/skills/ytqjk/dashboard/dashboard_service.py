@@ -189,24 +189,39 @@ def stop(root: Path, port: int) -> dict[str, object]:
 
 
 def install(root: Path, port: int) -> dict[str, object]:
+    root = root.resolve()
+    stopped = stop(root, port)
+    if stopped["status"] == "FAILED":
+        return {
+            "status": "FAILED",
+            "port": port,
+            "changed": False,
+            "autostart": "UNCHANGED",
+            "failure_code": "SERVICE_RESTART_FAILED",
+        }
     if scheduled_task_enabled():
         autostart_path().unlink(missing_ok=True)
-        marker = stop_path(root.resolve())
+        unregister_task()
+        marker = stop_path(root)
         marker.unlink(missing_ok=True)
-        register_task(run_command(root.resolve(), port))
-        running = wait_for_service(root.resolve(), port)
-        if not running:
-            unregister_task()
-        return {
-            "status": "RUNNING" if running else "FAILED",
-            "port": port,
-            "changed": True,
-            "autostart": "INSTALLED" if running else "ROLLED_BACK",
-            "autostart_kind": "scheduled-task",
-            "autostart_name": TASK_NAME,
-        }
-    path = install_autostart(service_command(root.resolve(), port))
+        try:
+            register_task(run_command(root, port))
+            running = wait_for_service(root, port)
+        except RuntimeError:
+            running = False
+        if running:
+            return {
+                "status": "RUNNING",
+                "port": port,
+                "changed": True,
+                "autostart": "INSTALLED",
+                "autostart_kind": "scheduled-task",
+                "autostart_name": TASK_NAME,
+            }
+        unregister_task()
+    path = install_autostart(service_command(root, port))
     result = start(root, port)
+    result["changed"] = bool(stopped["changed"]) or bool(result["changed"])
     if result["status"] == "FAILED":
         path.unlink(missing_ok=True)
         result["autostart"] = "ROLLED_BACK"
