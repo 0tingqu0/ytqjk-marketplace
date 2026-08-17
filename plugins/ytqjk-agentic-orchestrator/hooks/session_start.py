@@ -10,7 +10,6 @@ SCRIPTS = PLUGIN_ROOT / "skills" / "ytqjk" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from platform_paths import default_knowledge_root  # noqa: E402
-from project_source import is_git_project  # noqa: E402
 from project_tracking import identify_project, track_project  # noqa: E402
 from session_memory import ensure_anchor  # noqa: E402
 
@@ -31,7 +30,7 @@ def context(receipt: dict[str, object]) -> str:
 def anchor_session(event: dict[str, object]) -> dict[str, object] | None:
     session_id = str(event.get("session_id") or "").strip()
     cwd = Path(str(event.get("cwd") or "")).resolve()
-    if not session_id or not cwd.is_dir() or not is_git_project(cwd):
+    if not session_id or not cwd.is_dir():
         return None
     root = default_knowledge_root().resolve()
     project = identify_project(cwd)

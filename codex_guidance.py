@@ -75,20 +75,22 @@ def _block(codex_root: Path, knowledge_root: Path) -> str:
     if os.name == "nt":
         command = (
             f"& {_ps(values[0])} {_ps(values[1])} '<task-related-query>' "
-            f"--knowledge-root {_ps(values[2])} --project-root '<git-project-root>' "
+            f"--knowledge-root {_ps(values[2])} --project-root '<project-root>' "
             "--session-id $env:CODEX_THREAD_ID --limit 5"
         )
     else:
         command = (
             f"{shlex.quote(values[0])} {shlex.quote(values[1])} "
             f"'<task-related-query>' --knowledge-root {shlex.quote(values[2])} "
-            "--project-root '<git-project-root>' --session-id "
+            "--project-root '<project-root>' --session-id "
             '"$CODEX_THREAD_ID" --limit 5'
         )
     return (
         f"{START}\n## YTQJK project knowledge\n\n"
-        "- At the start of every task in a Git repository, before reading or changing "
-        "project files, resolve the root with `git rev-parse --show-toplevel`.\n"
+        "- Before reading or changing project files, choose `<project-root>`: in a Git "
+        "repository, resolve it with `git rev-parse --show-toplevel`; otherwise use the "
+        "current working directory. A non-Git directory is valid and must not block "
+        "knowledge queries.\n"
         "- When `CODEX_THREAD_ID` is available, run the following command with a query "
         "specific to the task. It registers the project and creates or refreshes one "
         "anonymous session anchor. Never invent or reuse a session ID.\n\n"

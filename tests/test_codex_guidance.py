@@ -31,6 +31,9 @@ class CodexGuidanceTest(unittest.TestCase):
             self.assertIn("# User rules", text)
             self.assertIn("session_query.py", text)
             self.assertIn("CODEX_THREAD_ID", text)
+            self.assertIn("current working directory", text)
+            self.assertIn("<project-root>", text)
+            self.assertNotIn("<git-project-root>", text)
 
             removed = uninstall(codex_root)
 
