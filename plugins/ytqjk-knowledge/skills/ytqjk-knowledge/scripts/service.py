@@ -85,6 +85,41 @@ class KnowledgeService:
     def append_state(self, document_id: str, state: str, content: str | None = None) -> None:
         self._submit("append_state", {"document_id": document_id, "state": state, "content": content})
 
+    def record_feedback(
+        self, document_id: str, invocation_id: str, correct: bool
+    ) -> None:
+        """Apply one idempotent, invocation-bound lifecycle decision."""
+        if self.schema_version() < 4:
+            raise RuntimeError("feedback lifecycle requires schema v4")
+        payload = {
+            "document_id": document_id,
+            "invocation_id": invocation_id,
+            "correct": correct,
+        }
+        self._submit("record_feedback", payload, self._key("feedback", payload))
+
+    def feedback_status(self, document_id: str) -> dict[str, Any]:
+        """Read the latest explicit feedback result for one document."""
+        return read_row(
+            self._database,
+            "SELECT invocation_id, correct, score, state, created_at "
+            "FROM feedback_events WHERE document_id = ? ORDER BY id DESC LIMIT 1",
+            (document_id,),
+        )
+
+    def recycle_bin(self, project_id: str) -> list[dict[str, Any]]:
+        """List active project documents whose latest version is tombstoned."""
+        return read_rows(
+            self._database,
+            "SELECT d.id, d.title, v.id AS version_id, v.created_at "
+            "FROM documents d JOIN versions v ON v.document_id = d.id "
+            "WHERE d.project_id = ? AND d.deleted_at IS NULL AND "
+            "v.ordinal = (SELECT MAX(latest.ordinal) FROM versions latest "
+            "WHERE latest.document_id = d.id) AND v.state = 'tombstone' "
+            "ORDER BY v.created_at, d.id",
+            (project_id,),
+        )
+
     def create_snapshot(self, project_id: str) -> str:
         snapshot_id = str(uuid.uuid4())
         self._submit("create_snapshot", {"project_id": project_id, "snapshot_id": snapshot_id})
@@ -107,6 +142,7 @@ class KnowledgeService:
             "originals", "documents", "versions", "jobs", "snapshots",
             "audit", "chunks", "sources", "governance",
             "import_documents", "import_provenance", "import_receipts",
+            "feedback_events", "global_sync",
         }:
             raise ValueError("unsupported table")
         return read_value(self._database, f"SELECT COUNT(*) FROM {table}")

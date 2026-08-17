@@ -44,7 +44,7 @@ def test_migration_upgrade_rollback_and_concurrent_idempotency(tmp_path: Path) -
     database = tmp_path / "knowledge.sqlite3"
     with ThreadPoolExecutor(max_workers=2) as pool:
         versions = list(pool.map(lambda _: KnowledgeService(database).schema_version(), range(2)))
-    assert versions == [3, 3]
+    assert versions == [4, 4]
     first = KnowledgeService(database)
     first.migrate(1)
     assert first.schema_version() == 1
@@ -52,13 +52,13 @@ def test_migration_upgrade_rollback_and_concurrent_idempotency(tmp_path: Path) -
     document_id = first.create_candidate(project_id, "v1", "queue works", "test")
     assert first.document_versions(document_id)[0]["state"] == "candidate"
     assert first.job(first.count("jobs"))["state"] == "SUCCEEDED"
-    first.migrate(3)
-    assert first.schema_version() == 3
+    first.migrate(4)
+    assert first.schema_version() == 4
     snapshot_id = first.create_snapshot(project_id)
     assert first.active_snapshot(project_id)["id"] == snapshot_id
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: KnowledgeService(database).schema_version(), range(2)))
-    assert KnowledgeService(database).schema_version() == 3
+    assert KnowledgeService(database).schema_version() == 4
 
 
 def test_failed_ddl_migration_is_atomic(tmp_path: Path) -> None:

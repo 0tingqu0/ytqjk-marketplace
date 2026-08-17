@@ -1,24 +1,28 @@
-"""Transactional v1-v3 SQLite migrations for YTQJK Knowledge."""
+"""Transactional v1-v4 SQLite migrations for YTQJK Knowledge."""
 
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 
+from .feedback_migration import downgrade as _downgrade_feedback
+from .feedback_migration import repair as _repair_feedback
+from .feedback_migration import upgrade as _upgrade_feedback
 from .import_migration import DROPS as _IMPORT_DROPS
 from .import_migration import repair as _repair_import
 from .import_migration import upgrade as _upgrade_import
 
 
-LATEST_VERSION = 3
+LATEST_VERSION = 4
 
 
 def migrate(connection: sqlite3.Connection, target: int = LATEST_VERSION) -> None:
     """Lock, read version, migrate, and repair idempotently in one transaction."""
-    if target not in (1, 2, 3):
+    if target not in (1, 2, 3, 4):
         raise ValueError("unsupported schema version")
     connection.execute("BEGIN IMMEDIATE")
     try:
-        current = _version(connection)
+        current = int(connection.execute("PRAGMA user_version").fetchone()[0])
         while current < target:
             _upgrade(connection, current + 1)
             current += 1
@@ -26,11 +30,13 @@ def migrate(connection: sqlite3.Connection, target: int = LATEST_VERSION) -> Non
             _downgrade(connection, current)
             current -= 1
         if current >= 1:
-            _repair_v1(connection)
+            _repair_v1(connection, preserve_feedback=current >= 4)
         if current >= 2:
-            _repair_v2(connection)
+            _execute(connection, _SNAPSHOT_TRIGGER_DROPS + _SNAPSHOT_TRIGGERS)
         if current >= 3:
-            _repair_v3(connection)
+            _repair_import(connection)
+        if current >= 4:
+            _repair_feedback(connection)
         connection.execute(f"PRAGMA user_version = {current}")
         connection.commit()
     except BaseException:
@@ -38,24 +44,23 @@ def migrate(connection: sqlite3.Connection, target: int = LATEST_VERSION) -> Non
         raise
 
 
-def _version(connection: sqlite3.Connection) -> int:
-    return int(connection.execute("PRAGMA user_version").fetchone()[0])
-
-
 def _upgrade(connection: sqlite3.Connection, version: int) -> None:
     if version == 1:
         _execute(connection, _V1_TABLES)
-        return
-    if version == 2:
+    elif version == 2:
         _execute(connection, _V2_TABLES)
-        return
-    if version == 3:
+    elif version == 3:
         _upgrade_import(connection)
-        return
-    raise ValueError("unsupported schema version")
+    elif version == 4:
+        _upgrade_feedback(connection)
+    else:
+        raise ValueError("unsupported schema version")
 
 
 def _downgrade(connection: sqlite3.Connection, version: int) -> None:
+    if version == 4:
+        _downgrade_feedback(connection)
+        return
     if version == 3:
         _execute(connection, _IMPORT_DROPS)
         return
@@ -64,40 +69,57 @@ def _downgrade(connection: sqlite3.Connection, version: int) -> None:
     _execute(connection, _SNAPSHOT_TRIGGER_DROPS + _V2_TABLE_DROPS)
 
 
-def _repair_v1(connection: sqlite3.Connection) -> None:
-    if not _table_exists(connection, "jobs"):
+def _repair_v1(
+    connection: sqlite3.Connection, *, preserve_feedback: bool = False
+) -> None:
+    if connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone() is None:
         connection.execute(_JOBS_TABLE)
+    columns = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)")
+    }
     for name, definition in _JOB_COLUMNS:
-        if name not in _columns(connection, "jobs"):
+        if name not in columns:
             connection.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
-    connection.execute(
+    _repair_running_jobs(connection)
+    drops = _V1_TRIGGER_DROPS
+    triggers = _V1_TRIGGERS
+    if preserve_feedback:
+        protected = "versions_state_machine"
+        drops = tuple(item for item in drops if protected not in item)
+        triggers = tuple(item for item in triggers if protected not in item)
+    _execute(connection, drops + _JOB_TRIGGER_DROPS + triggers + _JOB_TRIGGERS)
+
+
+def _repair_running_jobs(connection: sqlite3.Connection) -> None:
+    reference = datetime.now(timezone.utc)
+    recoverable: list[tuple[int]] = []
+    live_count = 0
+    for job_id, owner, heartbeat, raw_lease in connection.execute(
+        "SELECT id, owner, heartbeat_at, lease_expires_at FROM jobs "
+        "WHERE state = 'RUNNING' ORDER BY id"
+    ):
+        if owner is None or heartbeat is None or raw_lease is None:
+            recoverable.append((int(job_id),))
+            continue
+        try:
+            lease = datetime.fromisoformat(raw_lease)
+        except (TypeError, ValueError) as error:
+            raise sqlite3.DatabaseError("invalid RUNNING job lease") from error
+        if lease.tzinfo is None:
+            raise sqlite3.DatabaseError("invalid RUNNING job lease")
+        if lease.astimezone(timezone.utc) <= reference:
+            recoverable.append((int(job_id),))
+        else:
+            live_count += 1
+    if live_count > 1:
+        raise sqlite3.DatabaseError("multiple live RUNNING job leases")
+    _execute(connection, _JOB_TRIGGER_DROPS)
+    connection.executemany(
         "UPDATE jobs SET state = 'QUEUED', owner = NULL, heartbeat_at = NULL, "
-        "lease_expires_at = NULL WHERE state = 'RUNNING' AND "
-        "(owner IS NULL OR lease_expires_at IS NULL OR heartbeat_at IS NULL)"
+        "lease_expires_at = NULL WHERE id = ?", recoverable,
     )
-    _execute(
-        connection,
-        _V1_TRIGGER_DROPS + _JOB_TRIGGER_DROPS + _V1_TRIGGERS + _JOB_TRIGGERS,
-    )
-
-
-def _repair_v2(connection: sqlite3.Connection) -> None:
-    _execute(connection, _SNAPSHOT_TRIGGER_DROPS + _SNAPSHOT_TRIGGERS)
-
-
-def _repair_v3(connection: sqlite3.Connection) -> None:
-    _repair_import(connection)
-
-
-def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
-    row = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
-    ).fetchone()
-    return row is not None
-
-
-def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    return {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
 
 
 def _execute(connection: sqlite3.Connection, statements: tuple[str, ...]) -> None:

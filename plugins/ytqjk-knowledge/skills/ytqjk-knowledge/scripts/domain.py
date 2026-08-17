@@ -11,6 +11,7 @@ from typing import Any
 OPERATIONS = frozenset({
     "create_project", "create_candidate", "edit_candidate",
     "soft_delete_candidate", "append_state", "create_snapshot",
+    "record_feedback",
 })
 STATES = frozenset({"candidate", "approved", "verified", "tombstone"})
 TRANSITIONS = {
@@ -19,12 +20,19 @@ TRANSITIONS = {
     "verified": {"tombstone"},
     "tombstone": set(),
 }
+_MIRROR_MUTATIONS = frozenset({
+    "append_state", "edit_candidate", "soft_delete_candidate",
+})
 
 
 def validate_operation(kind: str, payload: object) -> dict[str, Any]:
     """Return exact validated operation payload or reject injected fields."""
     if kind not in OPERATIONS or not isinstance(payload, dict):
         raise ValueError("unsupported operation")
+    if kind == "record_feedback":
+        from .feedback_domain import validate_feedback
+
+        return validate_feedback(payload)
     required = {
         "create_project": {"id", "scope", "alias"},
         "create_candidate": {"document_id", "project_id", "title", "content", "source"},
@@ -60,6 +68,12 @@ def validate_operation(kind: str, payload: object) -> dict[str, Any]:
 def apply(connection: sqlite3.Connection, kind: str, payload: object, now: str) -> None:
     """Revalidate durable job then apply one domain operation."""
     data = validate_operation(kind, payload)
+    if kind == "record_feedback":
+        from .feedback_domain import apply_feedback
+
+        apply_feedback(connection, data, now)
+        return
+    _guard_system_managed_mirror(connection, kind, data)
     handlers = {
         "create_project": _create_project,
         "create_candidate": _create_candidate,
@@ -69,6 +83,26 @@ def apply(connection: sqlite3.Connection, kind: str, payload: object, now: str) 
         "create_snapshot": _create_snapshot,
     }
     handlers[kind](connection, data, now)
+
+
+def _guard_system_managed_mirror(
+    connection: sqlite3.Connection, kind: str, data: dict[str, Any]
+) -> None:
+    """Reject public mutation of a linked global mirror when schema v4 exists."""
+    if kind not in _MIRROR_MUTATIONS:
+        return
+    table = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'global_sync'"
+    ).fetchone()
+    if table is None:
+        return
+    linked = connection.execute(
+        "SELECT 1 FROM global_sync WHERE global_document_id = ?",
+        (data["document_id"],),
+    ).fetchone()
+    if linked is not None:
+        raise ValueError("system-managed global mirror cannot be mutated directly")
 
 
 def _create_project(connection: sqlite3.Connection, data: dict[str, Any], now: str) -> None:
@@ -138,8 +172,15 @@ def _create_snapshot(connection: sqlite3.Connection, data: dict[str, Any], now: 
 
 
 def _append_version(
-    connection: sqlite3.Connection, document_id: str, state: str, content: str, source: str, now: str
-) -> None:
+    connection: sqlite3.Connection,
+    document_id: str,
+    state: str,
+    content: str,
+    source: str,
+    now: str,
+    *,
+    source_kind: str = "local",
+) -> int:
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     connection.execute(
         "INSERT OR IGNORE INTO originals(sha256, content, created_at) VALUES (?, ?, ?)",
@@ -154,8 +195,12 @@ def _append_version(
     ).lastrowid
     chunk_id = hashlib.sha256(f"{version_id}:1:{digest}".encode()).hexdigest()
     connection.execute("INSERT INTO chunks(id, version_id, ordinal, content) VALUES (?, ?, 1, ?)", (chunk_id, version_id, content))
-    connection.execute("INSERT INTO sources(version_id, kind, locator) VALUES (?, ?, ?)", (version_id, "local", source))
+    connection.execute(
+        "INSERT INTO sources(version_id, kind, locator) VALUES (?, ?, ?)",
+        (version_id, source_kind, source),
+    )
     connection.execute("INSERT INTO governance(version_id, action, actor, created_at) VALUES (?, ?, ?, ?)", (version_id, state, "一听曲就困", now))
+    return int(version_id)
 
 
 def _editable(connection: sqlite3.Connection, document_id: str) -> None:
