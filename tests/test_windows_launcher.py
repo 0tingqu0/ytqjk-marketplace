@@ -89,6 +89,27 @@ class WindowsLauncherTest(unittest.TestCase):
 
         self.assertEqual(run.call_args.args[0], [executable, "--version"])
 
+    def test_external_runner_hides_windows_process(self) -> None:
+        completed = mock.Mock(stdout="")
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch(
+                    "external_command_runner.shutil.which",
+                    return_value=r"C:\\Program Files\\nodejs\\npx.CMD",
+                ),
+                mock.patch("external_command_runner.sys.platform", "win32"),
+                mock.patch(
+                    "external_command_runner.subprocess.run",
+                    return_value=completed,
+                ) as run,
+            ):
+                run_external(["npx", "--version"], Path(directory))
+
+        self.assertEqual(
+            run.call_args.kwargs["creationflags"],
+            getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+
     def test_external_runner_reports_missing_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with (

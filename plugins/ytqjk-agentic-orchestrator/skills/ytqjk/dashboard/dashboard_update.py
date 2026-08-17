@@ -25,6 +25,7 @@ MAX_METADATA_BYTES = 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
 MAX_ARCHIVE_FILES = 10_000
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 
 class UpdateError(RuntimeError):
@@ -205,13 +206,18 @@ def run_installer(
         sys.executable, str(source_root / "setup.py"),
         "--mode", "codex-only", "--target-root", str(source_root),
         "--codex-root", str(codex_root), "--codex-import", "off",
-        "--project-bootstrap", "off", "--apply", "--yes", "--json",
+        "--project-bootstrap", "off", "--dashboard-service", "off",
+        "--apply", "--yes", "--json",
     ]
+    options: dict[str, object] = {}
+    if sys.platform == "win32":
+        options["creationflags"] = CREATE_NO_WINDOW
     try:
         completed = subprocess.run(
             command, cwd=source_root, env=os.environ.copy(),
             capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=900, check=False,
+            **options,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise UpdateError("无法启动更新安装器。") from error

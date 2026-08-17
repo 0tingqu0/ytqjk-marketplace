@@ -17,6 +17,7 @@ from knowledge_dashboard import KnowledgeHandler
 from platform_paths import default_knowledge_root
 from desktop_autostart import install as install_autostart
 from desktop_autostart import path as autostart_path
+from dashboard_restart import single_restart_scheduler
 from windows_task import TASK_NAME, register as register_task
 from windows_task import unregister as unregister_task
 
@@ -265,6 +266,9 @@ def serve(root: Path, port: int) -> None:
             "plugin_root": DASHBOARD_DIR.parents[2],
             "update_lock": Lock(),
             "update_token": secrets.token_urlsafe(32),
+            "schedule_restart": staticmethod(
+                single_restart_scheduler(root, port)
+            ),
         },
     )
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)

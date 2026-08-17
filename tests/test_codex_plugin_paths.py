@@ -112,6 +112,69 @@ class StablePluginPathTest(unittest.TestCase):
 
 class StablePluginPathReceiptTest(unittest.TestCase):
 
+    def test_cli_can_skip_dashboard_service_during_web_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "target"
+            output = io.StringIO()
+            with (
+                mock.patch("setup.configure_dashboard") as dashboard,
+                redirect_stdout(output),
+            ):
+                code = main(
+                    [
+                        "--apply", "--yes", "--json",
+                        "--mode", "codex-only",
+                        "--target-root", str(target),
+                        "--codex-root", str(Path(directory) / "codex"),
+                        "--dashboard-service", "off",
+                    ],
+                    runner=StatefulRunner(),
+                )
+
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(code, 0)
+            dashboard.assert_not_called()
+            self.assertEqual(
+                receipt["dashboard_service"]["status"], "SKIPPED_UPDATE"
+            )
+
+    def test_legacy_web_update_defers_dashboard_restart(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ytqjk-update-test-") as root:
+            target = Path(root) / "source" / "release"
+            output = io.StringIO()
+            scheduled = {
+                "status": "RESTART_SCHEDULED",
+                "port": 8765,
+                "changed": False,
+            }
+            with (
+                mock.patch("setup.configure_dashboard") as dashboard,
+                mock.patch(
+                    "setup.schedule_dashboard_restart",
+                    return_value=scheduled,
+                ) as restart,
+                redirect_stdout(output),
+            ):
+                code = main(
+                    [
+                        "--apply", "--yes", "--json",
+                        "--mode", "codex-only",
+                        "--target-root", str(target),
+                        "--codex-root", str(Path(root) / "codex"),
+                        "--codex-import", "off",
+                        "--project-bootstrap", "off",
+                    ],
+                    runner=StatefulRunner(),
+                )
+
+            self.assertEqual(code, 0)
+            dashboard.assert_not_called()
+            restart.assert_called_once()
+            self.assertEqual(
+                json.loads(output.getvalue())["dashboard_service"]["status"],
+                "RESTART_SCHEDULED",
+            )
+
     def test_apply_records_stable_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "target"

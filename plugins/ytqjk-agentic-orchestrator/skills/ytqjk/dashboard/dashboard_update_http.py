@@ -60,7 +60,10 @@ def handle_update_request(handler: Any) -> None:
         )
         return
     try:
-        handler.send_json({"ok": True, **perform_update(handler.plugin_root)})
+        result = perform_update(handler.plugin_root)
+        handler.send_json({"ok": True, **result})
+        if result.get("restart_required") is True:
+            handler.schedule_restart()
     except UpdateError as error:
         handler.send_json(
             {"ok": False, "error": str(error)}, HTTPStatus.BAD_GATEWAY

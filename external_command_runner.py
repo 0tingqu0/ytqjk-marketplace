@@ -8,6 +8,9 @@ import subprocess
 import sys
 
 
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
 def run_external(
     command: list[str], cwd: Path,
     executable_overrides: dict[str, str] | None = None,
@@ -49,6 +52,8 @@ def run_external(
     else:
         options["stdout"] = sys.stderr
         options["stderr"] = sys.stderr
+    if sys.platform == "win32":
+        options["creationflags"] = CREATE_NO_WINDOW
     try:
         completed = subprocess.run(resolved_command, **options)
         return completed.stdout or ""

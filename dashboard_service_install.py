@@ -10,6 +10,9 @@ from pathlib import Path
 from codex_plugin_paths import stable_path
 
 
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
 DashboardConfigurator = Callable[
     [Path, Path, str], dict[str, object]
 ]
@@ -94,3 +97,35 @@ def configure_dashboard(
     if allowed.get("status") != expected:
         raise RuntimeError("dashboard service did not reach expected state")
     return allowed
+
+
+def schedule_dashboard_restart(
+    codex_root: Path, knowledge_root: Path
+) -> dict[str, object]:
+    plugin = stable_path(codex_root, "ytqjk-agentic-orchestrator")
+    script = plugin / "skills/ytqjk/dashboard/dashboard_restart.py"
+    if not script.is_file():
+        raise RuntimeError("dashboard restart entrypoint is missing")
+    executable = Path(sys.executable).resolve()
+    pythonw = executable.with_name("pythonw.exe")
+    if sys.platform == "win32" and pythonw.is_file():
+        executable = pythonw
+    options: dict[str, object] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if sys.platform == "win32":
+        options["creationflags"] = (
+            getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | CREATE_NO_WINDOW
+        )
+    else:
+        options["start_new_session"] = True
+    subprocess.Popen([
+        str(executable), str(script),
+        "--knowledge-root", str(knowledge_root.resolve()),
+        "--port", "8765", "--delay", "2.0",
+    ], **options)
+    return dashboard_receipt("RESTART_SCHEDULED")

@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import Sequence
 
 
 TASK_NAME = "YTQJK Knowledge Dashboard"
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
+def _options() -> dict[str, int]:
+    return {"creationflags": CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 
 def register(command: Sequence[str]) -> None:
@@ -63,6 +69,7 @@ def exists() -> bool:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
+        **_options(),
     )
     return completed.returncode == 0
 
@@ -76,6 +83,7 @@ def _run(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
+        **_options(),
     )
     if completed.returncode not in allowed:
         raise RuntimeError(message)

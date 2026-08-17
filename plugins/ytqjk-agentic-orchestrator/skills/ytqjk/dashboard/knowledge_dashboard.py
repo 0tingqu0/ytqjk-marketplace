@@ -153,6 +153,7 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
     plugin_root: Path
     update_lock: object
     update_token: str
+    schedule_restart: object
 
     def do_GET(self) -> None:  # noqa: N802 - inherited API name
         url = urlparse(self.path)
@@ -284,6 +285,7 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        self.wfile.flush()
 
     def log_message(self, _format: str, *_args: object) -> None:
         return
@@ -300,6 +302,7 @@ def main() -> None:
         "plugin_root": DASHBOARD_DIR.parents[2],
         "update_lock": Lock(),
         "update_token": secrets.token_urlsafe(32),
+        "schedule_restart": staticmethod(lambda: None),
     })
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     print(f"Knowledge dashboard: http://127.0.0.1:{args.port}")

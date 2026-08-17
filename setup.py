@@ -20,6 +20,7 @@ from codex_guidance import configure as configure_guidance
 from codex_guidance import receipt as guidance_receipt
 from dashboard_service_install import (
     apply_dashboard_configuration, configure_dashboard, dashboard_receipt,
+    schedule_dashboard_restart,
 )
 from external_command_runner import run_external
 from install_core import (
@@ -50,6 +51,10 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--project-bootstrap", choices=("auto", "off"), default="auto",
+    )
+    result.add_argument(
+        "--dashboard-service", choices=("auto", "off"), default="auto",
+        help=argparse.SUPPRESS,
     )
     result.add_argument("--apply", action="store_true")
     result.add_argument("--yes", action="store_true")
@@ -226,11 +231,38 @@ def main(
                         "failure_stage": "BOOTSTRAPPER_CALL",
                         "failure_code": "BOOTSTRAPPER_FAILED",
                     })
-            result["dashboard_service"] = apply_dashboard_configuration(
-                configure_dashboard, codex_root,
-                default_knowledge_root(args.knowledge_root),
-                args.mode, "install",
+            legacy_update = (
+                args.dashboard_service == "auto"
+                and args.mode == "codex-only"
+                and args.codex_import == "off"
+                and args.project_bootstrap == "off"
+                and args.target_root is not None
+                and any(
+                    part.name.startswith("ytqjk-update-")
+                    for part in (
+                        args.target_root.resolve(),
+                        *args.target_root.resolve().parents,
+                    )
+                )
             )
+            if args.dashboard_service == "off":
+                result["dashboard_service"] = dashboard_receipt(
+                    "SKIPPED_UPDATE"
+                )
+            elif legacy_update:
+                try:
+                    result["dashboard_service"] = schedule_dashboard_restart(
+                        codex_root,
+                        default_knowledge_root(args.knowledge_root),
+                    )
+                except Exception:
+                    result["dashboard_service"] = dashboard_receipt("FAILED")
+            else:
+                result["dashboard_service"] = apply_dashboard_configuration(
+                    configure_dashboard, codex_root,
+                    default_knowledge_root(args.knowledge_root),
+                    args.mode, "install",
+                )
         output = json_text(result) if args.json else summary_text(result)
         print(output)
         import_failed = (

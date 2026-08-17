@@ -166,7 +166,50 @@ class DashboardUpdateTest(unittest.TestCase):
             update_http.handle_update_request(handler)
 
         self.assertEqual(handler.responses[0][0], {"ok": True, **installed})
+        self.assertEqual(handler.events, ["response", "restart"])
         self.assertFalse(handler.update_lock.locked())
+
+    def test_installer_disables_inline_dashboard_restart(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                '{"version":"0.4.9","apply":{"status":"APPLIED"}}'
+            ),
+            stderr="",
+        )
+
+        with mock.patch.object(
+            update.subprocess, "run", return_value=completed
+        ) as run:
+            update.run_installer(Path("source"), Path("codex"), "0.4.9")
+
+        command = run.call_args.args[0]
+        self.assertIn("--dashboard-service", command)
+        option = command.index("--dashboard-service")
+        self.assertEqual(command[option + 1], "off")
+
+    def test_windows_installer_process_is_hidden(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                '{"version":"0.4.9","apply":{"status":"APPLIED"}}'
+            ),
+            stderr="",
+        )
+
+        with (
+            mock.patch.object(update.sys, "platform", "win32"),
+            mock.patch.object(
+                update.subprocess, "run", return_value=completed
+            ) as run,
+        ):
+            update.run_installer(Path("source"), Path("codex"), "0.4.9")
+
+        self.assertEqual(
+            run.call_args.kwargs["creationflags"], update.CREATE_NO_WINDOW
+        )
 
     def test_installer_failure_uses_sanitized_stderr_receipt(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -245,6 +288,7 @@ class _FakeHandler:
         self.update_token = "secret"
         self.update_lock = Lock()
         self.responses: list[tuple[dict[str, object], HTTPStatus]] = []
+        self.events: list[str] = []
 
     def read_payload(self) -> dict[str, object]:
         return self.payload
@@ -255,6 +299,10 @@ class _FakeHandler:
         status: HTTPStatus = HTTPStatus.OK,
     ) -> None:
         self.responses.append((value, status))
+        self.events.append("response")
+
+    def schedule_restart(self) -> None:
+        self.events.append("restart")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -23,6 +24,23 @@ SPEC.loader.exec_module(WINDOWS_TASK)
 
 
 class WindowsTaskTest(unittest.TestCase):
+    def test_all_scheduler_calls_are_hidden_on_windows(self) -> None:
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch.object(WINDOWS_TASK.sys, "platform", "win32"),
+            mock.patch.object(
+                WINDOWS_TASK.subprocess, "run", return_value=completed
+            ) as run,
+        ):
+            WINDOWS_TASK.register(["pythonw.exe", "service.py", "run"])
+            WINDOWS_TASK.exists()
+
+        for call in run.call_args_list:
+            self.assertEqual(
+                call.kwargs["creationflags"],
+                getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+            )
+
     def test_register_uses_long_running_run_action(self) -> None:
         completed = mock.Mock(returncode=0)
         command = [
