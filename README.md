@@ -235,7 +235,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.4.3`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.4`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
@@ -319,8 +319,8 @@ Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见
 候选资料可在控制台中编辑或删除，已验证和已批准知识不提供此入口；删除投递资料时会一并
 删除其关联原件。
 
-控制台启动后会检查 `0tingqu0/ytqjk-marketplace` 的最新正式 GitHub Release。发现更高版本时，
-页面顶部显示版本和“更新”按钮；确认后会下载固定仓库的 Release 包，校验安全路径及两个插件
+控制台启动后会检查 `0tingqu0/ytqjk-marketplace` 的最新正式 GitHub Release。页面左上角常显
+当前版本；发现更高版本时版本号会变色，点击版本号后显示“更新”按钮。确认后会下载固定仓库的 Release 包，校验安全路径及两个插件
 manifest 的版本一致性，再调用原子安装器更新 `~/.codex/plugins` 下的稳定插件目录。失败会保留
 当前版本，知识库数据不会删除；成功后重启 Codex 即可加载新版本。草稿、预发布版本、非纯
 SemVer tag 和其他下载地址不会进入自动更新。`0.3.2` 及更早版本尚无网页更新入口，需要先按

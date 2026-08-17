@@ -8,8 +8,21 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">YK</span><div><p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p><h1>知识库控制台</h1></div></div>
-    <div class="actions"><div id="update-panel" class="update-panel" hidden><span id="update-status" role="status"></span><button id="install-update" type="button" title="安装最新版本">↓ 更新</button></div><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">YK</span>
+      <div class="brand-copy">
+        <p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p>
+        <h1>知识库控制台</h1>
+        <div class="version-control">
+          <button id="version-trigger" class="version-trigger" type="button" aria-expanded="false" aria-controls="update-panel" aria-label="查看版本和更新">v–</button>
+          <div id="update-panel" class="update-panel" hidden>
+            <span id="update-status" role="status">正在检查更新</span>
+            <button id="install-update" type="button" title="安装最新版本" hidden>↓ 更新</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="actions"><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
   </header>
   <main>
     <section class="summary" aria-label="知识库摘要">
