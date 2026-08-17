@@ -43,4 +43,6 @@ class DashboardDocumentationTest(unittest.TestCase):
         self.assertIn('classList.toggle("has-update"', script)
         self.assertIn('trigger.addEventListener("click"', script)
         self.assertIn('method: "POST"', script)
+        self.assertIn('result.error_code === "UPDATE_TOKEN_INVALID"', script)
+        self.assertIn("await checkUpdate()", script)
         self.assertIn('.version-trigger.has-update', style)

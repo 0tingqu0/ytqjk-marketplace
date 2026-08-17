@@ -53,6 +53,7 @@ class SessionStartHookTest(unittest.TestCase):
             output = json.loads(completed.stdout)
             context = output["hookSpecificOutput"]["additionalContext"]
             self.assertIn("KNOWLEDGE_RECEIPT", context)
+            self.assertIn("not only the anchor key", context)
             catalog = json.loads(
                 (knowledge / "catalog.json").read_text(encoding="utf-8")
             )
@@ -95,6 +96,7 @@ class SessionStartHookTest(unittest.TestCase):
             output = json.loads(completed.stdout)
             context = output["hookSpecificOutput"]["additionalContext"]
             self.assertIn("KNOWLEDGE_RECEIPT", context)
+            self.assertIn("not only the anchor key", context)
             catalog = json.loads(
                 (knowledge / "catalog.json").read_text(encoding="utf-8")
             )

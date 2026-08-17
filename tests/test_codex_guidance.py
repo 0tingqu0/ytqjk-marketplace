@@ -34,6 +34,21 @@ class CodexGuidanceTest(unittest.TestCase):
             self.assertIn("current working directory", text)
             self.assertIn("<project-root>", text)
             self.assertNotIn("<git-project-root>", text)
+            for field in (
+                "status",
+                "project_id",
+                "project_tracking",
+                "knowledge_root",
+                "scope",
+                "indexed_at",
+                "stale",
+                "result_count",
+                "anchor_key",
+                "anchor_created",
+                "cache",
+            ):
+                self.assertIn(f"`{field}`", text)
+            self.assertIn("not only the anchor key", text)
 
             removed = uninstall(codex_root)
 

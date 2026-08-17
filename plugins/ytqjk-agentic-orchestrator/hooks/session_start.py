@@ -23,7 +23,8 @@ def context(receipt: dict[str, object]) -> str:
         f"anchor_created={str(receipt['anchor_created']).lower()}. "
         "Before answering project questions, query YTQJK knowledge through "
         "skills/ytqjk/scripts/session_query.py with this project_id and the "
-        "current session_id."
+        "current session_id. Report the full returned KNOWLEDGE_RECEIPT, not "
+        "only the anchor key."
     )
 
 

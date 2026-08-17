@@ -111,12 +111,17 @@ find "$knowledge_root/projects" -mindepth 1 -maxdepth 1 -type d -print
 
 安装结束后可直接打开 `http://127.0.0.1:8765`，关闭安装终端不会中断网页。安装器还会在
 Codex 全局 `AGENTS.md`（存在非空 `AGENTS.override.md` 时使用该文件）写入带明确起止标记的
-YTQJK 受管块；新会话会自动发现知识库、注册当前 Git 项目，并建立匿名锚点，卸载时仅删除
+YTQJK 受管块；新会话会自动发现知识库、注册当前 Git 项目或普通目录，并建立匿名锚点，卸载时仅删除
 该受管块而保留用户原有内容。重启 Codex 后即可生效。
 
 还可输入 `/hooks`，审阅并信任 YTQJK 的 `SessionStart` 钩子，使锚定在首轮回答前完成。
 Codex 官方安全策略禁止安装器替用户自动信任插件钩子；不信任 hook 不影响上述全局指引在
 新会话首次项目操作前接入知识库。
+
+YTQJK 只管理带明确标记的受管块，不会复制或改写用户自己的全局规则。跨电脑迁移
+`AGENTS.md` 时不要保留 `C:\Users\某用户名\...` 之类的绝对用户路径；可选的全局记忆应使用
+`~/.codex/mem.md` 等当前用户路径。该文件不存在与知识库查询无关，不应把完整
+`KNOWLEDGE_RECEIPT` 缩写成单独的锚点值。
 
 ### 4. 自定义安装
 
@@ -219,6 +224,9 @@ npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/m
 
 ## 更新与回滚
 
+知识库网页左上角始终显示本地版本；发现新版本时版本号变色，点开后可直接更新。GitHub
+暂时不可达时仍保留本地版本号；后台重启造成更新令牌过期时，页面会自动刷新令牌并重试一次。
+
 通过 Git clone 一键部署的 Windows 用户，后续优先调用首次安装使用的默认桌面目录；命令从
 任意目录执行，无需先切换路径。安装器会更新本项目 manifest 管理的插件目录并复用已有知识库，
 不会删除候选资料或已批准资料：
@@ -248,7 +256,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.4.7`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.4.8`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 

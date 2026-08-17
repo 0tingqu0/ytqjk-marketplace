@@ -96,7 +96,10 @@ def _block(codex_root: Path, knowledge_root: Path) -> str:
         "anonymous session anchor. Never invent or reuse a session ID.\n\n"
         f"  `{command}`\n\n"
         "- Report the returned `KNOWLEDGE_RECEIPT` in the first progress update or final "
-        "answer. A miss is valid and must not be described as a knowledge hit.\n"
+        "answer, not only the anchor key. Include `status`, `project_id`, "
+        "`project_tracking`, `knowledge_root`, `scope`, `indexed_at`, `stale`, "
+        "`result_count`, `anchor_key`, `anchor_created`, and `cache`. A miss is valid "
+        "and must not be described as a knowledge hit.\n"
         f"{END}"
     )
 

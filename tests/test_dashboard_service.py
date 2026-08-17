@@ -109,6 +109,12 @@ class DashboardServiceTest(unittest.TestCase):
                 ) as response:
                     payload = json.load(response)
                 self.assertIn("root", payload)
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/", timeout=3
+                ) as response:
+                    self.assertEqual(
+                        response.headers.get("Cache-Control"), "no-store"
+                    )
             finally:
                 stop = subprocess.run(
                     [

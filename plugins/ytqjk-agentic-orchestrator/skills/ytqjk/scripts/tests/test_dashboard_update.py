@@ -128,6 +128,29 @@ class DashboardUpdateTest(unittest.TestCase):
 
         perform.assert_not_called()
         self.assertEqual(handler.responses[0][1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            handler.responses[0][0]["error_code"],
+            "UPDATE_TOKEN_INVALID",
+        )
+
+    def test_http_status_keeps_local_version_when_release_check_fails(
+        self,
+    ) -> None:
+        handler = _FakeHandler({})
+
+        with mock.patch.object(
+            update_http, "current_version", return_value="0.4.6"
+        ), mock.patch.object(
+            update_http,
+            "check_update",
+            side_effect=update.UpdateError("无法读取 GitHub 最新版本。"),
+        ):
+            update_http.send_update_status(handler)
+
+        payload, status = handler.responses[0]
+        self.assertEqual(status, HTTPStatus.BAD_GATEWAY)
+        self.assertEqual(payload["current_version"], "0.4.6")
+        self.assertEqual(payload["token"], "secret")
 
     def test_http_update_serializes_successful_install(self) -> None:
         handler = _FakeHandler({"token": "secret"})

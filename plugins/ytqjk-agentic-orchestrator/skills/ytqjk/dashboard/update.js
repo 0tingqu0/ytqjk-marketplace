@@ -13,13 +13,15 @@
 
   async function checkUpdate() {
     const response = await fetch("/api/update", { cache: "no-store" });
-    if (!response.ok) throw new Error("检查更新失败");
     const result = await response.json();
     token = typeof result.token === "string" ? result.token : "";
     const currentVersion = String(result.current_version || "");
+    trigger.textContent = currentVersion ? `v${currentVersion}` : "v–";
+    if (!response.ok) {
+      throw new Error(result.error || "检查更新失败");
+    }
     latestVersion = String(result.latest_version || "");
     const updateAvailable = Boolean(result.update_available);
-    trigger.textContent = currentVersion ? `v${currentVersion}` : "v–";
     trigger.classList.toggle("has-update", updateAvailable);
     trigger.setAttribute(
       "aria-label",
@@ -39,19 +41,34 @@
     }
   }
 
+  async function postUpdate(retryToken = true) {
+    const response = await fetch("/api/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const result = await response.json();
+    if (
+      !response.ok
+      && retryToken
+      && result.error_code === "UPDATE_TOKEN_INVALID"
+    ) {
+      await checkUpdate();
+      button.disabled = true;
+      status.textContent = "更新中，请勿关闭";
+      return postUpdate(false);
+    }
+    if (!response.ok) throw new Error(result.error || "更新失败");
+    return result;
+  }
+
   async function installUpdate() {
     if (!token || !latestVersion) return;
     if (!confirm(`更新 YTQJK 到 v${latestVersion}？知识库数据不会删除。`)) return;
     button.disabled = true;
     status.textContent = "更新中，请勿关闭";
     try {
-      const response = await fetch("/api/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "更新失败");
+      const result = await postUpdate();
       latestVersion = String(result.latest_version || latestVersion);
       status.textContent = result.status === "UPDATED"
         ? `已更新至 v${latestVersion}，重启 Codex 生效`
