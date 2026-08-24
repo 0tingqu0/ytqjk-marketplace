@@ -23,7 +23,9 @@ sys.path.insert(0, str(DASHBOARD_DIR))
 from approval_assessment import assess_for_approval  # noqa: E402
 from approval_promotion import promote  # noqa: E402
 from candidate_actions import candidate_document, delete_candidate, update_candidate  # noqa: E402
-from dashboard_snapshot import project_library, snapshot as build_snapshot  # noqa: E402
+from dashboard_snapshot import (  # noqa: E402
+    global_index_library, project_library, snapshot as build_snapshot,
+)
 from dashboard_update_http import handle_update_request, send_update_status  # noqa: E402
 from platform_paths import default_knowledge_root  # noqa: E402
 from rag_security import contains_high_confidence_secret, is_sensitive_path  # noqa: E402
@@ -169,6 +171,9 @@ class KnowledgeHandler(SimpleHTTPRequestHandler):
             return
         if url.path == "/api/update":
             send_update_status(self)
+            return
+        if url.path == "/api/global-library":
+            self.send_json(global_index_library(self.knowledge_root))
             return
         if url.path == "/api/project-library":
             project = project_library(self.knowledge_root, parse_qs(url.query).get("id", [""])[0])

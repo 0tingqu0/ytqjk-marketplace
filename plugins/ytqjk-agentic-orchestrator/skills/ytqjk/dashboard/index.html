@@ -33,7 +33,7 @@
       <article class="root"><span>知识根</span><strong id="root">-</strong></article>
     </section>
     <section class="libraries" aria-label="知识库结构">
-      <article class="global-library"><div><span class="section-kicker">总库</span><h2>总知识库</h2></div><dl id="global-library"></dl></article>
+      <article class="global-library"><div><span class="section-kicker">总库</span><h2>总知识库</h2></div><dl id="global-library"></dl><button id="open-global-library" class="open-project-library" type="button">打开总库索引</button></article>
       <article class="project-library"><div><span class="section-kicker">子库</span><h2>项目知识子库</h2><p>项目首次访问后自动登记；按需建立源码索引。</p></div><strong id="project-library-count">-</strong></article>
     </section>
     <section class="workspace">
@@ -63,7 +63,7 @@
     <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目知识子库</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>
     <section class="projects"><div class="section-title"><div><span class="section-kicker">会话层</span><h2>锚定会话</h2></div><span>按项目聚合，展开查看匿名会话</span></div><div id="session-grid"></div></section>
   </main>
-  <dialog id="project-library-dialog"><header><div><span class="section-kicker">项目子库</span><h2 id="project-library-title">读取中</h2><p id="project-library-meta"></p></div><button id="close-project-library" title="关闭" aria-label="关闭">×</button></header><p id="project-library-empty" hidden>这个项目尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
+  <dialog id="project-library-dialog"><header><div><span id="library-kicker" class="section-kicker">索引</span><h2 id="project-library-title">读取中</h2><p id="project-library-meta"></p></div><button id="close-project-library" title="关闭" aria-label="关闭">×</button></header><p id="project-library-empty" hidden>尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
   <script src="app.js"></script>
   <script src="update.js"></script>
 </body>

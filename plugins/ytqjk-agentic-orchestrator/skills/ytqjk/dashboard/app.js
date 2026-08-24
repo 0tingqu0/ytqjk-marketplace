@@ -53,7 +53,7 @@ async function loadSnapshot() {
 function renderLibraries() {
   const library = state.data.global_library;
   const details = byId("global-library");
-  details.replaceChildren(...[["位置", library.path], ["全局索引", formatTime(library.indexed_at)], ["内容", `${library.files} 文件 · ${library.chunks} 分块`], ["状态", `已验证 ${library.verified} · 已批准 ${library.approved} · 候选 ${library.candidate}`]].map(([term, value]) => {
+  details.replaceChildren(...[["位置", library.path], ["全局索引", formatTime(library.indexed_at)], ["知识索引", `${library.files} 文件 · ${library.chunks} 分块`], ["状态", `已验证 ${library.verified} · 已批准 ${library.approved} · 候选 ${library.candidate}`]].map(([term, value]) => {
     const row = document.createElement("div"); row.append(text("dt", term), text("dd", value)); return row;
   }));
   byId("project-library-count").textContent = `${state.data.projects.length} 个`;
@@ -92,12 +92,41 @@ function renderProjects() {
   }));
 }
 
+function prepareLibraryDialog(kicker, title, status) {
+  byId("library-kicker").textContent = kicker;
+  byId("project-library-title").textContent = title;
+  byId("project-library-meta").textContent = status;
+  byId("project-library-empty").hidden = true;
+  byId("project-library-files").replaceChildren();
+  byId("project-library-dialog").showModal();
+}
+
+function appendIndexFiles(files, heading) {
+  if (!files.length) return;
+  const source = files.map((chunks) => {
+    const item = document.createElement("details"); const summary = text("summary", `${chunks[0].path} · ${chunks.length} 分块`);
+    const content = document.createElement("div"); content.className = "project-chunks";
+    chunks.forEach((chunk) => { const part = document.createElement("article"); part.append(text("small", `第 ${chunk.line_start}-${chunk.line_end} 行`), text("pre", chunk.content)); content.append(part); });
+    item.append(summary, content); return item;
+  });
+  byId("project-library-files").append(text("h3", heading), ...source);
+}
+
+async function showGlobalLibrary() {
+  prepareLibraryDialog("总库", "总库知识索引", "读取总库索引...");
+  let response;
+  try { response = await fetch("/api/global-library"); }
+  catch { byId("project-library-meta").textContent = "无法读取总库知识索引"; return; }
+  if (!response.ok) { byId("project-library-meta").textContent = "无法读取总库知识索引"; return; }
+  const library = await response.json();
+  byId("project-library-meta").textContent = `知识索引 ${library.file_count}/${library.expected_files} 文件 · ${library.chunk_count}/${library.expected_chunks} 分块；索引于 ${formatTime(library.indexed_at)}`;
+  byId("project-library-empty").textContent = "总库尚未建立可浏览的已验证或已批准知识索引。";
+  byId("project-library-empty").hidden = library.files.length > 0;
+  appendIndexFiles(library.files, "已验证与已批准知识");
+}
+
 async function showProjectLibrary(project) {
-  const dialog = byId("project-library-dialog");
-  byId("project-library-title").textContent = project.name;
-  byId("project-library-meta").textContent = "读取项目索引...";
-  byId("project-library-empty").hidden = true; byId("project-library-files").replaceChildren();
-  dialog.showModal();
+  prepareLibraryDialog("项目子库", project.name, "读取项目索引...");
   const response = await fetch("/api/project-library?id=" + encodeURIComponent(project.id));
   if (!response.ok) { byId("project-library-meta").textContent = "无法读取该项目子库"; return; }
   const library = await response.json();
@@ -110,16 +139,10 @@ async function showProjectLibrary(project) {
     const summary = text("summary", `总库预取 · 命中 ${entry.hit_count} 次 · ${entry.path} · 第 ${entry.line_start}-${entry.line_end} 行`);
     item.append(summary, text("pre", entry.content)); return item;
   });
-  const source = library.files.map((chunks) => {
-    const item = document.createElement("details"); const summary = text("summary", `${chunks[0].path} · ${chunks.length} 分块`);
-    const content = document.createElement("div"); content.className = "project-chunks";
-    chunks.forEach((chunk) => { const part = document.createElement("article"); part.append(text("small", `第 ${chunk.line_start}-${chunk.line_end} 行`), text("pre", chunk.content)); content.append(part); });
-    item.append(summary, content); return item;
-  });
   const content = byId("project-library-files");
   content.replaceChildren();
   if (prefetch.length) { content.append(text("h3", "总库预取缓存"), ...prefetch); }
-  if (source.length) { content.append(text("h3", "项目源码索引"), ...source); }
+  appendIndexFiles(library.files, "项目源码索引");
 }
 
 function renderSessions() {
@@ -271,6 +294,7 @@ byId("delete-candidate").onclick = async () => {
 
 byId("refresh").onclick = () => loadSnapshot().catch((error) => byId("updated").textContent = error.message);
 byId("filter").oninput = renderDocuments;
+byId("open-global-library").onclick = showGlobalLibrary;
 byId("close-project-library").onclick = () => byId("project-library-dialog").close();
 byId("project-library-dialog").onclick = (event) => {
   if (event.target === event.currentTarget) event.currentTarget.close();

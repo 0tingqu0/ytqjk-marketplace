@@ -46,3 +46,18 @@ class DashboardDocumentationTest(unittest.TestCase):
         self.assertIn('result.error_code === "UPDATE_TOKEN_INVALID"', script)
         self.assertIn("await checkUpdate()", script)
         self.assertIn('.version-trigger.has-update', style)
+
+    def test_dashboard_exposes_global_index_browser(self) -> None:
+        dashboard = (
+            ROOT / "plugins" / "ytqjk-agentic-orchestrator" / "skills"
+            / "ytqjk" / "dashboard"
+        )
+        html = (dashboard / "index.html").read_text(encoding="utf-8")
+        script = (dashboard / "app.js").read_text(encoding="utf-8")
+        handler = (dashboard / "knowledge_dashboard.py").read_text(encoding="utf-8")
+
+        self.assertIn('id="open-global-library"', html)
+        self.assertIn('id="library-kicker"', html)
+        self.assertIn('fetch("/api/global-library")', script)
+        self.assertIn('appendIndexFiles(library.files, "已验证与已批准知识")', script)
+        self.assertIn('url.path == "/api/global-library"', handler)

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from archive_sync import sync_archived_sessions
+from global_store import is_current_approved_hit
 from project_prefetch import list_prefetch, prefetch_stats
 
 
@@ -57,6 +59,24 @@ def global_library(root: Path, documents: list[dict[str, object]]) -> dict[str, 
     }
 
 
+def global_index_library(root: Path) -> dict[str, object]:
+    global_dir = root / "global-cache"
+    manifest = read_json(global_dir / "manifest.json")
+    stats = manifest.get("stats", {})
+    if not isinstance(stats, dict):
+        stats = {}
+    files, chunk_count = index_contents(
+        global_dir / "lexical.sqlite3",
+        lambda chunk: is_current_approved_hit(root, chunk),
+    )
+    return {
+        "indexed_at": manifest.get("indexed_at"), "files": files,
+        "file_count": len(files), "chunk_count": chunk_count,
+        "expected_files": stats.get("files", 0),
+        "expected_chunks": stats.get("chunks", 0),
+    }
+
+
 def relative_files(root: Path, relative: str, label: str, state: str, safe_document: object) -> list[dict[str, object]]:
     directory = root / relative
     if not directory.is_dir():
@@ -97,32 +117,52 @@ def project_library(root: Path, project_id: str) -> dict[str, object] | None:
     identity, stats = manifest.get("identity", {}), manifest.get("stats", {})
     if not isinstance(identity, dict) or not isinstance(stats, dict):
         return None
-    database = project_dir / "lexical.sqlite3"
-    chunks = read_project_chunks(database) if database.is_file() else []
-    files: dict[str, list[dict[str, object]]] = {}
-    for chunk in chunks:
-        files.setdefault(str(chunk["path"]), []).append(chunk)
+    files, chunk_count = index_contents(project_dir / "lexical.sqlite3")
     return {
         "id": project_id, "name": identity.get("name", project_id),
-        "indexed_at": manifest.get("indexed_at"), "files": list(files.values()),
-        "file_count": len(files), "chunk_count": len(chunks),
+        "indexed_at": manifest.get("indexed_at"), "files": files,
+        "file_count": len(files), "chunk_count": chunk_count,
         "expected_files": stats.get("files", 0), "expected_chunks": stats.get("chunks", 0),
         "prefetch": list_prefetch(project_dir), "cache": prefetch_stats(project_dir),
     }
 
 
-def read_project_chunks(database: Path) -> list[dict[str, object]]:
+def index_contents(
+    database: Path,
+    validator: Callable[[dict[str, object]], bool] | None = None,
+) -> tuple[list[list[dict[str, object]]], int]:
+    chunks = read_index_chunks(database) if database.is_file() else []
+    if validator is not None:
+        chunks = [chunk for chunk in chunks if validator(chunk)]
+    files: dict[str, list[dict[str, object]]] = {}
+    for chunk in chunks:
+        files.setdefault(str(chunk["path"]), []).append(chunk)
+    return list(files.values()), len(chunks)
+
+
+def read_index_chunks(database: Path) -> list[dict[str, object]]:
     connection = sqlite3.connect(database)
     try:
-        rows = connection.execute(
-            "SELECT path, line_start, line_end, content FROM chunks ORDER BY path, line_start LIMIT 500"
-        ).fetchall()
+        try:
+            rows = connection.execute(
+                "SELECT path, line_start, line_end, content, source_sha256 "
+                "FROM chunks ORDER BY path, line_start LIMIT 500"
+            ).fetchall()
+        except sqlite3.Error:
+            rows = connection.execute(
+                "SELECT path, line_start, line_end, content "
+                "FROM chunks ORDER BY path, line_start LIMIT 500"
+            ).fetchall()
     except sqlite3.Error:
         return []
     finally:
         connection.close()
     return [
-        {"path": row[0], "line_start": row[1], "line_end": row[2], "content": row[3]}
+        {
+            "path": row[0], "line_start": row[1], "line_end": row[2],
+            "content": row[3],
+            **({"source_sha256": row[4]} if len(row) > 4 else {}),
+        }
         for row in rows
     ]
 
