@@ -17,6 +17,7 @@ from desktop_autostart import install as install_autostart
 from desktop_autostart import path as autostart_path
 import document_runtime_service as runtime_service
 from platform_paths import default_knowledge_root
+from runtime_logging import configure_logging, log_exception, shutdown_logging
 from windows_task import TASK_NAME, register as register_task
 from windows_task import unregister as unregister_task
 
@@ -92,10 +93,11 @@ def wait_for_service(root: Path, port: int) -> bool:
 def spawn(root: Path, port: int, executable: Path | None = None) -> int:
     directory = root / "service"
     directory.mkdir(parents=True, exist_ok=True)
-    log = (directory / LOG_NAME).open("ab")
     options: dict[str, object] = {
-        "stdin": subprocess.DEVNULL, "stdout": log,
-        "stderr": subprocess.STDOUT, "close_fds": True,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
         "cwd": str(directory),
     }
     if sys.platform == "win32":
@@ -106,11 +108,8 @@ def spawn(root: Path, port: int, executable: Path | None = None) -> int:
         )
     else:
         options["start_new_session"] = True
-    try:
-        command = run_command(root, port, executable)
-        process = subprocess.Popen(command, **options)
-    finally:
-        log.close()
+    command = run_command(root, port, executable)
+    process = subprocess.Popen(command, **options)
     return process.pid
 
 
@@ -311,7 +310,22 @@ def main() -> int:
     args = _parser().parse_args()
     root = args.knowledge_root.resolve()
     if args.command == "run":
-        run_service(root, args.port)
+        logger = configure_logging(
+            root / "service" / LOG_NAME,
+            component="dashboard.service",
+        )
+        try:
+            run_service(root, args.port)
+        except Exception as error:
+            log_exception(
+                logger,
+                "dashboard_service_failed",
+                error,
+                port=args.port,
+            )
+            return 1
+        finally:
+            shutdown_logging()
         return 0
     if args.command == "install":
         result = install(root, args.port, args.document_runtime)

@@ -44,6 +44,25 @@ class DashboardRestartTest(unittest.TestCase):
 
         schedule.assert_called_once_with(Path("knowledge"), 8765)
 
+    def test_scheduler_logs_stable_failure_without_exception_detail(self) -> None:
+        with (
+            mock.patch.object(
+                RESTART, "schedule", side_effect=OSError("PRIVATE_MARKER")
+            ),
+            mock.patch.object(RESTART, "log_event") as log_event,
+        ):
+            callback = RESTART.single_restart_scheduler(Path("knowledge"), 8765)
+            callback()
+
+        self.assertEqual(
+            log_event.call_args.args[2],
+            "dashboard_restart_schedule_failed",
+        )
+        self.assertEqual(log_event.call_args.kwargs, {
+            "port": 8765,
+            "reason": "PROCESS_START_FAILED",
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

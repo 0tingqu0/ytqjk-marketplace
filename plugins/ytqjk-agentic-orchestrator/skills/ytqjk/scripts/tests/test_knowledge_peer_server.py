@@ -19,6 +19,7 @@ from peer_test_support import (  # noqa: E402
     start_server,
     write_project,
 )
+from runtime_logging import configure_logging, shutdown_logging  # noqa: E402
 
 
 def test_two_peers_query_and_fetch_material(tmp_path: Path) -> None:
@@ -180,6 +181,36 @@ def test_discovery_lists_only_authorized_roots(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_peer_request_log_excludes_query_and_secret(
+    tmp_path: Path,
+) -> None:
+    client_root = tmp_path / "client"
+    server_root = tmp_path / "server"
+    log_path = tmp_path / "peer.log"
+    marker = "PRIVATE_PEER_QUERY_MARKER"
+    write_project(server_root, marker)
+    configure_logging(log_path, component="peer")
+    server, thread = start_server(server_root)
+    try:
+        endpoint = f"http://127.0.0.1:{server.server_port}"
+        _, server_id, secret = pair(client_root, server_root, endpoint)
+        KnowledgePeerClient(client_root).query(
+            server_id, PROJECT_ID, marker, 5
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        shutdown_logging()
+
+    content = log_path.read_text(encoding="utf-8")
+    assert "logger=ytqjk.peer.http" in content
+    assert "event=http_request" in content
+    assert "route=/v1/query" in content
+    assert marker not in content
+    assert secret not in content
 
 
 def _post(

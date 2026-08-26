@@ -24,12 +24,20 @@ from knowledge_peer_replay import PeerReplayError, ReplayGuard
 from knowledge_peer_response import signed_response_headers
 from knowledge_peer_scope import PeerScopeError, export_catalog
 from knowledge_peer_store import PeerConfigStore, PeerStoreError
+from runtime_logging import SafeHttpLogMixin
 
 
-class KnowledgePeerHandler(BaseHTTPRequestHandler):
+class KnowledgePeerHandler(SafeHttpLogMixin, BaseHTTPRequestHandler):
     knowledge_root: Path
     store: PeerConfigStore
     replay: ReplayGuard
+    request_log_component = "peer.http"
+
+    def request_log_route(self, request_path: str) -> str:
+        path = request_path.split("?", 1)[0]
+        if path in {"/v1/health", "/v1/query", "/v1/material"}:
+            return path
+        return "/v1/{unknown}"
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path not in {"/v1/health", "/v1/query", "/v1/material"}:
@@ -195,10 +203,6 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
                 self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
-
-    def log_message(self, _format: str, *_args: object) -> None:
-        return
-
 
 def start_peer_server(
     root: Path,
