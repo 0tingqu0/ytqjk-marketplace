@@ -62,7 +62,8 @@ def test_peer_workspace_has_complete_accessible_controls() -> None:
     assert dom["peer-shared-secret"][1]["type"] == "password"
     assert dom["peer-shared-secret"][1]["autocomplete"] == "new-password"
     assert dom["peer-status"][1]["role"] == "status"
-    assert dom["peer-project-id"][1]["list"] == "peer-project-options"
+    assert dom["peer-project-id"][0] == "select"
+    assert dom["peer-dispatch-project"][0] == "select"
     assert dom["peer-export-node-id"][1]["list"] == "peer-node-options"
 
 
@@ -101,6 +102,16 @@ def test_peer_contract_fields_and_material_scope_are_explicit() -> None:
         "material",
     ):
         assert f'/api/peers/{action}' in api
+
+
+def test_project_selects_show_names_and_submit_ids() -> None:
+    render = (DASHBOARD / "js/peers/render.js").read_text(
+        encoding="utf-8"
+    )
+    assert "option.value = project.id" in render
+    assert "option.textContent = project.name || project.id" in render
+    assert 'renderProjectSelect("peer-project-id"' in render
+    assert 'renderProjectSelect("peer-dispatch-project"' in render
 
 
 def test_saved_secret_is_not_rendered_or_persisted() -> None:

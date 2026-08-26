@@ -82,9 +82,20 @@ function projectOptions(snapshot) {
   return (snapshot?.projects || []).map((project) => {
     const option = document.createElement("option");
     option.value = project.id;
-    option.label = project.name;
+    option.textContent = project.name || project.id;
+    option.title = project.id;
     return option;
   });
+}
+
+function renderProjectSelect(id, snapshot) {
+  const control = byId(id);
+  const selected = control.value;
+  const options = projectOptions(snapshot);
+  clear(control, options);
+  if (options.some((option) => option.value === selected)) {
+    control.value = selected;
+  }
 }
 
 function nodeOptions(tree) {
@@ -144,7 +155,8 @@ export function renderPeerWorkspace(state) {
   renderService(state, service);
   renderPeers(state, service);
   renderResults(state);
-  clear(byId("peer-project-options"), projectOptions(state.snapshot));
+  renderProjectSelect("peer-dispatch-project", state.snapshot);
+  renderProjectSelect("peer-project-id", state.snapshot);
   clear(byId("peer-node-options"), nodeOptions(state.tree));
   const status = state.peerError
     ? `局域网服务读取失败：${state.peerError}`

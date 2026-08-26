@@ -59,6 +59,24 @@
   font-weight: 700;
 }
 
+.peer-dispatch-form select,
+.peer-dialog-form select {
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
+.peer-dispatch-form select:focus-visible,
+.peer-dialog-form select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .check-row {
   min-height: 38px;
   display: inline-flex;
