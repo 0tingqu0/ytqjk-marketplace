@@ -3,3 +3,9 @@
 .pytest_cache/
 .venv/
 /skills/
+
+# Local task plans; keep .cursor/rules trackable.
+/.cursor/tasks/
+
+# Local installer snapshots and rollback state.
+/.ytqjk-install/
