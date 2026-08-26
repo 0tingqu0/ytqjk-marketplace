@@ -3,6 +3,7 @@ import { restoreIntakeResults, restoreTheme } from "./js/store.js";
 import { saveTheme, state } from "./js/store.js";
 import { ROUTES, createRouter } from "./js/router.js";
 import { byId } from "./js/ui/dom.js";
+import { bindRail, closeRail } from "./js/ui/rail.js";
 import { bindLibraryDialog } from "./js/ui/library-dialog.js";
 import { showGlobalLibrary } from "./js/ui/library-dialog.js";
 import { showProjectLibrary } from "./js/ui/library-dialog.js";
@@ -41,8 +42,7 @@ function showRoute(route, focus = false) {
     const current = node.dataset.route === route ? "page" : "false";
     node.setAttribute("aria-current", String(current));
   });
-  document.querySelector(".app-shell").classList.remove("rail-open");
-  byId("rail-toggle").setAttribute("aria-expanded", "false");
+  closeRail();
   if (focus) byId("view-root").focus();
 }
 function renderAll() {
@@ -167,15 +167,7 @@ function bindControls() {
   byId("theme-toggle").onclick = () => {
     setTheme(NEXT_THEME[document.body.dataset.theme]);
   };
-  byId("rail-toggle").onclick = () => {
-    const shell = document.querySelector(".app-shell");
-    shell.classList.toggle("rail-open");
-    byId("rail-toggle").setAttribute(
-      "aria-expanded",
-      String(shell.classList.contains("rail-open")),
-    );
-  };
-  byId("bottom-more").onclick = () => byId("rail-toggle").click();
+  bindRail();
   bindCommandPalette(router, documentActions.selectDocument);
 }
 state.intakeResults = restoreIntakeResults();

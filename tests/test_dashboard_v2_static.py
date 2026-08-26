@@ -88,6 +88,7 @@ class DashboardV2StaticTest(unittest.TestCase):
 
     def test_mobile_targets_and_dialog_backdrops_are_safe(self) -> None:
         style = (DASHBOARD / "style.css").read_text(encoding="utf-8")
+        rail = (DASHBOARD / "js/ui/rail.js").read_text(encoding="utf-8")
         command = (DASHBOARD / "js/command-palette.js").read_text(
             encoding="utf-8"
         )
@@ -98,6 +99,10 @@ class DashboardV2StaticTest(unittest.TestCase):
         self.assertIn("button, .secondary, input, summary,", style)
         self.assertIn(".tree-form-grid select", style)
         self.assertIn("min-height: 44px", style)
+        self.assertIn(".app-shell.rail-open::after", style)
+        self.assertIn("pointer-events: none", style)
+        self.assertIn("event.target.closest?.(allowed)", rail)
+        self.assertIn("#app-rail, #rail-toggle, #bottom-more", rail)
         self.assertIn("event.target === event.currentTarget", command)
         self.assertIn("event.target === event.currentTarget", confirm)
         self.assertIn('dialog.close("cancel")', confirm)

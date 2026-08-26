@@ -181,6 +181,14 @@ dialog header button { flex: none; }
   .app-shell { display: block; }
   .app-rail { position: fixed; z-index: 10; left: 0; width: var(--rail-width); transform: translateX(-100%); }
   .app-shell.rail-open .app-rail { transform: translateX(0); }
+  .app-shell.rail-open::after {
+    position: fixed;
+    z-index: 9;
+    inset: 0;
+    background: #11151880;
+    content: "";
+    pointer-events: none;
+  }
   .mobile-only { display: inline-flex; }
   button, .secondary, input, summary,
   .rail-nav button, .rail-footer button, .filter-row button,
