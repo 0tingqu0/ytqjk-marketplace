@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import concurrent.futures
+import os
 import subprocess
 import sys
 import tempfile
@@ -86,6 +88,39 @@ class FileLockTest(unittest.TestCase):
                 holder.stderr.close()
 
             self.assertEqual(holder.returncode, 0)
+
+    def test_concurrent_empty_lock_initialization_is_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "new.lock"
+
+            def acquire() -> None:
+                with exclusive_file_lock(
+                    lock,
+                    timeout_seconds=2.0,
+                    poll_seconds=0.005,
+                ):
+                    time.sleep(0.002)
+
+            with concurrent.futures.ThreadPoolExecutor(8) as pool:
+                results = [pool.submit(acquire) for _ in range(32)]
+                for result in results:
+                    result.result(timeout=5)
+
+            self.assertEqual(lock.read_bytes(), b"\0")
+
+    def test_hardlinked_lock_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside"
+            lock = root / "shared.lock"
+            outside.write_bytes(b"\0")
+            os.link(outside, lock)
+
+            with self.assertRaisesRegex(ValueError, "单链接"):
+                with exclusive_file_lock(lock):
+                    self.fail("hardlinked lock unexpectedly acquired")
+
+            self.assertEqual(outside.read_bytes(), b"\0")
 
 
 if __name__ == "__main__":
