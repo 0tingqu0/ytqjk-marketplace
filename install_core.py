@@ -22,9 +22,10 @@ from install_external import (
 )
 from install_external_codex import materialize_plugins
 
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
-MODES = PUBLIC_MODES
+INTERNAL_MODES = ("codex-stable-only",)
+MODES = PUBLIC_MODES + INTERNAL_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]
 
 
@@ -42,8 +43,27 @@ def require_python() -> None:
 
 
 def normalize_mode(mode: str) -> str:
-    if mode not in PUBLIC_MODES:
+    if mode not in MODES:
         raise ValueError("unsupported mode")
+    return mode
+
+
+def normalize_update_mode(
+    mode: str, target: Path | None, codex_import: str,
+    project_bootstrap: str, dashboard_service: str,
+) -> str:
+    """Map the legacy web updater onto the isolated stable-path flow."""
+    mode = normalize_mode(mode)
+    update_target = target is not None and any(
+        part.name.startswith("ytqjk-update-")
+        for part in (target.resolve(), *target.resolve().parents)
+    )
+    if (
+        mode == "codex-only" and update_target
+        and codex_import == "off" and project_bootstrap == "off"
+        and dashboard_service == "off"
+    ):
+        return "codex-stable-only"
     return mode
 
 
@@ -243,7 +263,12 @@ def apply_plan(
             copied += 1
             if fail_after_copy or copied == fail_on_copy:
                 raise RuntimeError("injected copy failure")
-        if codex:
+        if plan.mode == "codex-stable-only":
+            failed_action = "codex-stable-paths"
+            if codex_root is None:
+                raise RuntimeError("codex root is required")
+            materialized = materialize_plugins(codex_root, fault=fault)
+        elif codex:
             failed_action = "codex-actions"
             def materialize() -> None:
                 nonlocal materialized

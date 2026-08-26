@@ -173,6 +173,8 @@ Reload the IDE or create a new chat, then enter `$ytqjk`; you can also select `y
 
 The dashboard always displays the local version in the upper-left corner. When a newer version is available, the version changes color and opens an update action. If GitHub is temporarily unavailable, the local version remains visible. If a background restart expires the update token, the page refreshes the token and retries once. The backend performs one delayed, windowless restart only after the response stream closes. If operating-system timing still interrupts the connection, the page checks the installed version after recovery and reports success only when the version actually changed; it no longer shows a successful installation as `Failed to fetch`. Updates from `0.4.8` are handled directly and do not require manually stopping the knowledge service.
 
+Dashboard updates use an internal stable-plugin-only path. They replace only the two manifest-owned Codex plugin directories and do not invoke the Codex Marketplace or Codex CLI. Knowledge-service configuration and the knowledge root—including candidates, approved material, indexes, models, and imports—remain outside the update transaction and are neither migrated nor rebuilt. Run the full installer explicitly when those components need to change.
+
 Windows users who deployed through Git clone should reuse the desktop directory from the first installation. These commands work from any directory. The installer updates manifest-owned plugin directories and reuses the knowledge base without deleting candidate or approved material:
 
 ```powershell
@@ -198,7 +200,7 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-Create a new task after installation; existing tasks do not reload bundled skills. The current release version is pure SemVer `0.6.2`. `+codex.*` is only for refreshing local development caches and is neither committed nor included in release manifests.
+Create a new task after installation; existing tasks do not reload bundled skills. The current release version is pure SemVer `0.6.3`. `+codex.*` is only for refreshing local development caches and is neither committed nor included in release manifests.
 
 After updating project-level IDE skills, reload the IDE or create a new chat:
 

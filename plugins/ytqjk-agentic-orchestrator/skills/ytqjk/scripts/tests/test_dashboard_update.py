@@ -204,6 +204,8 @@ class DashboardUpdateTest(unittest.TestCase):
             update.run_installer(Path("source"), Path("codex"), "0.4.9")
 
         command = run.call_args.args[0]
+        mode = command.index("--mode")
+        self.assertEqual(command[mode + 1], "codex-stable-only")
         self.assertIn("--dashboard-service", command)
         option = command.index("--dashboard-service")
         self.assertEqual(command[option + 1], "off")

@@ -232,6 +232,10 @@ npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/m
 恢复后核对实际安装版本，只有版本确已更新才显示成功，不再把成功安装显示成
 `Failed to fetch`。从 `0.4.8` 升级也包含兼容处理，无需先手动停止知识库服务。
 
+网页更新使用内部“仅稳定插件”路径：只替换 manifest 管理的两个 Codex 插件目录，不调用
+Codex Marketplace 或 Codex CLI。知识库服务配置与知识根（包括候选、已批准资料、索引、模型
+和导入记录）不属于这次更新事务，不会迁移或重建；需要调整这些组件时再显式运行完整安装器。
+
 通过 Git clone 一键部署的 Windows 用户，后续优先调用首次安装使用的默认桌面目录；命令从
 任意目录执行，无需先切换路径。安装器会更新本项目 manifest 管理的插件目录并复用已有知识库，
 不会删除候选资料或已批准资料：
@@ -261,7 +265,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.6.2`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.6.3`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 

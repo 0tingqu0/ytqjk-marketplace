@@ -25,7 +25,7 @@ from dashboard_service_install import (
 from external_command_runner import run_external
 from install_core import (
     MODES, PUBLIC_MODES, VERSION, InstallError, apply_plan, build_plan,
-    require_python, target_has_grill_me,
+    normalize_update_mode, require_python, target_has_grill_me,
 )
 from install_receipt import (
     health, json_text, receipt, summary_text, vector_result,
@@ -91,6 +91,11 @@ def main(
             raise ValueError(
                 "non-interactive apply requires --apply --yes --target-root"
             )
+        if not args.uninstall:
+            args.mode = normalize_update_mode(
+                args.mode, args.target_root, args.codex_import,
+                args.project_bootstrap, args.dashboard_service,
+            )
         plan = (
             build_uninstall_plan(args.mode, args.target_root)
             if args.uninstall else build_plan(args.mode, args.target_root)
@@ -106,7 +111,7 @@ def main(
                 if action.get("kind") in ("codex", "third-party-stage")
             }
             external_environment = os.environ.copy()
-            if "codex" in required:
+            if "codex" in required or args.mode == "codex-stable-only":
                 codex_root = prepare_codex_root(codex_root)
                 external_environment["CODEX_HOME"] = str(codex_root)
             cli_runtime = ensure_cli_runtime(required)

@@ -11,7 +11,9 @@ from unittest import mock
 
 import codex_plugin_paths
 from codex_plugin_paths import PLUGIN_NAMES, PluginPathError, manifest_path
-from install_core import InstallError, apply_plan, build_plan
+from install_core import (
+    InstallError, apply_plan, build_plan, normalize_update_mode,
+)
 from install_external_codex import materialize_plugins
 from setup import main
 from tests.test_install_external import StatefulRunner
@@ -29,6 +31,32 @@ def digest_tree(root: Path) -> dict[str, str]:
 
 
 class StablePluginPathTest(unittest.TestCase):
+    def test_stable_only_materializes_without_external_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "target"
+            codex_root = Path(directory) / "codex"
+            plan = build_plan("codex-stable-only", target)
+
+            result = apply_plan(plan, target, codex_root=codex_root)
+
+            self.assertEqual(plan.actions, ())
+            self.assertEqual(result["external_commands"], [])
+            self.assertEqual(
+                result["codex_plugins"]["stable_paths"],
+                [f"plugins/{name}" for name in PLUGIN_NAMES],
+            )
+
+    def test_legacy_web_update_maps_to_stable_only(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="ytqjk-update-test-"
+        ) as directory:
+            mode = normalize_update_mode(
+                "codex-only", Path(directory) / "source",
+                "off", "off", "off",
+            )
+
+        self.assertEqual(mode, "codex-stable-only")
+
     def test_materializes_fixed_paths_with_relative_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             codex_root = Path(directory) / "codex"
@@ -113,11 +141,15 @@ class StablePluginPathTest(unittest.TestCase):
 class StablePluginPathReceiptTest(unittest.TestCase):
 
     def test_cli_can_skip_dashboard_service_during_web_update(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "target"
+        with tempfile.TemporaryDirectory(
+            prefix="ytqjk-update-test-"
+        ) as directory:
+            target = Path(directory) / "source" / "release"
+            codex_root = Path(directory) / "codex"
             output = io.StringIO()
             with (
                 mock.patch("setup.configure_dashboard") as dashboard,
+                mock.patch("setup.run_external") as external,
                 redirect_stdout(output),
             ):
                 code = main(
@@ -125,15 +157,19 @@ class StablePluginPathReceiptTest(unittest.TestCase):
                         "--apply", "--yes", "--json",
                         "--mode", "codex-only",
                         "--target-root", str(target),
-                        "--codex-root", str(Path(directory) / "codex"),
+                        "--codex-root", str(codex_root),
+                        "--codex-import", "off",
+                        "--project-bootstrap", "off",
                         "--dashboard-service", "off",
                     ],
-                    runner=StatefulRunner(),
                 )
 
             receipt = json.loads(output.getvalue())
             self.assertEqual(code, 0)
             dashboard.assert_not_called()
+            external.assert_not_called()
+            self.assertEqual(receipt["mode"], "codex-stable-only")
+            self.assertEqual(receipt["apply"]["external_commands"], [])
             self.assertEqual(
                 receipt["dashboard_service"]["status"], "SKIPPED_UPDATE"
             )

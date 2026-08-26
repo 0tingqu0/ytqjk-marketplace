@@ -204,7 +204,7 @@ def run_installer(
     """Run the release's transactional installer for managed plugins only."""
     command = [
         sys.executable, str(source_root / "setup.py"),
-        "--mode", "codex-only", "--target-root", str(source_root),
+        "--mode", "codex-stable-only", "--target-root", str(source_root),
         "--codex-root", str(codex_root), "--codex-import", "off",
         "--project-bootstrap", "off", "--dashboard-service", "off",
         "--apply", "--yes", "--json",
