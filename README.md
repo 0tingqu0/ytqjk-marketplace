@@ -1,42 +1,31 @@
 # YTQJK Agentic Orchestrator
 
-[English](README.en.md) | 简体中文
+English | [简体中文](README.zh-CN.md)
 
-面向复杂项目的 Codex 多任务总控。它负责按自然任务粒度加权的计划、并行 Worker、独立监督与复审、唯一 Git 提交者、单独进度报告者，以及本机 agentic RAG 知识缓存；总控本身不处理实现。
+A Codex multi-task orchestrator for complex projects. It provides plans weighted by natural task size, parallel workers, independent supervision and review, a sole Git committer, a dedicated progress reporter, and a local agentic RAG knowledge cache. The orchestrator itself does not implement project changes.
 
-知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
-extension 可加载独立 skills，但不加载 plugin；完整多会话编排还取决于宿主是否提供可见会话 API。
+The knowledge-base scripts support Windows, Linux, and WSL2. The Codex IDE extension in VS Code, Cursor, and Windsurf can load standalone skills but not plugins. Full multi-session orchestration also depends on whether the host exposes visible session APIs.
 
-## 推荐：Git clone 后一键部署
+## Recommended: one-command deployment after Git clone
 
-推荐使用仓库根目录的无参数安装入口。它会把当前克隆目录同时作为安装目标和知识索引项目，
-安装两个 Codex 插件、复制项目级 skills、导入当前用户允许导入的 Codex 候选资料，
-自动建立项目知识索引，并将知识库网页注册为当前用户登录自启动的后台进程。安装只写入当前用户目录和
-本机知识根，不需要管理员或 root 权限，也不会下载发布者的私人知识内容。
+Use the argument-free installer in the repository root. It uses the cloned repository as both the installation target and the project to index, installs two Codex plugins, copies project-level skills, imports Codex candidate material that the current user permits, builds the project knowledge index, and registers the knowledge dashboard as a background process that starts when the current user signs in. The installer writes only to the current user's directories and the local knowledge root. It does not require administrator or root privileges, and it does not download the publisher's private knowledge.
 
-### 1. 检查运行环境
+### 1. Check the runtime environment
 
-Windows 只需预先安装 Git。`install.cmd` 会仅为本次安装绕过 PowerShell 脚本执行策略，不修改
-系统或用户策略。缺少 Python 3.11+ 时，`install.ps1` 会通过 `winget` 静默安装当前用户级
-Python 3.12；缺少 Node.js、npm、`npx` 或 Codex CLI 时，
-`install.ps1` 会自动在 `%LOCALAPPDATA%\YTQJK\runtime` 准备便携 Node.js 24.15.0，校验
-Node.js 官方 `SHASUMS256.txt`，再安装固定版 `@openai/codex@0.147.0`。该运行时不需要管理员
-权限、不修改系统 PATH，只在本次安装进程中使用；重复运行会验证并复用有效运行时。
+On Windows, only Git must be installed beforehand. `install.cmd` bypasses the PowerShell execution policy for this installation process only; it does not change system or user policy. If Python 3.11+ is missing, `install.ps1` silently installs per-user Python 3.12 through `winget`. If Node.js, npm, `npx`, or Codex CLI is missing, `install.ps1` prepares portable Node.js 24.15.0 under `%LOCALAPPDATA%\YTQJK\runtime`, verifies the official Node.js `SHASUMS256.txt`, and installs the pinned `@openai/codex@0.147.0`. This runtime needs no administrator access, does not modify the system PATH, is used only by the installation process, and is verified and reused on later runs.
 
-可先确认 Git；已有 Python 时也可检查其版本：
+Check Git first. If Python is already installed, check its version as well:
 
 ```powershell
 git --version
 python --version
 ```
 
-Linux、macOS 或 WSL 将 `python` 改为 `python3`，并仍需预先提供 Node.js/npm、`npx` 和
-Codex CLI。使用 Remote SSH、Dev Container 或 WSL 时，必须在远端、容器或 WSL 终端内
-执行检查和安装，不能在 Windows 宿主安装后直接当作远端结果。
+On Linux, macOS, or WSL, use `python3` instead of `python`, and provide Node.js/npm, `npx`, and Codex CLI in advance. With Remote SSH, Dev Containers, or WSL, run the checks and installer inside the remote host, container, or WSL terminal. A Windows-host installation does not count as a remote installation.
 
-### 2. 克隆并安装
+### 2. Clone and install
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 $repo = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ytqjk-marketplace'
@@ -44,17 +33,15 @@ git clone https://github.com/0tingqu0/ytqjk-marketplace.git $repo
 & "$repo\install.cmd"
 ```
 
-默认安装目录固定为系统实际桌面下的 `ytqjk-marketplace`。`install.cmd` 会自动使用自身所在
-仓库作为安装目标和知识索引项目，因此从桌面或其他目录打开终端都不需要先执行 `cd`。
-如需安装到其他位置，将上面 `$repo` 改为目标绝对路径。
+The default installation directory is `ytqjk-marketplace` on the actual system desktop. `install.cmd` automatically uses the repository containing the script as both the installation target and the knowledge-index project, so there is no need to run `cd` first. To install elsewhere, replace `$repo` with the desired absolute path.
 
-也可以显式调用 PowerShell；必须带当前进程级执行策略参数：
+You can also invoke PowerShell explicitly. Keep the process-scoped execution-policy option:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo\install.ps1"
 ```
 
-Linux、macOS 或 WSL：
+Linux, macOS, or WSL:
 
 ```bash
 git clone https://github.com/0tingqu0/ytqjk-marketplace.git
@@ -62,28 +49,21 @@ cd ytqjk-marketplace
 sh ./install.sh
 ```
 
-脚本会立即打印启动提示，并实时转发依赖下载和 Codex 插件安装输出。Windows 首次运行需要
-访问 `winget` 软件源、`nodejs.org`、npm registry、GitHub 和 Codex 插件源，会按需下载并执行
-Python、Node.js、固定版本 Codex CLI、Codex 插件及第三方 `skills` CLI；请在受信任网络中执行。首次运行可能需要几分钟，
-不要在尚有输出时关闭终端。安装成功后进程返回 `0`，终端最后输出简洁中文回执；排障或
-自动化解析时显式追加 `--json`。
+The installer immediately prints a startup message and forwards dependency-download and Codex-plugin installation output in real time. A first Windows installation may access `winget` sources, `nodejs.org`, the npm registry, GitHub, and Codex plugin sources. It downloads and runs Python, Node.js, the pinned Codex CLI, Codex plugins, and the third-party `skills` CLI as needed, so run it only on a trusted network. The first run may take several minutes. Do not close the terminal while output is still being produced. A successful installation exits with code `0` and ends with a concise receipt; append `--json` for troubleshooting or automation.
 
-### 3. 验证安装结果
+### 3. Verify the installation
 
-首次完整部署的回执应满足：
+A first complete deployment receipt should satisfy all of the following:
 
-- `apply.status` 为 `APPLIED`。
-- `cli_runtime.status` 为 `SYSTEM`、`BOOTSTRAPPED` 或 `REUSED`；后两者表示使用用户目录中的
-  便携运行时。
-- `knowledge_bootstrap.status` 为 `SUCCEEDED`。
-- `knowledge_import.status` 为 `SUCCEEDED`；重复安装可能为 `SKIPPED_MARKER`。如果当前用户的
-  历史资料中有个别文件无法解析，则为 `SUCCEEDED_WITH_WARNINGS`，可用资料仍会导入，且不影响
-  插件和项目知识库部署。
-- `knowledge_import.discovered_count` 为 `0` 表示当前用户没有可导入资料，不是安装失败。
-- `apply.codex_plugins.stable_paths` 包含两个稳定插件目录。
-- `dashboard_service.status` 为 `RUNNING`，且 `dashboard_service.autostart` 为 `INSTALLED`。
+- `apply.status` is `APPLIED`.
+- `cli_runtime.status` is `SYSTEM`, `BOOTSTRAPPED`, or `REUSED`. The latter two indicate a portable runtime in the user's directory.
+- `knowledge_bootstrap.status` is `SUCCEEDED`.
+- `knowledge_import.status` is `SUCCEEDED`; a repeated install may report `SKIPPED_MARKER`. If a few historical files cannot be parsed, the status is `SUCCEEDED_WITH_WARNINGS`; usable material is still imported and plugin/project knowledge deployment is unaffected.
+- `knowledge_import.discovered_count` equal to `0` means the current user has no importable material; it is not an installation failure.
+- `apply.codex_plugins.stable_paths` contains both stable plugin directories.
+- `dashboard_service.status` is `RUNNING`, and `dashboard_service.autostart` is `INSTALLED`.
 
-Windows PowerShell 可进一步检查稳定插件和知识库布局：
+Windows PowerShell can further verify the stable plugins and knowledge layout:
 
 ```powershell
 $knowledgeRoot = if (Test-Path 'D:\') {
@@ -99,7 +79,7 @@ Test-Path "$knowledgeRoot\catalog.json"
 Get-ChildItem "$knowledgeRoot\projects" -Directory
 ```
 
-Linux、macOS 或 WSL：
+Linux, macOS, or WSL:
 
 ```bash
 knowledge_root="${YTQJK_KNOWLEDGE_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk}"
@@ -111,83 +91,53 @@ test -f "$knowledge_root/catalog.json"
 find "$knowledge_root/projects" -mindepth 1 -maxdepth 1 -type d -print
 ```
 
-安装结束后可直接打开 `http://127.0.0.1:8765`，关闭安装终端不会中断网页。安装器还会在
-Codex 全局 `AGENTS.md`（存在非空 `AGENTS.override.md` 时使用该文件）写入带明确起止标记的
-YTQJK 受管块；新会话会自动发现知识库、注册当前 Git 项目或普通目录，并建立匿名锚点，卸载时仅删除
-该受管块而保留用户原有内容。重启 Codex 后即可生效。
+After installation, open `http://127.0.0.1:8765`. Closing the installation terminal does not stop the dashboard. The installer also writes a clearly marked YTQJK-managed block to the global Codex `AGENTS.md`, or to a non-empty `AGENTS.override.md` when one exists. New sessions then discover the knowledge base automatically, register the current Git project or ordinary directory, and create an anonymous anchor. Uninstallation removes only the managed block and preserves the user's existing content. Restart Codex to load the changes.
 
-还可输入 `/hooks`，审阅并信任 YTQJK 的 `SessionStart` 钩子，使锚定在首轮回答前完成。
-Codex 官方安全策略禁止安装器替用户自动信任插件钩子；不信任 hook 不影响上述全局指引在
-新会话首次项目操作前接入知识库。
+You can also enter `/hooks` and review and trust YTQJK's `SessionStart` hook so anchoring completes before the first response. Codex security policy prevents installers from trusting plugin hooks on a user's behalf. Leaving the hook untrusted does not prevent the global guidance from connecting the knowledge base before the first project action in a new session.
 
-YTQJK 只管理带明确标记的受管块，不会复制或改写用户自己的全局规则。跨电脑迁移
-`AGENTS.md` 时不要保留 `C:\Users\某用户名\...` 之类的绝对用户路径；可选的全局记忆应使用
-`~/.codex/mem.md` 等当前用户路径。该文件不存在与知识库查询无关，不应把完整
-`KNOWLEDGE_RECEIPT` 缩写成单独的锚点值。
+YTQJK manages only explicitly marked blocks and does not copy or rewrite the user's global rules. When moving `AGENTS.md` between computers, do not retain absolute user paths such as `C:\Users\some-user\...`. Optional global memory should use a current-user path such as `~/.codex/mem.md`. That file is unrelated to knowledge queries, and a complete `KNOWLEDGE_RECEIPT` must not be shortened to the anchor value alone.
 
-### 4. 自定义安装
+### 4. Custom installation
 
-需要预览或分别指定安装目标和知识索引项目时，传入参数会保留 dry-run 行为：
+To preview changes or specify the installation target and indexed project independently, pass explicit arguments. Parameterized runs remain dry-runs by default:
 
 ```bash
 python3 setup.py --mode all --target-root /path/to/install \
   --project-root /path/to/project --json
 ```
 
-确认后显式应用：
+Apply explicitly after review:
 
 ```powershell
 .\install.cmd --mode all --target-root C:\path\to\install `
   --project-root C:\path\to\project --apply --yes --json
 ```
 
-`--target-root` 只决定安装位置，永远不会隐式成为知识索引项目。项目索引只读取显式
-`--project-root`；未配置时回执为 `NOT_CONFIGURED`。`--project-bootstrap off` 可跳过项目索引
-初始化。正常应用成功返回 `0`；默认自动导入中的单文件解析告警也返回 `0`，不可恢复的候选
-资料导入失败或 `--codex-import force` 解析失败返回 `3`，项目索引初始化失败返回 `4`，后台
-控制台配置失败返回 `5`，全局知识指引配置失败返回 `6`，安装或参数错误返回 `2`。JSON
-回执不包含项目绝对路径或知识内容。
-Windows 优先使用当前用户计划任务常驻后台控制台；若系统拒绝创建计划任务，安装器会自动
-回退到当前用户“启动”目录，不需要管理员权限。
+`--target-root` controls only the installation location and never implicitly becomes the project to index. Project indexing reads only the explicit `--project-root`; without it, the receipt reports `NOT_CONFIGURED`. Use `--project-bootstrap off` to skip project-index initialization. A normal successful apply exits with `0`; warnings for individual files during the default automatic import also exit with `0`. An unrecoverable candidate-import failure or a `--codex-import force` parse failure exits with `3`, project-index initialization failure with `4`, dashboard configuration failure with `5`, global knowledge-guidance configuration failure with `6`, and installation or argument errors with `2`. JSON receipts do not contain absolute project paths or knowledge content.
 
-## 卸载历史版本
+On Windows, the installer prefers a per-user scheduled task for the persistent dashboard. If the system rejects task creation, it falls back to the current user's Startup folder without requiring administrator access.
 
-已安装过的 YTQJK 版本可通过当前安装器统一卸载。默认仅输出将移除的插件和技能目录；确认后
-再执行。卸载只处理 YTQJK 自身的 Codex 插件、marketplace 和技能目录，不会删除第三方
-`grill-me`、知识库数据、`%LOCALAPPDATA%\YTQJK\runtime` 便携运行时或由 `winget` 安装的
-Python。卸载同时只移除全局 `AGENTS.md` 中带 YTQJK 标记的受管块。运行时或 Python 需要
-清理时，应在确认没有后台控制台及安装进程运行后单独卸载。
+## Uninstall earlier versions
+
+The current installer can remove any installed YTQJK version. By default it only previews the plugin and skill directories to be removed; apply after review. Uninstallation removes only YTQJK's Codex plugins, marketplace, and skill directories. It does not delete third-party `grill-me`, knowledge data, the `%LOCALAPPDATA%\YTQJK\runtime` portable runtime, or Python installed through `winget`. It also removes only the marked YTQJK-managed block from the global `AGENTS.md`. If the runtime or Python must be removed, first confirm that no dashboard or installer process is running, then uninstall them separately.
 
 ```powershell
 .\install.cmd --uninstall
 ```
 
-该入口自动使用当前仓库作为 `--target-root`，并补齐 `--mode all --apply --yes`。
-需要缩小范围时可显式追加 `--mode codex-only`、`--mode ide-only` 或
-`--mode knowledge-only`。不要直接复制 `C:\path\to\project` 之类的占位路径。
+This entry point uses the current repository as `--target-root` and supplies `--mode all --apply --yes`. To narrow the scope, append `--mode codex-only`, `--mode ide-only`, or `--mode knowledge-only`. Do not copy placeholder paths such as `C:\path\to\project` literally.
 
-默认安装和卸载只打印简洁结果；排查失败或供自动化解析时显式追加 `--json` 获取完整结构化回执。
+Installation and uninstallation print concise results by default. Append `--json` only when diagnosing failures or consuming the structured receipt in automation.
 
-`all` 和 `knowledge-only` 首次成功应用后默认执行 Codex 资料候选导入。来源根按
-`--codex-root`、`CODEX_HOME`、`~/.codex` 的顺序解析，不从 `--target-root` 推导；仅处理
-`mem.md` 以及 `memories/`、`knowledge/`、`attachments/` 中受支持且通过安全检查的文件。
-`memories/` 中无扩展名的普通文件仅按严格 UTF-8 文本处理；未配置解析器的 Office、图片和
-音频只计入 `not_configured_count`，不会伪报为已导入。凭据、token、secret、auth、config、
-session、日志、缓存、plugin、skill、worktree 和 archive 命名族永久排除，不会打开读取。
-所有新来源都以独立 `CANDIDATE` 证明入库；内容即使与 approved/verified 文档重复，也不会
-继承批准状态或写入已批准版本的来源列表。
-目标按 `--knowledge-root`、`YTQJK_KNOWLEDGE_ROOT` 和平台默认目录的顺序解析，固定写入
-`<knowledge-root>/service/knowledge.sqlite3` 的 `global-candidates` 范围，不与检索缓存数据库
-混用。使用 `--codex-import off` 禁用，或使用 `--codex-import force` 重试已标记的导入。
-Dry-run 不读取 Codex 资料。默认 `auto` 模式会隔离无法解析的单个历史文件，继续导入其余安全
-资料；回执为 `SUCCEEDED_WITH_WARNINGS`，并保留 `parse_failed_count`、`failure_stage=PARSING`
-和 `failure_code=PARSE_FAILED`，进程返回码为 `0`。使用 `--codex-import force` 时仍严格失败，
-便于人工修复后重试。不可恢复的导入失败不会回滚已成功安装的文件，回执中 `apply.status` 仍为
-`APPLIED`、`knowledge_import.status` 为 `FAILED`，进程返回码为 `3`。
+On the first successful `all` or `knowledge-only` apply, the installer imports Codex material as candidates by default. It resolves the source root in this order: `--codex-root`, `CODEX_HOME`, then `~/.codex`. It processes only `mem.md` and supported files under `memories/`, `knowledge/`, and `attachments/` that pass safety checks. Extensionless regular files under `memories/` are accepted only as strict UTF-8 text. Office files, images, and audio without a configured parser increase `not_configured_count` and are not falsely reported as imported. Credential-, token-, secret-, auth-, config-, session-, log-, cache-, plugin-, skill-, worktree-, and archive-named families are permanently excluded and are not opened.
 
-## Codex 桌面版与 CLI
+Every new source enters the store as an independent `CANDIDATE` proof. Even if its content duplicates approved or verified material, it does not inherit approval or modify the approved version's source list.
 
-仅安装 plugin（不初始化指定项目的索引）：
+The destination is resolved in this order: `--knowledge-root`, `YTQJK_KNOWLEDGE_ROOT`, then the platform default. Candidates are written to the `global-candidates` scope in `<knowledge-root>/service/knowledge.sqlite3`, separate from retrieval-cache databases. Use `--codex-import off` to disable import or `--codex-import force` to retry a marked import. Dry-runs do not read Codex material. Default `auto` mode isolates an unparseable historical file and continues importing other safe material. The receipt becomes `SUCCEEDED_WITH_WARNINGS`, preserves `parse_failed_count`, `failure_stage=PARSING`, and `failure_code=PARSE_FAILED`, and exits with `0`. `--codex-import force` remains strict so users can repair the source and retry. An unrecoverable import failure does not roll back successfully installed files: `apply.status` remains `APPLIED`, `knowledge_import.status` becomes `FAILED`, and the process exits with `3`.
+
+## Codex desktop and CLI
+
+To install only the plugins without initializing an index for a specified project:
 
 ```powershell
 codex plugin marketplace add 0tingqu0/ytqjk-marketplace
@@ -195,46 +145,35 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-这会同时安装总控和本地知识库插件。重启 Codex、新建任务，然后输入 `$ytqjk`；也可以通过 `/skills` 选择 `ytqjk`。仅当当前宿主
-明确提供 `/ytqjk` 快捷命令时才使用该写法，不把它作为可移植入口。裸调用尚未给出明确目标时，它会留在当前激活任务，
-每次只问一个带推荐答案的目标问题，不调用工具、不创建任何总控或其他角色；调用中已包含可执行目标，或你随后给出明确目标时，不再重复要求确认。目标确认后的首个工具调用
-才读取协议并创建总控；目标确认不等于计划批准，后续仍执行 `grill-me`、监督和计划批准门。
+This installs both the orchestrator and the local knowledge plugin. Restart Codex, create a new task, and enter `$ytqjk`; you can also select `ytqjk` through `/skills`. Use `/ytqjk` only when the current host explicitly exposes that shortcut; it is not the portable entry point. A bare invocation without a clear objective remains in the active task and asks one objective question at a time, including a recommended answer. It does not call tools or create orchestrator or role sessions. If the invocation already contains an actionable objective, or you later provide one, it does not ask for confirmation again. Only the first tool call after objective confirmation reads the protocol and creates the orchestrator. Objective confirmation is not plan approval: the later `grill-me`, supervision, and plan-approval gates still apply.
 
-### 宿主能力边界
+### Host capability boundary
 
-| 使用方式 | 可加载内容 | 完整多会话编排 |
+| Usage | Loadable content | Full multi-session orchestration |
 | --- | --- | --- |
-| Codex 桌面版 | plugin 与 bundled skills | 宿主提供会话创建、列出、读取、等待和消息 API 时可用；标题缺失只影响跨次复用 |
-| Codex CLI | marketplace plugin 与 bundled skills | 需要同一组核心可见会话 API；能力检测不通过时返回 `BLOCKED` |
-| Codex IDE extension | 项目级 standalone skills；不加载 plugin | 需要同一组核心可见会话 API；能力检测不通过时返回 `BLOCKED`，改用具备这些 API 的桌面版或 CLI 宿主 |
+| Codex desktop | Plugins and bundled skills | Available when the host exposes session create, list, read, wait, and message APIs; missing titles affect only cross-run reuse |
+| Codex CLI | Marketplace plugins and bundled skills | Requires the same visible core session APIs; returns `BLOCKED` when capability checks fail |
+| Codex IDE extension | Project-level standalone skills; no plugin loading | Requires the same visible core session APIs; returns `BLOCKED` when capability checks fail, so use a desktop or CLI host that exposes them |
 
-安装成功只表示 skill 可被发现，不代表宿主具备完整多会话控制能力。置顶和归档属于可选增强；
-缺失时进度会话保持可见，完成会话标记为 `DONE`。YTQJK 不会用隐藏智能体或当前会话内角色扮演
-绕过核心能力检查。
+A successful installation proves only that the skill can be discovered. It does not prove that the host supports full multi-session control. Pinning and archiving are optional enhancements. When absent, the progress task remains visible and completed tasks are marked `DONE`. YTQJK does not bypass core capability checks with hidden agents or role-play inside the current session.
 
-## VS Code、Cursor 与 Windsurf
+## VS Code, Cursor, and Windsurf
 
-Codex IDE extension 当前不加载 plugins，但支持 standalone skills。请在目标项目的终端执行以下项目级安装；使用 Remote SSH、Dev Container 或 WSL 时，要在远端/容器/WSL 工作区终端执行：
+The Codex IDE extension currently loads standalone skills but not plugins. Run the following project-level installation in the target project's terminal. With Remote SSH, Dev Containers, or WSL, run it inside the remote, container, or WSL workspace terminal:
 
 ```bash
 npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/main/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
 ```
 
-重载 IDE 或新建聊天，然后输入 `$ytqjk`，也可以通过 `/skills` 选择 `ytqjk`。IDE 中不要使用 `/ytqjk`。
+Reload the IDE or create a new chat, then enter `$ytqjk`; you can also select `ytqjk` through `/skills`. Do not use `/ytqjk` in the IDE.
 
-`skills@latest` 是 Vercel 维护的第三方 CLI，会下载并执行最新版代码并写入项目 skill 目录；安装前应检查来源。项目级安装只影响当前仓库。
+`skills@latest` is a third-party CLI maintained by Vercel. It downloads and executes the latest code and writes to the project skill directory, so inspect the source before installation. Project-level installation affects only the current repository.
 
-## 更新与回滚
+## Updates and rollback
 
-知识库网页左上角始终显示本地版本；发现新版本时版本号变色，点开后可直接更新。GitHub
-暂时不可达时仍保留本地版本号；后台重启造成更新令牌过期时，页面会自动刷新令牌并重试一次。
-网页响应流关闭后，后台才会无窗口延迟重启一次；若连接仍因系统时序中断，页面会在后台
-恢复后核对实际安装版本，只有版本确已更新才显示成功，不再把成功安装显示成
-`Failed to fetch`。从 `0.4.8` 升级也包含兼容处理，无需先手动停止知识库服务。
+The dashboard always displays the local version in the upper-left corner. When a newer version is available, the version changes color and opens an update action. If GitHub is temporarily unavailable, the local version remains visible. If a background restart expires the update token, the page refreshes the token and retries once. The backend performs one delayed, windowless restart only after the response stream closes. If operating-system timing still interrupts the connection, the page checks the installed version after recovery and reports success only when the version actually changed; it no longer shows a successful installation as `Failed to fetch`. Updates from `0.4.8` are handled directly and do not require manually stopping the knowledge service.
 
-通过 Git clone 一键部署的 Windows 用户，后续优先调用首次安装使用的默认桌面目录；命令从
-任意目录执行，无需先切换路径。安装器会更新本项目 manifest 管理的插件目录并复用已有知识库，
-不会删除候选资料或已批准资料：
+Windows users who deployed through Git clone should reuse the desktop directory from the first installation. These commands work from any directory. The installer updates manifest-owned plugin directories and reuses the knowledge base without deleting candidate or approved material:
 
 ```powershell
 $repo = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ytqjk-marketplace'
@@ -242,17 +181,16 @@ git -C $repo pull --ff-only
 & "$repo\install.cmd"
 ```
 
-首次安装时使用了自定义 `$repo` 的用户，更新时继续填写同一绝对路径。
+If the first installation used a custom `$repo`, use that same absolute path for updates.
 
-Linux、macOS 或 WSL：
+Linux, macOS, or WSL:
 
 ```bash
 git pull --ff-only
 sh ./install.sh
 ```
 
-Codex 桌面版在 Plugins 页面卸载后重新安装。Codex CLI 输入 `/plugins` 打开插件浏览器，
-在 `ytqjk` marketplace 中卸载后重新安装；也可从已配置的 marketplace 重新执行安装命令：
+In Codex desktop, uninstall and reinstall from the Plugins page. In Codex CLI, enter `/plugins`, uninstall from the `ytqjk` marketplace, and reinstall. You can also upgrade the configured marketplace and install again:
 
 ```bash
 codex plugin marketplace upgrade ytqjk
@@ -260,18 +198,17 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.6.2`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+Create a new task after installation; existing tasks do not reload bundled skills. The current release version is pure SemVer `0.6.2`. `+codex.*` is only for refreshing local development caches and is neither committed nor included in release manifests.
 
-IDE 项目级 skills 更新后重载 IDE 或新建聊天：
+After updating project-level IDE skills, reload the IDE or create a new chat:
 
 ```bash
 npx --yes skills@latest update ytqjk caveman -p
 ```
 
-若更新命令无法识别旧安装记录，重新执行上面的项目级 `skills add` 命令。
+If the update command cannot identify an older installation record, run the project-level `skills add` command again.
 
-已有对应发布 tag 时，可将 marketplace 固定回该 tag；发布者未创建 tag 时不能使用此回滚流程：
+When a corresponding release tag exists, the marketplace can be pinned back to that tag. This rollback is unavailable if the publisher did not create the tag:
 
 ```bash
 codex plugin marketplace remove ytqjk
@@ -280,52 +217,34 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-IDE 回滚使用相同 tag 的 skills 路径重新安装：
+For an IDE rollback, reinstall the skills path from the same tag:
 
 ```bash
 npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<release-tag>/plugins/ytqjk-agentic-orchestrator/skills --agent codex --skill ytqjk --skill caveman --copy
 ```
 
-## 环境要求
+## Requirements
 
-- Git；Linux、macOS 和 WSL 还需 Python 3.11 或更高版本，建议使用 Python 3.12。
-  Windows 缺失 Python 时由安装入口通过 `winget` 安装当前用户级 Python 3.12。
-- Windows 缺少 Node.js/npm、`npx` 或 Codex CLI 时会自动使用用户级便携运行时；Linux、macOS
-  和 WSL 仍需自行安装这些命令。
-- Node.js/npm 必须满足 `npm view skills@latest engines`；当前 Windows 自举版本为 Node.js
-  24.15.0，Codex CLI 固定为 0.147.0。发布时 `skills@1.5.22` 要求 Node.js 22.20.0 或更高版本。
-- Linux 需要可用的 Python `venv` 模块；Ubuntu/Debian 通常由 `python3-venv` 提供。
-- 首次需要图片或 PDF 深度解析时，会在知识根中创建隔离的
-  Python 运行时，安装固定版本的直接依赖，并下载功能所需的官方模型。
-  已验证的运行时和模型会幂等复用，不会每次投递重新下载。
-- 传递依赖由首次安装时的 `pip` 解析结果决定；安装后会核对完整分发
-  清单、必需导入、CPU Provider，并以运行时整树 SHA-256 封存。因此单次
-  安装可检测漂移，但不同日期或平台的首次安装并非逐字节可复现构建。
-- 文档运行时包含 Docling、RapidOCR、PaddleOCR、PyTorch 与本地
-  视觉模型。首次下载和安装可能产生数 GiB 流量与更大的磁盘占用；
-  一般需要数分钟到数十分钟，取决于网络、CPU/GPU 和 Python wheel 平台。
-  离线环境必须先准备完整且通过哈希校验的本地运行时与模型。
-- Windows 优先使用 `D:\knowledge`。没有 D 盘时使用 `%LOCALAPPDATA%\YTQJK\knowledge`。
-- Linux/WSL2 使用 `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`。
-- `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
-- RAG 首次查询前会刷新缺失、过期或安全版本不兼容的项目与全局索引。`auto` 仅在文本达到
-  10 MiB 或 2,000 个分块时启用向量；小知识库不会因连续空查询而自动下载模型。
-- 常规查询不重新扫描整个总库，只校验实际命中的来源文件；单次查询最多等待 60 秒，超时
-  返回可重试错误，避免会话长期卡住。
-- 所有会话检索都先查当前项目子库；命中即结束，未命中才回源总库。总库命中会写入当前
-  项目子库，总库仍未命中则返回 `KNOWLEDGE_MISS`，由当前会话外部检索并通过候选接口提交。
-  会话不能切换项目或读取其他项目子库。每个项目子库总容量为 1 GiB，按 LFU+LRU 淘汰，
-  优先保留多次命中的知识。
-- 只有当前用户配置未发现 `grill-me` 时，总控才会在确认后执行
-  `npx --yes skills@latest add mattpocock/skills --agent codex --skill grill-me --yes --copy`；暖启动不做 npm 或网络检查。启用向量检索时，会在确认相关信息后安装隔离依赖并下载本地模型。
+- Git. Linux, macOS, and WSL also require Python 3.11 or later; Python 3.12 is recommended. On Windows, the installer uses `winget` to install per-user Python 3.12 if Python is missing.
+- If Node.js/npm, `npx`, or Codex CLI is missing on Windows, the installer uses a per-user portable runtime. Linux, macOS, and WSL users must install these commands themselves.
+- Node.js/npm must satisfy `npm view skills@latest engines`. The current Windows bootstrap uses Node.js 24.15.0 and pins Codex CLI 0.147.0. At release time, `skills@1.5.22` requires Node.js 22.20.0 or later.
+- Linux requires a working Python `venv` module, commonly provided by `python3-venv` on Ubuntu/Debian.
+- The first deep image or PDF analysis creates an isolated Python runtime in the knowledge root, installs pinned direct dependencies, and downloads the required official models. Verified runtimes and models are reused idempotently.
+- Transitive dependencies are determined by the first installation's `pip` resolution. After installation, the complete distribution inventory, required imports, CPU provider, and a SHA-256 hash of the runtime tree are verified and sealed. One installation can therefore detect drift, but first-time installations on different dates or platforms are not byte-for-byte reproducible builds.
+- The document runtime includes Docling, RapidOCR, PaddleOCR, PyTorch, and local vision models. The first download and installation may transfer several GiB and consume more disk space. It may take minutes or tens of minutes depending on the network, CPU/GPU, and available Python wheels. Offline environments must prepare a complete local runtime and models with verified hashes.
+- Windows prefers `D:\knowledge`; without a D drive it uses `%LOCALAPPDATA%\YTQJK\knowledge`.
+- Linux/WSL2 uses `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`.
+- `YTQJK_KNOWLEDGE_ROOT` overrides either platform default. WSL does not automatically reuse the Windows cache. Do not let Windows and WSL open the same SQLite/LanceDB cache concurrently.
+- Before the first RAG query, missing, stale, or security-incompatible project and global indexes are refreshed. `auto` enables vectors only when text reaches 10 MiB or 2,000 chunks; repeated empty queries on a small knowledge base do not download models.
+- Normal queries do not rescan the entire global store. They validate only source files actually matched. Each query waits at most 60 seconds and returns a retryable timeout instead of blocking a session indefinitely.
+- Every session queries the current project cache first. A hit ends the lookup; a miss falls back to the global store. A global hit is cached into the current project. If the global store also misses, the result is `KNOWLEDGE_MISS`; the current session performs external research and submits sanitized findings through the candidate interface. A session cannot switch projects or read another project's cache. Each project cache has a 1 GiB capacity and uses LFU+LRU eviction to retain frequently reused knowledge.
+- Only when the current user's configuration has no `grill-me` does the orchestrator run `npx --yes skills@latest add mattpocock/skills --agent codex --skill grill-me --yes --copy` after confirmation. Warm starts perform no npm or network check. Vector search installs isolated dependencies and downloads local models only after the relevant information is confirmed.
 
-## 知识库控制台
+## Knowledge dashboard
 
-在本机管理控制台查看知识根、项目索引、已验证/已批准经验和候选经验，并投递、编辑、删除或
-人工批准候选资料。一键安装会立即在后台启动控制台，并注册为当前用户登录自启动；关闭安装
-终端不会停止服务。
+The local dashboard displays the knowledge root, project indexes, verified/approved experience, and candidate experience. It can submit, edit, delete, or manually approve candidates. The one-command installer starts the dashboard immediately in the background and registers per-user login autostart. Closing the installer terminal does not stop it.
 
-Windows PowerShell 可检查、重启或停止服务：
+Windows PowerShell can inspect, restart, or stop the service:
 
 ```powershell
 $service = "$HOME\.codex\plugins\ytqjk-agentic-orchestrator\skills\ytqjk\dashboard\dashboard_service.py"
@@ -334,7 +253,7 @@ python $service start
 python $service stop
 ```
 
-Linux、macOS 或 WSL2：
+Linux, macOS, or WSL2:
 
 ```bash
 service="$HOME/.codex/plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/dashboard_service.py"
@@ -343,121 +262,68 @@ python3 "$service" start
 python3 "$service" stop
 ```
 
-打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
-Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见图片和音频资料，最大
-10 MiB。Office 正文和表格会被提取分析；WAV 音频记录声道、
-采样率和时长，其他音频只记录格式。音频不做语音识别或转写。原文件随候选
-分析记录保存在 `imports/originals`。候选资料不会自动批准、不会进入 `verified`、不会
-自动重新索引。敏感文件名和提取文本中的高置信凭据会被拒绝。
+Open `http://127.0.0.1:8765`. The service binds only to the local loopback interface. You can drag, select, or paste text, Word (`.docx`), PowerPoint (`.pptx`), Excel (`.xlsx`/`.csv`), common image formats, and audio files up to 10 MiB. Office text and tables are extracted. WAV files record channels, sample rate, and duration; other audio records format only. Audio is not transcribed. Original files are retained with candidate analysis records under `imports/originals`. Candidates are never automatically approved, never enter `verified`, and never trigger automatic reindexing. Sensitive filenames and high-confidence credentials in extracted text are rejected.
 
-图片默认先由 RapidOCR 提取文字；无文本、短页低置信，或低置信文字块
-占比达到 20% 时再交给 PP-OCRv6 复核。图片分类使用
-DocumentFigureClassifier-v2.5，并尝试与 SmolVLM-256M-Instruct 的本地描述
-合并为摘要和标签。描述格式无效或无法验证时会保留 OCR 与分类结果，转入
-人工复审，不会丢弃整份图片。OCR 文字、摘要和标签都会进入结构化知识分块，
-可通过文本检索。所有推理均使用通过 manifest 哈希校验的本地模型；必需模型
-未配置或完整性证据不成立时会失败关闭。
-自动安装固定直接依赖版本并验证完整运行时，只使用 CPU 推理，
-不安装 `onnxruntime-gpu`；所有
-Hugging Face 模型均固定到提交 SHA，RapidOCR 字典同时校验 SHA-256。
+Images are first processed with RapidOCR. Images with no text, short pages with low confidence, or at least 20% low-confidence text blocks are checked again with PP-OCRv6. Image classification uses DocumentFigureClassifier-v2.5 and attempts to combine it with a local SmolVLM-256M-Instruct description for summaries and tags. If the description format is invalid or cannot be verified, OCR and classification results are preserved and the item is sent for manual review. OCR text, summaries, and tags all become structured searchable knowledge chunks. Inference uses only local models verified against manifest hashes. Missing required models or incomplete integrity evidence fail closed.
 
-PDF 使用 Docling 区分原生文字页、扫描页和混合页，并保留表格、
-物理页码、坐标和置信证据。无文字、测得低置信或复杂版式的扫描页由
-PaddleOCR 二次识别，复杂版式再由 PP-StructureV3 的八类本地模型分析；
-正常高置信页面不会重复处理。识别器返回全零置信度时按“未报告置信度”处理，
-保留文字并转人工复审，不把它误判为已测得低置信。PDF 内嵌图片默认只保留
-位置，不运行 SmolVLM，并标记人工复审。任一必需模型缺失、版本不符或摘要
-校验失败都会返回 `NOT_CONFIGURED`，不会联网补模型或伪造二次识别成功。
-此外支持常见 UTF-8 源码、配置和数据文本（如 `.py`、`.ts`、`.java`、`.go`、`.sql`、
-`.xml`、`.toml`、`.ini`、`.sh`、`.ps1`、`.diff`、`.jsonl`、`.svg`）。旧版二进制 Office
-格式（`.doc`、`.ppt`、`.xls`）需要先转换为现代格式后投递。
-候选资料可在控制台中编辑或删除，已验证和已批准知识不提供此入口；删除投递资料时会一并
-删除其关联原件。
+The automatic installation pins direct dependency versions, verifies the full runtime, and uses CPU inference only. It does not install `onnxruntime-gpu`. Every Hugging Face model is pinned to a commit SHA, and the RapidOCR dictionary is verified with SHA-256.
 
-### 局域网知识库协作
+PDF processing uses Docling to distinguish native-text, scanned, and mixed pages while preserving tables, physical page numbers, coordinates, and confidence evidence. Scanned pages with no text, measured low confidence, or complex layouts are checked with PaddleOCR; complex layouts are further analyzed by the eight local PP-StructureV3 models. Normal high-confidence pages are not processed twice. An all-zero recognizer confidence is treated as “confidence not reported”: text is preserved and sent for manual review instead of being mislabeled as measured low confidence. Embedded PDF images retain their positions but do not use SmolVLM by default and are marked for manual review. Missing required models, version mismatches, or checksum failures return `NOT_CONFIGURED`; they do not fetch models from the network or claim secondary recognition succeeded.
 
-“知识库树”页面可初始化独立的局域网知识服务、生成一次性共享密钥、配置授权电脑，
-并对同一项目中经授权的远端节点及其本地子树执行显式检索和材料读取。网页管理端始终只监听本机；局域网
-服务默认也只监听回环地址，只有明确填写私有网段 IP、勾选未加密 HTTP 风险并重启工作台后
-才会对局域网开放。HTTP 对请求和成功响应分别执行 HMAC 身份认证与完整性校验，并将请求
-nonce 持久化，服务重启后仍会拒绝重放；它不加密内容，跨不可信网络应使用 HTTPS 反向代理
-或 VPN。插件不修改防火墙、不广播发现设备，也不自动建立信任；每台授权电脑的固定地址
-必须由用户显式配置。
+The dashboard also accepts common UTF-8 source, configuration, and data formats such as `.py`, `.ts`, `.java`, `.go`, `.sql`, `.xml`, `.toml`, `.ini`, `.sh`, `.ps1`, `.diff`, `.jsonl`, and `.svg`. Convert legacy binary Office formats (`.doc`, `.ppt`, `.xls`) to their modern equivalents before submission. Candidates can be edited or deleted from the dashboard. Verified and approved knowledge has no such entry point. Deleting a submitted item also deletes its associated original file.
 
-每条授权连接有两个方向明确的节点：`remote_node_id` 是本机允许访问的远端目标，
-`export_node_id` 是本机开放给对方的根节点。跨电脑查询只能读取被授权节点及其本地后代，
-绝不向上访问其父库，也不读取无关兄弟库、其他项目库或经挂载节点转发到第三台电脑。
-远端材料读取会再次校验其真实来源节点仍在授权子树内。已保存密钥不会在页面回显；编辑连接
-时留空会保留原密钥，重新填写才会轮换。普通会话查询仍只访问当前项目子库和总库回源链，
-不会因配置了局域网连接就自动跨电脑检索。
+### LAN knowledge collaboration
 
-控制台启动后会检查 `0tingqu0/ytqjk-marketplace` 的最新正式 GitHub Release。页面左上角常显
-当前版本；发现更高版本时版本号会变色，点击版本号后显示“更新”按钮。确认后会下载固定仓库的 Release 包，校验安全路径及两个插件
-manifest 的版本一致性，再调用原子安装器更新 `~/.codex/plugins` 下的稳定插件目录。失败会保留
-当前版本，知识库数据不会删除；浏览器响应完成后，控制台服务会在后台无窗口重启，
-Codex 新任务会加载新版插件。草稿、预发布版本、非纯
-SemVer tag 和其他下载地址不会进入自动更新。`0.3.2` 及更早版本尚无网页更新入口，需要先按
-[更新与回滚](#更新与回滚)执行一次 `git pull --ff-only` 和安装脚本，升级到 `0.4.0` 或更高
-版本后才会收到后续网页更新提醒。
+The Knowledge Tree page can initialize a separate LAN knowledge service, generate a one-time shared secret, configure authorized computers, and explicitly query and read material from authorized remote nodes and their local subtrees in the same project. The web admin interface always remains loopback-only. The LAN service is also loopback-only by default. It is exposed to the LAN only after a private-subnet IP is entered, the unencrypted-HTTP warning is acknowledged, and the dashboard is restarted. HTTP requests and successful responses use separate HMAC authentication and integrity checks. Request nonces are persisted so replays remain rejected after a service restart. HMAC does not encrypt content; use an HTTPS reverse proxy or VPN across untrusted networks. The plugin does not change firewall rules, broadcast discovery, or establish trust automatically. The fixed address of each authorized computer must be configured explicitly.
 
-每次投递后会自动评估是否具备批准条件，并在候选资料中记录结论和原因：需有可解析内容、
-至少 200 个有效字符，以及来源、证据或验证线索。评估通过仅表示“可提交批准审阅”，不会
-自动进入 `approved` 或参与全局索引。
-外部资料会作为候选资料包保存：原件保留、总览记录分析结果，正文会优先按标题和段落拆为
-约 1,800 字符以内的知识片段。片段都含来源文件、片段序号和父资料 ID；删除总览会一并
-删除关联片段与原件。
+Every authorized connection has two directional nodes: `remote_node_id` is the remote target this computer may access, while `export_node_id` is the local root exposed to the peer. Cross-computer queries can read only the authorized node and its local descendants. They never traverse upward to a parent store, read unrelated siblings or other project stores, or forward through a mounted node to a third computer. Remote material reads revalidate that the actual source node remains inside the authorized subtree. Saved secrets are never displayed again. Leaving the secret blank while editing preserves it; entering a new value rotates it. Ordinary session queries continue to use only the current project cache and the global fallback chain. Merely configuring a LAN connection never enables automatic cross-computer retrieval.
 
-一键安装成功后，安装器从当前克隆的发布包复制并以 manifest 管理两个稳定用户目录：
-`~/.codex/plugins/ytqjk-agentic-orchestrator` 和
-`~/.codex/plugins/ytqjk-knowledge`（Windows 为 `$HOME\.codex\plugins\...`）。这些目录不依赖
-Codex marketplace 的版本化 cache；重复安装可安全更新本项目受管目录，卸载只删除清单明确
-拥有的上述两个目录。
+After startup, the dashboard checks the latest stable GitHub Release of `0tingqu0/ytqjk-marketplace`. The current version remains visible in the upper-left corner. When a newer version is found, the version changes color and exposes an Update button. After confirmation, the dashboard downloads a release archive from the fixed repository, validates safe paths and matching versions in both plugin manifests, then calls the atomic installer to update the stable plugin directories under `~/.codex/plugins`. Failures preserve the current version and never delete knowledge data. After the browser response completes, the dashboard restarts in the background without opening a window, and new Codex tasks load the updated plugin. Drafts, prereleases, non-pure-SemVer tags, and alternative download locations are excluded. Versions `0.3.2` and earlier have no web updater; first follow [Updates and rollback](#updates-and-rollback) to run `git pull --ff-only` and the installer, upgrading to `0.4.0` or later.
 
-## 会话锚定
+Every submission is automatically evaluated for approval readiness, and the decision and reasons are stored with the candidate. Readiness requires parseable content, at least 200 meaningful characters, and source, evidence, or verification clues. Passing this evaluation means only “ready for approval review”; it never automatically enters `approved` or the global index.
 
-Codex 信任插件的 `SessionStart` 钩子后，Git 项目和普通目录中的会话，以及 YTQJK 创建的总控、
-监督、复审、Git、进度、RAG 和 Worker 会话，都会在知识根建立匿名锚点。普通目录无需先执行
-`git init`，会直接以当前工作目录建立独立子库并查询总知识库。
-压缩恢复时取回该会话的脱敏任务摘要；归档时将可复用经验写入候选知识区。锚点不保存原始
-会话 ID 或完整对话。同一会话每次调用知识库只刷新同一个匿名锚点，不会重复建立或重复导出
-未变化的经验。支持定时任务的宿主可运行以下命令，回收 30 天未活动且有摘要的会话：
+External material is stored as a candidate package. The original is retained, an overview records the analysis, and the body is split by headings and paragraphs into knowledge chunks of about 1,800 characters or fewer. Every chunk records the source file, chunk number, and parent material ID. Deleting the overview also deletes its chunks and original file.
 
-Windows PowerShell：
+After one-command installation, the installer copies two stable per-user directories from the cloned release package and manages them through a manifest: `~/.codex/plugins/ytqjk-agentic-orchestrator` and `~/.codex/plugins/ytqjk-knowledge` (`$HOME\.codex\plugins\...` on Windows). These directories do not depend on Codex marketplace versioned caches. Repeated installation safely updates only project-managed directories, and uninstallation removes only those two manifest-owned directories.
+
+## Session anchoring
+
+After the user trusts the Codex plugin's `SessionStart` hook, sessions in Git projects and ordinary directories, plus orchestrator, supervisor, reviewer, Git, progress, RAG, and worker sessions created by YTQJK, receive anonymous anchors in the knowledge root. Ordinary directories do not need `git init`; the current working directory becomes a separate project cache and can query the global knowledge store.
+
+Compaction recovery retrieves a sanitized task summary for that session. Archiving writes reusable experience to the candidate area. Anchors do not store raw session IDs or full conversations. Every knowledge call in a session refreshes the same anonymous anchor instead of creating duplicates or re-exporting unchanged experience. On hosts that support scheduled tasks, use the following commands to sweep sessions inactive for 30 days that have summaries.
+
+Windows PowerShell:
 
 ```powershell
 python plugins\ytqjk-agentic-orchestrator\skills\ytqjk\scripts\session_memory.py sweep --days 30
 ```
 
-Linux 或 WSL2：
+Linux or WSL2:
 
 ```bash
 python3 plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/session_memory.py sweep --days 30
 ```
 
-Codex 未向插件开放全局新会话、自动压缩和闲置事件订阅时，插件无法自行监听所有会话；此时
-仅对 YTQJK 创建并由其生命周期流程管理的会话执行锚定与回收。
+When Codex does not expose global new-session, automatic-compaction, and idle-event subscriptions to plugins, the plugin cannot observe every session. In that case, anchoring and cleanup apply only to sessions created and managed through the YTQJK lifecycle.
 
-启用 `$ytqjk` 并确认目标后，会优先在 Codex 中复用当前项目已有、未归档的
-`[YTQJK][项目ID]` 职责会话，并恢复其活动锚点摘要；只有找不到合适会话、旧会话或锚点已归档、
-会话持续失联或职责冲突时才创建新会话。它使用 Codex 会话协作，不把当前会话替换为智能体。
+After `$ytqjk` is enabled and the objective is confirmed, the orchestrator first tries to reuse existing unarchived `[YTQJK][project ID]` role tasks for the current project and restores their active anchor summaries. It creates new tasks only when no suitable task exists, the old task or anchor is archived, the task remains unreachable, or role responsibilities conflict. It uses Codex task collaboration and does not replace the current task with an agent.
 
-## 本地数据与安全
+## Local data and security
 
-- 插件在目标确认后保持轻量；首次出现可由项目回答的问题或首次索引需求时，才自动构建当前会话工作目录的完整知识库：建立独立项目子库、索引项目安全文本，并刷新只包含已验证/已批准内容的总库索引。该流程不要求目录是 Git 仓库，且不会自动批准候选资料。Git 项目仅索引已跟踪的文本文件；普通目录会安全扫描其中的常规文本文件。两种模式都会在分块前排除常见敏感路径和高置信秘密内容；这不能替代项目自己的秘密扫描。
-- 知识根保存源码检索缓存、项目绝对路径、脱敏后的网络 remote 或本地 remote 指纹，以及模型和隔离运行时。
-- 项目知识子库为可重建缓存，达到 1 GiB 硬上限时会按 LFU+LRU 自动淘汰回源知识，必要时
-  丢弃可重建向量/词法索引。安全规则升级产生的旧缓存不因升级自动删除，任意手工删除仍需明确批准。
-- 知识根、模型、SQLite/vector 数据库、handoff 和任何本机凭据均不在本仓库中。
+- The plugin stays lightweight after objective confirmation. On the first question that the project can answer, or the first indexing request, it builds the complete knowledge base for the current session directory: a separate project cache, an index of safe project text, and a global index containing only verified or approved content. The directory need not be a Git repository, and candidates are never approved automatically. Git projects index tracked text only. Ordinary directories safely scan regular text files. Both modes exclude common sensitive paths and high-confidence secrets before chunking; this does not replace the project's own secret scanning.
+- The knowledge root stores source-retrieval caches, absolute project paths, sanitized network remotes or local-remote fingerprints, models, and isolated runtimes.
+- Project knowledge stores are rebuildable caches. At the 1 GiB hard limit, cached global knowledge is evicted with LFU+LRU. Rebuildable vector and lexical indexes are dropped only when necessary. Old caches created before a safety-rule update are not automatically deleted, and every manual deletion still requires explicit approval.
+- The knowledge root, models, SQLite/vector databases, handoffs, and all local credentials are excluded from this repository.
 
-安装前请检查 [插件清单](plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json)、[总控协议](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/protocol.md) 和 [知识库说明](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/knowledge-store.md)。
+Before installation, inspect the [plugin manifest](plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json), [orchestration protocol](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/protocol.md), and [knowledge-store documentation](plugins/ytqjk-agentic-orchestrator/skills/ytqjk/references/knowledge-store.md).
 
-## 引用与致谢
+## Attribution
 
-- 计划拷问使用 Matt Pocock 的 [`grill-me`](https://github.com/mattpocock/skills)，由用户指定的 `npx --yes skills@latest add mattpocock/skills` 在缺失时安装；版权和许可证归原作者。
-- 精简输出使用 Matt Pocock 历史版 `caveman` 的 MIT 授权快照。当前上游已移除此 skill，因此本插件随包分发审计版本；完整来源、改动说明与许可证见 [第三方声明](plugins/ytqjk-agentic-orchestrator/THIRD_PARTY_NOTICES.md)。
-- skill 安装命令使用 Vercel Labs 的开源 [`skills` CLI](https://github.com/vercel-labs/skills)。插件和 skill 结构遵循 [OpenAI Codex Plugins](https://developers.openai.com/codex/plugins) 与 [Skills](https://developers.openai.com/codex/skills) 规范。
-- OpenAI 的 `plugin-creator` 仅用于本项目的脚手架、cachebuster 和校验，不是运行时依赖。除以上明确列出的 skill 外，本插件没有内嵌其他人的插件代码。
+- Plan interrogation uses Matt Pocock's [`grill-me`](https://github.com/mattpocock/skills), installed only when missing through the user-approved `npx --yes skills@latest add mattpocock/skills` command. Copyright and licensing remain with the original author.
+- Concise output uses an MIT-licensed snapshot of Matt Pocock's historical `caveman` skill. The current upstream no longer includes this skill, so the plugin distributes an audited version. See [Third-Party Notices](plugins/ytqjk-agentic-orchestrator/THIRD_PARTY_NOTICES.md) for source, modifications, and license details.
+- Skill installation commands use Vercel Labs' open-source [`skills` CLI](https://github.com/vercel-labs/skills). Plugin and skill structures follow the [OpenAI Codex Plugins](https://developers.openai.com/codex/plugins) and [Skills](https://developers.openai.com/codex/skills) specifications.
+- OpenAI's `plugin-creator` is used only for this project's scaffolding, cache busting, and validation. It is not a runtime dependency. Except for the explicitly listed skills, this plugin embeds no third-party plugin code.
 
-## 许可证
+## License
 
-[MIT](LICENSE)，Copyright (c) 2026 一听曲就困。
+[MIT](LICENSE), Copyright (c) 2026 一听曲就困.
