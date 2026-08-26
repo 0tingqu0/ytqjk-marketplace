@@ -21,15 +21,29 @@ import knowledge_dashboard as dashboard  # noqa: E402
 
 
 class DashboardUpdateTest(unittest.TestCase):
-    def test_check_reports_only_newer_stable_semver(self) -> None:
+    def test_current_version_prefers_four_part_release_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            plugin = self.plugin_root(Path(temporary), "0.3.2")
-            release = self.release("0.4.0")
+            plugin = self.plugin_root(Path(temporary), "0.6.3")
+            release = plugin / ".codex-plugin" / "release.json"
+            release.write_text(
+                json.dumps({
+                    "schema": "ytqjk-release-version/v1",
+                    "version": "0.6.2.1",
+                }),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(update.current_version(plugin), "0.6.2.1")
+
+    def test_check_reports_newer_four_part_release(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            plugin = self.plugin_root(Path(temporary), "0.6.2")
+            release = self.release("0.6.2.1")
 
             result = update.check_update(plugin, loader=lambda: release)
 
-        self.assertEqual(result["current_version"], "0.3.2")
-        self.assertEqual(result["latest_version"], "0.4.0")
+        self.assertEqual(result["current_version"], "0.6.2")
+        self.assertEqual(result["latest_version"], "0.6.2.1")
         self.assertTrue(result["update_available"])
         self.assertNotIn("archive_url", result)
 
@@ -50,8 +64,8 @@ class DashboardUpdateTest(unittest.TestCase):
             update._release(payload)
 
         payload = self.release_payload("0.4.0")
-        payload["tag_name"] = "v0.04.0"
-        with self.assertRaisesRegex(update.UpdateError, "纯 SemVer"):
+        payload["tag_name"] = "v0.04.0.1"
+        with self.assertRaisesRegex(update.UpdateError, "三段或四段"):
             update._release(payload)
 
     def test_extract_rejects_parent_escape(self) -> None:
@@ -294,8 +308,16 @@ class DashboardUpdateTest(unittest.TestCase):
         root = "0tingqu0-ytqjk-marketplace-fixture"
         with zipfile.ZipFile(destination, "w") as package:
             package.writestr(f"{root}/setup.py", "print('fixture')")
+            package.writestr(
+                f"{root}/plugins/{update.PLUGIN_NAMES[0]}/"
+                ".codex-plugin/release.json",
+                json.dumps({
+                    "schema": "ytqjk-release-version/v1",
+                    "version": version,
+                }),
+            )
             for name in update.PLUGIN_NAMES:
-                manifest = json.dumps({"name": name, "version": version})
+                manifest = json.dumps({"name": name, "version": "0.6.3"})
                 package.writestr(
                     f"{root}/plugins/{name}/.codex-plugin/plugin.json",
                     manifest,

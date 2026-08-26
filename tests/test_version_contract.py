@@ -25,7 +25,7 @@ class VersionContractTest(unittest.TestCase):
             install_core.require_python()
 
     def test_release_version_is_consistent(self) -> None:
-        self.assertEqual(VERSION, "0.6.3")
+        self.assertEqual(VERSION, "0.6.2.1")
         for plugin_name in PLUGIN_NAMES:
             manifest_path = (
                 ROOT
@@ -36,10 +36,17 @@ class VersionContractTest(unittest.TestCase):
             )
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["name"], plugin_name)
-            self.assertEqual(manifest["version"], VERSION)
+            self.assertEqual(manifest["version"], "0.6.3")
 
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn(f"SemVer `{VERSION}`", readme)
+        self.assertIn(f"release version is `{VERSION}`", readme)
+        release = json.loads(
+            (
+                ROOT / "plugins" / PLUGIN_NAMES[0]
+                / ".codex-plugin" / "release.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(release["version"], VERSION)
 
     def test_release_documents_runtime_and_boundaries(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

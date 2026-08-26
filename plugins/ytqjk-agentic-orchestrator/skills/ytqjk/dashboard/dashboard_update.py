@@ -17,6 +17,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from dashboard_version import (
+    VersionError, installed_version, numeric_version, plugin_version,
+    release_version, version_key,
+)
+
 
 REPOSITORY = "0tingqu0/ytqjk-marketplace"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
@@ -42,14 +47,10 @@ class Release:
 
 def current_version(plugin_root: Path) -> str:
     """Read and validate the installed orchestrator version."""
-    manifest = plugin_root / ".codex-plugin" / "plugin.json"
     try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        return installed_version(plugin_root, PLUGIN_NAMES[0])
+    except VersionError as error:
         raise UpdateError("当前插件版本信息无效。") from error
-    if data.get("name") != PLUGIN_NAMES[0]:
-        raise UpdateError("当前插件身份无效。")
-    return _version(data.get("version"))
 
 
 def latest_release(opener: Callable[..., object] = urlopen) -> Release:
@@ -84,7 +85,7 @@ def check_update(
     return {
         "current_version": installed,
         "latest_version": release.version,
-        "update_available": _version_key(release.version) > _version_key(installed),
+        "update_available": version_key(release.version) > version_key(installed),
         "release_url": release.page_url,
     }
 
@@ -98,7 +99,7 @@ def perform_update(
     """Download, validate, and atomically install the latest release."""
     installed = current_version(plugin_root)
     release = loader()
-    if _version_key(release.version) <= _version_key(installed):
+    if version_key(release.version) <= version_key(installed):
         return {
             "status": "UP_TO_DATE",
             "current_version": installed,
@@ -265,14 +266,27 @@ def _release(payload: dict[str, object]) -> Release:
 def _validate_source(source: Path, version: str) -> None:
     if not (source / "setup.py").is_file():
         raise UpdateError("GitHub 更新包缺少安装器。")
+    release_path = (
+        source / "plugins" / PLUGIN_NAMES[0]
+        / ".codex-plugin" / "release.json"
+    )
+    try:
+        if release_version(release_path) != version:
+            raise VersionError("release version does not match")
+    except VersionError as error:
+        raise UpdateError("GitHub 更新包版本不一致。") from error
+    plugin_versions: list[str] = []
     for name in PLUGIN_NAMES:
         manifest = source / "plugins" / name / ".codex-plugin" / "plugin.json"
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            plugin_versions.append(plugin_version(data.get("version")))
+        except (OSError, json.JSONDecodeError, VersionError) as error:
             raise UpdateError("GitHub 更新包插件清单无效。") from error
-        if data.get("name") != name or data.get("version") != version:
+        if data.get("name") != name:
             raise UpdateError("GitHub 更新包版本不一致。")
+    if len(set(plugin_versions)) != 1:
+        raise UpdateError("GitHub 更新包版本不一致。")
 
 
 def _managed_codex_root(plugin_root: Path) -> Path:
@@ -286,20 +300,10 @@ def _managed_codex_root(plugin_root: Path) -> Path:
 
 
 def _version(value: object) -> str:
-    if not isinstance(value, str):
-        raise UpdateError("版本号无效。")
-    parts = value.split(".")
-    invalid = any(
-        not part.isdigit() or len(part) > 1 and part.startswith("0")
-        for part in parts
-    )
-    if len(parts) != 3 or invalid:
-        raise UpdateError("版本号必须是纯 SemVer。")
-    return value
-
-
-def _version_key(value: str) -> tuple[int, int, int]:
-    return tuple(int(part) for part in _version(value).split("."))
+    try:
+        return numeric_version(value)
+    except VersionError as error:
+        raise UpdateError("版本号必须是三段或四段数字。") from error
 
 
 def _github_url(value: str, hosts: set[str]) -> None:
