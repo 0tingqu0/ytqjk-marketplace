@@ -1,5 +1,7 @@
 # YTQJK Agentic Orchestrator
 
+[English](README.en.md) | 简体中文
+
 面向复杂项目的 Codex 多任务总控。它负责按自然任务粒度加权的计划、并行 Worker、独立监督与复审、唯一 Git 提交者、单独进度报告者，以及本机 agentic RAG 知识缓存；总控本身不处理实现。
 
 知识库脚本支持 Windows、Linux 和 WSL2。VS Code、Cursor、Windsurf 中的 Codex IDE
