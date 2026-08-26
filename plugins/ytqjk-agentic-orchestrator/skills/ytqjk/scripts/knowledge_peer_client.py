@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,13 +16,16 @@ from knowledge_peer_contract import (
 )
 from knowledge_peer_response import verify_response_signature
 from knowledge_peer_store import PeerConfigStore, PeerStoreError
+from knowledge_peer_validation import (
+    PeerClientError,
+    exact_response as _exact,
+    unique_object as _unique_object,
+    validate_export_nodes as _export_nodes,
+    validate_query_row as _query_row,
+)
 
 
 MAX_RESPONSE_BYTES = 1024 * 1024
-
-
-class PeerClientError(RuntimeError):
-    """Remote peer is unavailable or violated the protocol."""
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -49,13 +51,14 @@ class KnowledgePeerClient:
         limit: int,
     ) -> dict[str, object]:
         settings, peer = self._peer(mount_id, project_id)
+        remote_node_id = _remote_node(peer)
         result = self._post(
             settings.local_peer_id,
             peer,
             "/v1/query",
             {
                 "project_id": project_id,
-                "node_id": peer.remote_node_id,
+                "node_id": remote_node_id,
                 "query": query,
                 "limit": limit,
             },
@@ -66,7 +69,7 @@ class KnowledgePeerClient:
         })
         if result.get("project_id") != project_id:
             raise PeerClientError("PEER_PROJECT_MISMATCH")
-        if result.get("node_id") != peer.remote_node_id:
+        if result.get("node_id") != remote_node_id:
             raise PeerClientError("PEER_NODE_MISMATCH")
         rows = result.get("results")
         generation = result.get("generation")
@@ -93,7 +96,8 @@ class KnowledgePeerClient:
         remote_library_node: str | None = None,
     ) -> dict[str, object]:
         settings, peer = self._peer(mount_id, project_id)
-        library_node = remote_library_node or peer.remote_node_id
+        remote_node_id = _remote_node(peer)
+        library_node = remote_library_node or remote_node_id
         try:
             identifier("library_node", library_node)
         except PeerContractError as error:
@@ -104,7 +108,7 @@ class KnowledgePeerClient:
             "/v1/material",
             {
                 "project_id": project_id,
-                "node_id": peer.remote_node_id,
+                "node_id": remote_node_id,
                 "library_node": library_node,
                 "material_id": material_id,
             },
@@ -117,7 +121,7 @@ class KnowledgePeerClient:
             result.get("status") != "MATERIAL_READY"
             or result.get("peer_id") != peer.peer_id
             or result.get("project_id") != project_id
-            or result.get("node_id") != peer.remote_node_id
+            or result.get("node_id") != remote_node_id
             or result.get("library_node") != library_node
         ):
             raise PeerClientError("PEER_RESPONSE_INVALID")
@@ -131,29 +135,53 @@ class KnowledgePeerClient:
         project_id: str,
     ) -> dict[str, object]:
         settings, peer = self._peer(mount_id, project_id)
-        result = self._post(
+        result = self._health(settings.local_peer_id, peer, project_id)
+        export_ids = {item["id"] for item in result["export_nodes"]}
+        if (
+            peer.remote_node_id is not None
+            and peer.remote_node_id not in export_ids
+        ):
+            raise PeerClientError("PEER_NODE_MISMATCH")
+        return result
+
+    def discover(self, peer: PeerRecord) -> dict[str, object]:
+        if type(peer) is not PeerRecord:
+            raise PeerClientError("INVALID_PEER_RECORD")
+        try:
+            settings = self.store.load()
+        except PeerStoreError as error:
+            raise PeerClientError(str(error)) from error
+        return self._health(
             settings.local_peer_id,
+            peer,
+            peer.project_id,
+        )
+
+    def _health(
+        self,
+        local_peer_id: str,
+        peer: PeerRecord,
+        project_id: str,
+    ) -> dict[str, object]:
+        result = self._post(
+            local_peer_id,
             peer,
             "/v1/health",
             {"project_id": project_id},
         )
         _exact(result, {
             "ok", "status", "peer_id", "project_id",
-            "export_node_id", "library_count", "capabilities",
+            "export_nodes", "library_count", "capabilities",
         })
-        export_node_id = result.get("export_node_id")
+        export_nodes = result.get("export_nodes")
         library_count = result.get("library_count")
-        try:
-            identifier("export_node_id", export_node_id)
-        except PeerContractError as error:
-            raise PeerClientError("PEER_RESPONSE_INVALID") from error
+        _export_nodes(export_nodes)
         if (
             result.get("status") != "READY"
             or result.get("peer_id") != peer.peer_id
             or result.get("project_id") != project_id
-            or export_node_id != peer.remote_node_id
             or type(library_count) is not int
-            or library_count < 0
+            or library_count < len(export_nodes)
             or result.get("capabilities")
             != ["query-v1", "material-v1", "response-hmac-v1"]
         ):
@@ -241,69 +269,10 @@ class KnowledgePeerClient:
         return result
 
 
-def _query_row(value: object) -> None:
-    fields = {
-        "material_id", "library_node", "path", "line_start", "line_end",
-        "content", "source_sha256", "scope", "score",
-    }
-    if type(value) is not dict or set(value) != fields:
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    material_id = value["material_id"]
-    source_hash = value["source_sha256"]
-    if (
-        type(material_id) is not str
-        or material_id.split(":", 1)[0]
-        not in {"project", "prefetch", "library"}
-        or len(material_id.split(":", 1)) != 2
-        or len(material_id.split(":", 1)[1]) != 64
-        or set(material_id.split(":", 1)[1])
-        - set("0123456789abcdef")
-        or type(source_hash) is not str
-        or len(source_hash) != 64
-        or set(source_hash) - set("0123456789abcdef")
-    ):
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    try:
-        identifier("library_node", value["library_node"])
-    except PeerContractError as error:
-        raise PeerClientError("PEER_RESPONSE_INVALID") from error
-    text_fields = ("path", "content", "scope")
-    if any(type(value[name]) is not str for name in text_fields):
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    if len(value["path"]) > 4096 or len(value["content"]) > 24_000:
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    if not 0 < len(value["scope"]) <= 128:
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    line_start = value["line_start"]
-    line_end = value["line_end"]
-    if (
-        type(line_start) is not int
-        or type(line_end) is not int
-        or not 1 <= line_start <= line_end
-    ):
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-    score = value["score"]
-    if (
-        type(score) not in {int, float}
-        or not math.isfinite(float(score))
-    ):
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-
-
-def _exact(value: dict[str, object], fields: set[str]) -> None:
-    if set(value) != fields:
-        raise PeerClientError("PEER_RESPONSE_INVALID")
-
-
-def _unique_object(
-    pairs: list[tuple[str, object]],
-) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError("DUPLICATE_RESPONSE_FIELD")
-        value[key] = item
-    return value
+def _remote_node(peer: PeerRecord) -> str:
+    if peer.remote_node_id is None:
+        raise PeerClientError("PEER_REMOTE_NODE_REQUIRED")
+    return peer.remote_node_id
 
 
 __all__ = ["KnowledgePeerClient", "PeerClientError"]

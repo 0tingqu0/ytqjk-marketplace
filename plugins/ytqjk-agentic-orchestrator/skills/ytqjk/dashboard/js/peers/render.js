@@ -50,8 +50,9 @@ function peerCard(peer, state) {
     ["连接标识", peer.peer_id],
     ["项目", peer.project_id],
     ["地址", peer.endpoint],
-    ["访问节点", peer.remote_node_id],
-    ["开放节点", peer.export_node_id],
+    ["访问对方库", peer.remote_node_id],
+    ["开放本机库", (peer.export_node_ids || [peer.export_node_id])
+      .filter(Boolean).join("、")],
     ["密钥指纹", peer.key_fingerprint],
   ];
   rows.forEach(([label, detail]) => facts.append(
@@ -98,13 +99,51 @@ function renderProjectSelect(id, snapshot) {
   }
 }
 
-function nodeOptions(tree) {
-  return (tree?.nodes || []).map((node) => {
+function nodeOptions(nodes) {
+  return nodes.map((node) => {
     const option = document.createElement("option");
     option.value = node.id;
-    option.label = node.title;
+    option.textContent = node.title || node.id;
+    option.title = node.id;
     return option;
   });
+}
+
+function renderNodeSelect(id, nodes, multiple = false) {
+  const control = byId(id);
+  const selected = multiple
+    ? new Set(Array.from(control.selectedOptions, (option) => option.value))
+    : control.value;
+  const options = nodeOptions(nodes);
+  clear(control, options);
+  if (multiple) {
+    options.forEach((option) => {
+      option.selected = selected.has(option.value);
+    });
+  } else if (options.some((option) => option.value === selected)) {
+    control.value = selected;
+  }
+}
+
+function localExportNodes(tree, projectId) {
+  const nodes = tree?.nodes || [];
+  const children = new Map();
+  nodes.forEach((node) => {
+    if (!node.parent_id) return;
+    const items = children.get(node.parent_id) || [];
+    items.push(node.id);
+    children.set(node.parent_id, items);
+  });
+  const allowed = new Set();
+  const pending = projectId ? [projectId] : [];
+  while (pending.length) {
+    const nodeId = pending.shift();
+    allowed.add(nodeId);
+    pending.push(...(children.get(nodeId) || []));
+  }
+  return nodes.filter((node) => allowed.has(node.id) && (
+    node.id === projectId || !["mounted", "project"].includes(node.type)
+  ));
 }
 
 function resultCard(row, index) {
@@ -157,7 +196,15 @@ export function renderPeerWorkspace(state) {
   renderResults(state);
   renderProjectSelect("peer-dispatch-project", state.snapshot);
   renderProjectSelect("peer-project-id", state.snapshot);
-  clear(byId("peer-node-options"), nodeOptions(state.tree));
+  const remoteLibraries = state.peerRemoteLibraries || [];
+  renderNodeSelect("peer-remote-node-id", remoteLibraries);
+  byId("peer-remote-node-id").disabled = remoteLibraries.length === 0;
+  const projectId = byId("peer-project-id").value;
+  renderNodeSelect(
+    "peer-export-node-ids",
+    localExportNodes(state.tree, projectId),
+    true,
+  );
   const status = state.peerError
     ? `局域网服务读取失败：${state.peerError}`
     : state.peerStatus;

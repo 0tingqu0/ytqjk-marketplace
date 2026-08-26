@@ -22,7 +22,7 @@ from knowledge_peer_query import (
 )
 from knowledge_peer_replay import PeerReplayError, ReplayGuard
 from knowledge_peer_response import signed_response_headers
-from knowledge_peer_scope import PeerScopeError, exported_libraries
+from knowledge_peer_scope import PeerScopeError, export_catalog
 from knowledge_peer_store import PeerConfigStore, PeerStoreError
 
 
@@ -90,17 +90,17 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
     ) -> dict[str, object]:
         if self.path == "/v1/health":
             _exact(payload, {"project_id"})
-            libraries = exported_libraries(
+            exports, library_count = export_catalog(
                 self.knowledge_root,
                 project_id,
-                peer.export_node_id,
+                peer.export_node_ids or (),
             )
             return {
                 "status": "READY",
                 "peer_id": local_peer_id,
                 "project_id": project_id,
-                "export_node_id": peer.export_node_id,
-                "library_count": len(libraries),
+                "export_nodes": [item.public() for item in exports],
+                "library_count": library_count,
                 "capabilities": [
                     "query-v1",
                     "material-v1",
@@ -109,12 +109,13 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
             }
         if self.path == "/v1/query":
             _exact(payload, {"project_id", "node_id", "query", "limit"})
-            if payload["node_id"] != peer.export_node_id:
+            node_id = payload["node_id"]
+            if node_id not in (peer.export_node_ids or ()):
                 raise PeerQueryError("PEER_EXPORT_NODE_FORBIDDEN")
             result = query_library_subtree(
                 self.knowledge_root,
                 project_id,
-                peer.export_node_id,
+                node_id,
                 payload["query"],
                 payload["limit"],
             )
@@ -123,7 +124,8 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
         _exact(payload, {
             "project_id", "node_id", "library_node", "material_id",
         })
-        if payload["node_id"] != peer.export_node_id:
+        node_id = payload["node_id"]
+        if node_id not in (peer.export_node_ids or ()):
             raise PeerQueryError("PEER_EXPORT_NODE_FORBIDDEN")
         material_id = payload["material_id"]
         library_node = payload["library_node"]
@@ -133,12 +135,12 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
             "status": "MATERIAL_READY",
             "peer_id": local_peer_id,
             "project_id": project_id,
-            "node_id": peer.export_node_id,
+            "node_id": node_id,
             "library_node": library_node,
             "material": fetch_subtree_material(
                 self.knowledge_root,
                 project_id,
-                peer.export_node_id,
+                node_id,
                 library_node,
                 material_id,
             ),

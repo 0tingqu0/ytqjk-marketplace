@@ -1,6 +1,7 @@
 import { api } from "../api.js";
 import { byId } from "../ui/dom.js";
 import { confirmAction } from "../ui/confirm.js";
+import { bindPeerForm, openPeer } from "./form.js";
 import { renderPeerWorkspace, showPeerMaterial } from "./render.js";
 
 export { renderPeerWorkspace };
@@ -45,55 +46,6 @@ function field(id, value) {
   const control = byId(id);
   if (control.type === "checkbox") control.checked = Boolean(value);
   else control.value = String(value ?? "");
-}
-
-function openPeer(record = null) {
-  const form = byId("peer-form");
-  const defaultProject = state.snapshot?.projects?.[0]?.id || "";
-  form.reset();
-  field("peer-id", record?.peer_id);
-  field("peer-title", record?.title);
-  field("peer-project-id", record?.project_id || defaultProject);
-  field("peer-endpoint", record?.endpoint);
-  field("peer-remote-node-id", record?.remote_node_id || defaultProject);
-  field("peer-export-node-id", record?.export_node_id || defaultProject);
-  field("peer-allow-insecure", record?.allow_insecure);
-  field("peer-enabled", record ? record.enabled : true);
-  field("peer-shared-secret", "");
-  byId("peer-id").readOnly = Boolean(record);
-  byId("peer-shared-secret").required = !record;
-  byId("peer-dialog-title").textContent = record
-    ? "编辑授权电脑" : "新增授权电脑";
-  byId("peer-form-status").textContent = record
-    ? "共享密钥留空会保留原值；已保存密钥不会回显。" : "";
-  byId("peer-dialog").showModal();
-}
-
-function peerPayload() {
-  const secret = byId("peer-shared-secret").value.trim();
-  return {
-    expected_revision: revision(),
-    peer_id: byId("peer-id").value.trim(),
-    title: byId("peer-title").value.trim(),
-    project_id: byId("peer-project-id").value.trim(),
-    endpoint: byId("peer-endpoint").value.trim(),
-    secret: secret || null,
-    remote_node_id: byId("peer-remote-node-id").value.trim(),
-    export_node_id: byId("peer-export-node-id").value.trim(),
-    allow_insecure: byId("peer-allow-insecure").checked,
-    enabled: byId("peer-enabled").checked,
-  };
-}
-
-async function savePeer(event) {
-  event.preventDefault();
-  const control = byId("save-peer");
-  await run(control, async () => {
-    const result = await api.peerUpsert(peerPayload());
-    field("peer-shared-secret", "");
-    byId("peer-dialog").close();
-    accept(result, "授权电脑已保存");
-  });
 }
 
 async function configure(event) {
@@ -218,11 +170,11 @@ function closeDialog(id, clearSecret = false) {
   const dialog = byId(id);
   if (clearSecret) field("peer-secret-value", "");
   if (id === "peer-dialog") field("peer-shared-secret", "");
+  if (id === "peer-dialog") state.peerRemoteLibraries = [];
   dialog.close();
 }
 
 function bindDialogs() {
-  byId("peer-form").onsubmit = savePeer;
   byId("close-peer-dialog").onclick = () => closeDialog("peer-dialog");
   byId("cancel-peer").onclick = () => closeDialog("peer-dialog");
   byId("close-peer-secret").onclick = () => closeDialog(
@@ -256,6 +208,7 @@ export function bindPeerWorkspace(dashboardState, onChange) {
   byId("peer-bootstrap").onclick = (event) => bootstrap(event.currentTarget);
   byId("peer-new").onclick = () => openPeer();
   byId("peer-secret").onclick = (event) => issueSecret(event.currentTarget);
+  bindPeerForm(state, { accept, rerender, revision, run });
   byId("peer-service-form").oninput = (event) => {
     event.currentTarget.dataset.dirty = "true";
   };

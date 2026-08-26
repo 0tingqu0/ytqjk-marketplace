@@ -73,6 +73,7 @@ def pair(
     remote_node_id: str | None = None,
     client_export_node_id: str | None = None,
     server_export_node_id: str | None = None,
+    server_export_node_ids: tuple[str, ...] | None = None,
 ) -> tuple[str, str, str]:
     secret = new_secret()
     client_store = PeerConfigStore(client_root)
@@ -100,7 +101,10 @@ def pair(
             "http://127.0.0.1:9",
             secret,
             project_id,
-            export_node_id=server_export_node_id or remote_node,
+            export_node_ids=(
+                server_export_node_ids
+                or (server_export_node_id or remote_node,)
+            ),
         ),
         expected_revision=server.revision,
     )

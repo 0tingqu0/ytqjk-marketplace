@@ -21,6 +21,39 @@ class PeerLibrary:
     directory: Path
 
 
+@dataclass(frozen=True, slots=True)
+class PeerExport:
+    node_id: str
+    title: str
+    kind: str
+
+    def public(self) -> dict[str, str]:
+        return {
+            "id": self.node_id,
+            "title": self.title,
+            "type": self.kind,
+        }
+
+
+def export_catalog(
+    root: Path,
+    project_id: str,
+    export_node_ids: tuple[str, ...],
+) -> tuple[tuple[PeerExport, ...], int]:
+    tree = _load_tree(root)
+    nodes = {node.node_id: node for node in tree.nodes}
+    exports: list[PeerExport] = []
+    library_ids: set[str] = set()
+    for node_id in export_node_ids:
+        libraries = exported_libraries(root, project_id, node_id)
+        node = nodes.get(node_id)
+        if node is None:
+            raise PeerScopeError("PEER_EXPORT_NODE_MISSING")
+        exports.append(PeerExport(node.node_id, node.title, node.kind))
+        library_ids.update(item.node_id for item in libraries)
+    return tuple(exports), len(library_ids)
+
+
 def exported_libraries(
     root: Path,
     project_id: str,
@@ -128,8 +161,10 @@ def _library(root: Path, node: LibraryNode) -> PeerLibrary:
 
 
 __all__ = [
+    "PeerExport",
     "PeerLibrary",
     "PeerScopeError",
+    "export_catalog",
     "exported_libraries",
     "require_exported_library",
 ]

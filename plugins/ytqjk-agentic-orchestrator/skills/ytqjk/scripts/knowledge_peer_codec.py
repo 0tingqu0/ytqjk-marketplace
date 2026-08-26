@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from knowledge_peer_contract import PeerContractError, PeerRecord, identifier
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+_SUPPORTED_SCHEMA_VERSIONS = {1, SCHEMA_VERSION}
 
 
 class PeerStoreError(RuntimeError):
@@ -130,7 +131,7 @@ def _body(settings: PeerSettings) -> dict[str, object]:
                 "endpoint": item.endpoint,
                 "secret": item.secret,
                 "remote_node_id": item.remote_node_id,
-                "export_node_id": item.export_node_id,
+                "export_node_ids": list(item.export_node_ids or ()),
                 "allow_insecure": item.allow_insecure,
                 "enabled": item.enabled,
             }
@@ -149,7 +150,8 @@ def _settings(value: object) -> PeerSettings:
         supplied, _digest(body)
     ):
         raise PeerStoreError("PEER_CONFIG_DIGEST_MISMATCH")
-    if value["schema_version"] != SCHEMA_VERSION:
+    schema_version = value["schema_version"]
+    if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
         raise PeerStoreError("PEER_CONFIG_SCHEMA_INVALID")
     revision = value["revision"]
     if type(revision) is not int or not 0 <= revision <= 2**63 - 1:
@@ -164,7 +166,7 @@ def _settings(value: object) -> PeerSettings:
     peers = value["peers"]
     if type(peers) is not list or len(peers) > 256:
         raise PeerStoreError("PEER_CONFIG_INVALID")
-    records = tuple(PeerRecord(**item) for item in peers)
+    records = tuple(_peer_record(item, schema_version) for item in peers)
     if len({item.peer_id for item in records}) != len(records):
         raise PeerStoreError("DUPLICATE_PEER")
     validate_local(
@@ -182,6 +184,27 @@ def _settings(value: object) -> PeerSettings:
         local["allow_insecure_lan"],
         records,
     )
+
+
+def _peer_record(value: object, schema_version: int) -> PeerRecord:
+    common = {
+        "peer_id", "title", "project_id", "endpoint", "secret",
+        "remote_node_id", "allow_insecure", "enabled",
+    }
+    export_field = (
+        "export_node_id" if schema_version == 1 else "export_node_ids"
+    )
+    if type(value) is not dict or set(value) != common | {export_field}:
+        raise PeerStoreError("PEER_CONFIG_INVALID")
+    arguments = {key: value[key] for key in common}
+    if schema_version == 1:
+        arguments["export_node_id"] = value["export_node_id"]
+    else:
+        export_node_ids = value["export_node_ids"]
+        if type(export_node_ids) is not list:
+            raise PeerStoreError("PEER_CONFIG_INVALID")
+        arguments["export_node_ids"] = tuple(export_node_ids)
+    return PeerRecord(**arguments)
 
 
 def _digest(value: object) -> str:

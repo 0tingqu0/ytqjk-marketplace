@@ -30,22 +30,40 @@ class PeerRecord:
     project_id: str
     endpoint: str
     secret: str
-    remote_node_id: str
+    remote_node_id: str | None
     allow_insecure: bool = False
     enabled: bool = True
     export_node_id: str | None = None
+    export_node_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         identifier("peer_id", self.peer_id)
         identifier("project_id", self.project_id)
-        identifier("remote_node_id", self.remote_node_id)
-        export_node_id = (
-            self.project_id
-            if self.export_node_id is None
-            else self.export_node_id
-        )
-        identifier("export_node_id", export_node_id)
-        object.__setattr__(self, "export_node_id", export_node_id)
+        if self.remote_node_id is not None:
+            identifier("remote_node_id", self.remote_node_id)
+        export_node_ids = self.export_node_ids
+        if export_node_ids is None:
+            export_node_ids = (
+                self.project_id
+                if self.export_node_id is None
+                else self.export_node_id,
+            )
+        if (
+            type(export_node_ids) is not tuple
+            or not 1 <= len(export_node_ids) <= 64
+        ):
+            raise PeerContractError("INVALID_EXPORT_NODE_IDS")
+        for export_node_id in export_node_ids:
+            identifier("export_node_id", export_node_id)
+        if len(set(export_node_ids)) != len(export_node_ids):
+            raise PeerContractError("DUPLICATE_EXPORT_NODE")
+        if (
+            self.export_node_id is not None
+            and self.export_node_id != export_node_ids[0]
+        ):
+            raise PeerContractError("PEER_EXPORT_NODES_CONFLICT")
+        object.__setattr__(self, "export_node_id", export_node_ids[0])
+        object.__setattr__(self, "export_node_ids", export_node_ids)
         text("title", self.title, 100)
         endpoint(self.endpoint, self.allow_insecure)
         secret_bytes(self.secret)
@@ -61,6 +79,7 @@ class PeerRecord:
             "endpoint": self.endpoint,
             "remote_node_id": self.remote_node_id,
             "export_node_id": self.export_node_id,
+            "export_node_ids": list(self.export_node_ids or ()),
             "allow_insecure": self.allow_insecure,
             "enabled": self.enabled,
             "key_fingerprint": fingerprint[:16],

@@ -11,6 +11,7 @@ from dashboard_peer_api import DashboardPeerApi, DashboardPeerApiError
 _POST = {
     "/api/peers/bootstrap": "bootstrap",
     "/api/peers/configure": "configure",
+    "/api/peers/discover": "discover",
     "/api/peers/dispatch": "dispatch",
     "/api/peers/health": "health",
     "/api/peers/material": "material",

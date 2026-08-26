@@ -102,27 +102,11 @@ class DashboardPeerApi:
         }
 
     def upsert(self, payload: object) -> dict[str, object]:
-        value = _exact(payload, {
-            "expected_revision",
-            "peer_id",
-            "title",
-            "project_id",
-            "endpoint",
-            "secret",
-            "remote_node_id",
-            "export_node_id",
-            "allow_insecure",
-            "enabled",
-        })
+        value, export_node_ids = _upsert_payload(payload)
         try:
-            secret = value["secret"]
-            if secret is None:
-                current = self.store.load().peer(value["peer_id"])
-                if current is None:
-                    raise DashboardPeerApiError(
-                        400, "PEER_SECRET_REQUIRED"
-                    )
-                secret = current.secret
+            secret = _peer_secret(
+                self.store, value["peer_id"], value["secret"]
+            )
             record = PeerRecord(
                 peer_id=value["peer_id"],
                 title=value["title"],
@@ -130,7 +114,7 @@ class DashboardPeerApi:
                 endpoint=value["endpoint"],
                 secret=secret,
                 remote_node_id=value["remote_node_id"],
-                export_node_id=value["export_node_id"],
+                export_node_ids=export_node_ids,
                 allow_insecure=value["allow_insecure"],
                 enabled=value["enabled"],
             )
@@ -144,6 +128,39 @@ class DashboardPeerApi:
             "ok": True,
             "status": "PEER_SAVED",
             "peer_service": settings.public(),
+        }
+
+    def discover(self, payload: object) -> dict[str, object]:
+        value = _exact(payload, {
+            "peer_id", "project_id", "endpoint", "secret",
+            "allow_insecure",
+        })
+        try:
+            settings = self.store.load()
+            if value["peer_id"] == settings.local_peer_id:
+                raise PeerStoreError("SELF_PEER_FORBIDDEN")
+            secret = _peer_secret(
+                self.store, value["peer_id"], value["secret"]
+            )
+            draft = PeerRecord(
+                peer_id=value["peer_id"],
+                title="Peer discovery",
+                project_id=value["project_id"],
+                endpoint=value["endpoint"],
+                secret=secret,
+                remote_node_id=None,
+                export_node_ids=(value["project_id"],),
+                allow_insecure=value["allow_insecure"],
+            )
+            result = KnowledgePeerClient(self.root).discover(draft)
+        except PeerClientError as error:
+            raise DashboardPeerApiError(503, str(error)) from error
+        except (PeerContractError, PeerStoreError) as error:
+            raise _error(error) from error
+        return {
+            "ok": True,
+            "status": "PEER_DISCOVERED",
+            "peer": result,
         }
 
     def remove(self, payload: object) -> dict[str, object]:
@@ -206,6 +223,39 @@ def _exact(value: object, fields: set[str]) -> dict[str, object]:
     if type(value) is not dict or set(value) != fields:
         raise DashboardPeerApiError(400, "INVALID_PEER_REQUEST_FIELDS")
     return value
+
+
+def _upsert_payload(
+    payload: object,
+) -> tuple[dict[str, object], tuple[str, ...]]:
+    common = {
+        "expected_revision", "peer_id", "title", "project_id",
+        "endpoint", "secret", "remote_node_id", "allow_insecure",
+        "enabled",
+    }
+    if type(payload) is not dict:
+        raise DashboardPeerApiError(400, "INVALID_PEER_REQUEST_FIELDS")
+    if set(payload) == common | {"export_node_ids"}:
+        raw_ids = payload["export_node_ids"]
+        if type(raw_ids) is not list:
+            raise DashboardPeerApiError(400, "INVALID_EXPORT_NODE_IDS")
+        return payload, tuple(raw_ids)
+    if set(payload) == common | {"export_node_id"}:
+        return payload, (payload["export_node_id"],)
+    raise DashboardPeerApiError(400, "INVALID_PEER_REQUEST_FIELDS")
+
+
+def _peer_secret(
+    store: PeerConfigStore,
+    peer_id: object,
+    supplied: object,
+) -> object:
+    if supplied is not None:
+        return supplied
+    current = store.load().peer(peer_id)
+    if current is None:
+        raise DashboardPeerApiError(400, "PEER_SECRET_REQUIRED")
+    return current.secret
 
 
 def _error(error: Exception) -> DashboardPeerApiError:

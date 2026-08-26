@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -96,6 +97,64 @@ def test_peer_endpoint_is_private_ip_and_nodes_are_directional() -> None:
     )
     assert record.remote_node_id == "remote-child"
     assert record.export_node_id == "local-child"
+
+
+def test_peer_can_be_inbound_only_with_multiple_open_libraries() -> None:
+    record = PeerRecord(
+        "peer-remote",
+        "Remote",
+        PROJECT,
+        "http://127.0.0.1:8766",
+        new_secret(),
+        None,
+        export_node_ids=(PROJECT, "local-child"),
+    )
+
+    assert record.remote_node_id is None
+    assert record.export_node_ids == (PROJECT, "local-child")
+    assert record.public()["export_node_ids"] == [PROJECT, "local-child"]
+
+
+def test_schema_one_single_export_migrates_on_read() -> None:
+    secret = new_secret()
+    body = {
+        "schema_version": 1,
+        "revision": 3,
+        "local": {
+            "peer_id": "peer-local",
+            "enabled": False,
+            "bind_host": "127.0.0.1",
+            "port": 8766,
+            "allow_insecure_lan": False,
+        },
+        "peers": [{
+            "peer_id": "peer-remote",
+            "title": "Remote",
+            "project_id": PROJECT,
+            "endpoint": "http://127.0.0.1:8766",
+            "secret": secret,
+            "remote_node_id": "remote-child",
+            "export_node_id": "local-child",
+            "allow_insecure": False,
+            "enabled": True,
+        }],
+    }
+    canonical = json.dumps(
+        body,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    payload = {
+        **body,
+        "digest": hashlib.sha256(canonical).hexdigest(),
+    }
+
+    settings = decode_settings(json.dumps(payload).encode("utf-8"))
+
+    assert settings.peers[0].export_node_ids == ("local-child",)
+    assert json.loads(encode_settings(settings))["schema_version"] == 2
 
 
 def test_config_rejects_duplicate_json_fields(tmp_path: Path) -> None:

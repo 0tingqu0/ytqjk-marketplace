@@ -50,7 +50,9 @@ def test_peer_workspace_has_complete_accessible_controls() -> None:
         "peer-dispatch-query",
         "peer-dispatch-limit",
         "peer-results",
-        "peer-node-options",
+        "peer-remote-node-id",
+        "peer-export-node-ids",
+        "peer-discover",
         "peer-dialog",
         "peer-secret-dialog",
         "peer-material-dialog",
@@ -64,7 +66,10 @@ def test_peer_workspace_has_complete_accessible_controls() -> None:
     assert dom["peer-status"][1]["role"] == "status"
     assert dom["peer-project-id"][0] == "select"
     assert dom["peer-dispatch-project"][0] == "select"
-    assert dom["peer-export-node-id"][1]["list"] == "peer-node-options"
+    assert dom["peer-remote-node-id"][0] == "select"
+    assert dom["peer-export-node-ids"][0] == "select"
+    assert "multiple" in dom["peer-export-node-ids"][1]
+    assert "disabled" in dom["peer-remote-node-id"][1]
 
 
 def test_every_peer_javascript_dom_reference_exists() -> None:
@@ -80,20 +85,23 @@ def test_peer_contract_fields_and_material_scope_are_explicit() -> None:
     control = (DASHBOARD / "js/peers/control.js").read_text(
         encoding="utf-8"
     )
+    form = (DASHBOARD / "js/peers/form.js").read_text(encoding="utf-8")
+    peer_source = control + form
     api = (DASHBOARD / "js/api.js").read_text(encoding="utf-8")
     for field in (
         "project_id",
         "endpoint",
         "remote_node_id",
-        "export_node_id",
+        "export_node_ids",
         "allow_insecure",
         "enabled",
     ):
-        assert field in control
+        assert field in peer_source
     assert "remote_library_node: row.library_node" in control
     for action in (
         "bootstrap",
         "configure",
+        "discover",
         "secret",
         "upsert",
         "remove",
@@ -104,7 +112,7 @@ def test_peer_contract_fields_and_material_scope_are_explicit() -> None:
         assert f'/api/peers/{action}' in api
 
 
-def test_project_selects_show_names_and_submit_ids() -> None:
+def test_project_and_node_selects_show_names_and_submit_ids() -> None:
     render = (DASHBOARD / "js/peers/render.js").read_text(
         encoding="utf-8"
     )
@@ -112,6 +120,11 @@ def test_project_selects_show_names_and_submit_ids() -> None:
     assert "option.textContent = project.name || project.id" in render
     assert 'renderProjectSelect("peer-project-id"' in render
     assert 'renderProjectSelect("peer-dispatch-project"' in render
+    assert "option.value = node.id" in render
+    assert "option.textContent = node.title || node.id" in render
+    assert 'renderNodeSelect("peer-remote-node-id"' in render
+    assert '"peer-export-node-ids"' in render
+    assert "state.peerRemoteLibraries" in render
 
 
 def test_saved_secret_is_not_rendered_or_persisted() -> None:
@@ -121,14 +134,16 @@ def test_saved_secret_is_not_rendered_or_persisted() -> None:
     control = (DASHBOARD / "js/peers/control.js").read_text(
         encoding="utf-8"
     )
+    form = (DASHBOARD / "js/peers/form.js").read_text(encoding="utf-8")
+    peer_source = control + form
     assert "peer.secret" not in render
     assert "key_fingerprint" in render
-    assert "localStorage" not in control
+    assert "localStorage" not in peer_source
     assert 'field("peer-secret-value", "")' in control
-    assert 'field("peer-shared-secret", "")' in control
-    assert "secret: secret || null" in control
-    assert 'required = !record' in control
-    assert "留空会保留原值" in control
+    assert 'field("peer-shared-secret", "")' in peer_source
+    assert "secret: secret || null" in form
+    assert 'required = !record' in form
+    assert "留空会保留原值" in form
 
 
 def test_peer_ui_is_mobile_safe_and_files_stay_bounded() -> None:

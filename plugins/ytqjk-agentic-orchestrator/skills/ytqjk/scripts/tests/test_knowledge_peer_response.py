@@ -78,7 +78,18 @@ class FakePeerService:
             "status": "READY",
             "peer_id": REMOTE_PEER,
             "project_id": PROJECT_ID,
-            "export_node_id": REMOTE_NODE,
+            "export_nodes": [
+                {
+                    "id": REMOTE_NODE,
+                    "title": "Remote export",
+                    "type": "project",
+                },
+                {
+                    "id": "remote-child",
+                    "title": "Remote child",
+                    "type": "group",
+                },
+            ],
             "library_count": 2,
             "capabilities": [
                 "query-v1",
@@ -137,17 +148,23 @@ class FakePeerService:
 
     def _tamper_contract(self, payload: dict[str, object]) -> None:
         if self.tamper == "missing-export":
-            payload.pop("export_node_id")
+            payload.pop("export_nodes")
         elif self.tamper == "extra-field":
             payload["extra"] = True
         elif self.tamper == "export-mismatch":
-            payload["export_node_id"] = "wrong-export"
+            payload["export_nodes"][0]["id"] = "wrong-export"
         elif self.tamper == "export-invalid":
-            payload["export_node_id"] = "bad export"
+            payload["export_nodes"][0]["id"] = "bad export"
+        elif self.tamper == "export-duplicate":
+            payload["export_nodes"][1]["id"] = REMOTE_NODE
+        elif self.tamper == "export-type":
+            payload["export_nodes"][0]["type"] = "mounted"
         elif self.tamper == "library-bool":
             payload["library_count"] = True
         elif self.tamper == "library-negative":
             payload["library_count"] = -1
+        elif self.tamper == "library-mismatch":
+            payload["library_count"] = 1
         elif self.tamper == "capability-missing":
             payload["capabilities"] = ["query-v1", "material-v1"]
 
@@ -219,9 +236,32 @@ def test_response_signature_is_required() -> None:
 def test_health_accepts_signed_exact_contract(tmp_path: Path) -> None:
     result = _client(tmp_path).health(REMOTE_PEER, PROJECT_ID)
 
-    assert result["export_node_id"] == REMOTE_NODE
+    assert [item["id"] for item in result["export_nodes"]] == [
+        REMOTE_NODE,
+        "remote-child",
+    ]
     assert result["library_count"] == 2
     assert "response-hmac-v1" in result["capabilities"]
+
+
+def test_discover_does_not_require_a_selected_remote_node(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    saved = client.store.load().peer(REMOTE_PEER)
+    assert saved is not None
+    draft = PeerRecord(
+        REMOTE_PEER,
+        "Remote",
+        PROJECT_ID,
+        "http://127.0.0.1:9",
+        saved.secret,
+        None,
+    )
+
+    result = client.discover(draft)
+
+    assert len(result["export_nodes"]) == 2
 
 
 @pytest.mark.parametrize(
@@ -241,10 +281,12 @@ def test_client_rejects_response_auth_tampering(
     [
         "missing-export",
         "extra-field",
-        "export-mismatch",
         "export-invalid",
+        "export-duplicate",
+        "export-type",
         "library-bool",
         "library-negative",
+        "library-mismatch",
         "capability-missing",
     ],
 )
@@ -254,3 +296,13 @@ def test_health_rejects_contract_drift(
 ) -> None:
     with pytest.raises(PeerClientError, match="PEER_RESPONSE_INVALID"):
         _client(tmp_path, tamper).health(REMOTE_PEER, PROJECT_ID)
+
+
+def test_health_rejects_saved_target_missing_from_discovery(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(PeerClientError, match="PEER_NODE_MISMATCH"):
+        _client(tmp_path, "export-mismatch").health(
+            REMOTE_PEER,
+            PROJECT_ID,
+        )

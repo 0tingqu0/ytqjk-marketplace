@@ -162,6 +162,7 @@ export const api = {
   peers: () => request("/api/peers"),
   peerBootstrap: () => post("/api/peers/bootstrap", {}),
   peerConfigure: (payload) => post("/api/peers/configure", payload),
+  peerDiscover: (payload) => post("/api/peers/discover", payload),
   peerSecret: () => post("/api/peers/secret", {}),
   peerUpsert: (payload) => post("/api/peers/upsert", payload),
   peerRemove: (payload) => post("/api/peers/remove", payload),

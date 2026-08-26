@@ -147,6 +147,17 @@
   gap: 12px;
   margin-top: 16px;
 }
+.peer-discovery {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+}
+.peer-discovery label { grid-column: 1 / -1; }
+.peer-export-field { grid-column: 1 / -1; }
+.peer-export-field select { min-height: 130px; }
+.peer-export-field small { color: var(--muted); font-weight: 400; }
 .peer-secret-field,
 .peer-dialog-form .status-message,
 .peer-dialog-form .form-actions { grid-column: 1 / -1; }
@@ -167,7 +178,8 @@
   .peer-grid { grid-template-columns: 1fr; }
   .peer-toolbar button,
   .peer-actions button,
-  .peer-dispatch-form button { min-height: 44px; }
+  .peer-dispatch-form button,
+  .peer-discovery button { min-height: 44px; }
 }
 
 @media (max-width: 600px) {
@@ -178,6 +190,10 @@
   .peer-dispatch-form,
   .peer-dialog-form { grid-template-columns: 1fr; }
   .peer-secret-field,
+  .peer-discovery,
+  .peer-export-field,
   .peer-dialog-form .status-message,
   .peer-dialog-form .form-actions { grid-column: auto; }
+  .peer-discovery { grid-template-columns: 1fr; }
+  .peer-discovery label { grid-column: auto; }
 }

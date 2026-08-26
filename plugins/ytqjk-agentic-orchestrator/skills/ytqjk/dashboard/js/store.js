@@ -10,6 +10,7 @@ export const state = {
   peerStatus: "",
   peerDispatch: null,
   peerHealth: new Map(),
+  peerRemoteLibraries: [],
   selected: null,
   reviewSelected: null,
   route: "overview",
