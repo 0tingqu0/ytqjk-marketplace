@@ -9,9 +9,10 @@ import sqlite3
 from dataclasses import replace
 
 from .import_contracts import ImportReceipt
-from .migrations import LATEST_VERSION
 
 
+RECEIPT_SCHEMA_VERSION = 4
+SUPPORTED_RECEIPT_SCHEMA_VERSIONS = frozenset({3, RECEIPT_SCHEMA_VERSION})
 FIELDS = frozenset(
     {
         "marker", "project_id", "status", "input_count",
@@ -41,7 +42,7 @@ def build_receipt(
         "deduplicated_documents": counters[1],
         "provenance_added": counters[2],
         "chunks_created": counters[3],
-        "schema_version": LATEST_VERSION,
+        "schema_version": RECEIPT_SCHEMA_VERSION,
     }
     _validate_values(values, marker, project_id)
     digest = hashlib.sha256(_json(values).encode("utf-8")).hexdigest()
@@ -133,7 +134,7 @@ def _validate_values(
         raise ValueError("receipt status is invalid")
     if (
         type(values["schema_version"]) is not int
-        or values["schema_version"] != LATEST_VERSION
+        or values["schema_version"] not in SUPPORTED_RECEIPT_SCHEMA_VERSIONS
     ):
         raise ValueError("receipt schema version is invalid")
     for field in COUNTERS:

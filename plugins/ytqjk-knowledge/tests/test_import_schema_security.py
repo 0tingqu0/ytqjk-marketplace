@@ -16,7 +16,10 @@ from scripts.import_migration import (  # noqa: E402
     LEGACY_PROVENANCE,
     TABLES,
 )
-from scripts.import_receipts import build_receipt  # noqa: E402
+from scripts.import_receipts import (  # noqa: E402
+    RECEIPT_SCHEMA_VERSION,
+    build_receipt,
+)
 from scripts.service import KnowledgeService  # noqa: E402
 
 
@@ -178,6 +181,7 @@ FORGED_RECEIPTS = (
     {"unexpected": "field"},
     {"status": "SKIPPED"},
     {"schema_version": 2},
+    {"schema_version": 99},
 )
 
 
@@ -203,6 +207,40 @@ def test_receipt_rejects_row_project_swap(tmp_path: Path) -> None:
             (other,),
         )
         current.commit()
+
+    with pytest.raises(RuntimeError, match="integrity check"):
+        service.import_receipt("real-marker")
+
+
+def test_receipt_schema_is_independent_and_reads_legacy_v3(
+    tmp_path: Path,
+) -> None:
+    service, values = _seed_receipt(tmp_path)
+    assert values["schema_version"] == RECEIPT_SCHEMA_VERSION == 4
+    values["schema_version"] = 3
+    _replace_payload(service, values)
+
+    receipt = service.import_receipt("real-marker")
+
+    assert receipt is not None
+    assert receipt.schema_version == 3
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        {"marker": "other-marker"},
+        {"project_id": "other-project"},
+        {"created_documents": 2},
+    ),
+)
+def test_legacy_v3_receipt_keeps_integrity_guards(
+    tmp_path: Path, replacement: dict[str, object]
+) -> None:
+    service, values = _seed_receipt(tmp_path)
+    values["schema_version"] = 3
+    values.update(replacement)
+    _replace_payload(service, values)
 
     with pytest.raises(RuntimeError, match="integrity check"):
         service.import_receipt("real-marker")
