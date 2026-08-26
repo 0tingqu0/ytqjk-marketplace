@@ -250,11 +250,12 @@ def main(
                     )
                 )
             )
+            deferred_update = args.mode == "codex-stable-only" or legacy_update
             if args.dashboard_service == "off":
                 result["dashboard_service"] = dashboard_receipt(
                     "SKIPPED_UPDATE"
                 )
-            elif legacy_update:
+            elif deferred_update:
                 try:
                     result["dashboard_service"] = schedule_dashboard_restart(
                         codex_root,

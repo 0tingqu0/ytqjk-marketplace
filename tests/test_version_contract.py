@@ -25,7 +25,7 @@ class VersionContractTest(unittest.TestCase):
             install_core.require_python()
 
     def test_release_version_is_consistent(self) -> None:
-        self.assertEqual(VERSION, "0.6.3")
+        self.assertEqual(VERSION, "0.6.4")
         for plugin_name in PLUGIN_NAMES:
             manifest_path = (
                 ROOT

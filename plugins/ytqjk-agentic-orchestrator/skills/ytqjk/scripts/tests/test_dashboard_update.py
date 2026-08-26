@@ -80,10 +80,9 @@ class DashboardUpdateTest(unittest.TestCase):
             with self.assertRaisesRegex(update.UpdateError, "顶层目录"):
                 update.extract_release(archive, root / "source", "0.4.0")
 
-    def test_update_validates_archive_then_uses_managed_codex_root(self) -> None:
+    def test_update_uses_managed_or_dashboard_bundle_codex_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            plugin = self.plugin_root(root, "0.3.2")
             release = self.release("0.4.0")
             calls: list[tuple[Path, Path, str]] = []
 
@@ -97,17 +96,23 @@ class DashboardUpdateTest(unittest.TestCase):
                 self.assertTrue((source / "setup.py").is_file())
                 return {"apply": {"status": "APPLIED"}}
 
-            result = update.perform_update(
-                plugin,
-                loader=lambda: release,
-                downloader=download,
-                installer=install,
+            cases = (
+                (self.plugin_root(root / "stable", "0.3.2"), root / "stable"),
+                (self.bundle_root(root / "bundle", "0.3.2"), root / "bundle"),
             )
-
-        self.assertEqual(result["status"], "UPDATED")
-        self.assertEqual(result["latest_version"], "0.4.0")
-        self.assertTrue(result["restart_required"])
-        self.assertEqual(calls[0][1:], (root, "0.4.0"))
+            for plugin, expected_root in cases:
+                with self.subTest(plugin=plugin):
+                    calls.clear()
+                    result = update.perform_update(
+                        plugin,
+                        loader=lambda: release,
+                        downloader=download,
+                        installer=install,
+                    )
+                    self.assertEqual(result["status"], "UPDATED")
+                    self.assertEqual(result["latest_version"], "0.4.0")
+                    self.assertTrue(result["restart_required"])
+                    self.assertEqual(calls[0][1:], (expected_root, "0.4.0"))
 
     def test_update_rejects_release_manifest_version_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -192,7 +197,7 @@ class DashboardUpdateTest(unittest.TestCase):
 
         self.assertEqual(events, ["finish", "restart"])
 
-    def test_installer_disables_inline_dashboard_restart(self) -> None:
+    def test_installer_defers_dashboard_restart_to_release_setup(self) -> None:
         completed = subprocess.CompletedProcess(
             [],
             0,
@@ -210,9 +215,7 @@ class DashboardUpdateTest(unittest.TestCase):
         command = run.call_args.args[0]
         mode = command.index("--mode")
         self.assertEqual(command[mode + 1], "codex-stable-only")
-        self.assertIn("--dashboard-service", command)
-        option = command.index("--dashboard-service")
-        self.assertEqual(command[option + 1], "off")
+        self.assertNotIn("--dashboard-service", command)
 
     def test_windows_installer_process_is_hidden(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -269,6 +272,20 @@ class DashboardUpdateTest(unittest.TestCase):
             encoding="utf-8",
         )
         (plugins / ".ytqjk-managed.json").write_text("{}", encoding="utf-8")
+        return plugin
+
+    @staticmethod
+    def bundle_root(root: Path, version: str) -> Path:
+        plugin = root / "data/ytqjk/dashboard-service" / version
+        manifest = plugin / ".codex-plugin" / "plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(
+            json.dumps({
+                "name": "ytqjk-agentic-orchestrator",
+                "version": version,
+            }),
+            encoding="utf-8",
+        )
         return plugin
 
     @staticmethod

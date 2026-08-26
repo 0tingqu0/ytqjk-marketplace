@@ -17,6 +17,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from dashboard_install_root import InstallRootError, managed_codex_root
+
 REPOSITORY = "0tingqu0/ytqjk-marketplace"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 PLUGIN_NAMES = ("ytqjk-agentic-orchestrator", "ytqjk-knowledge")
@@ -104,7 +106,10 @@ def perform_update(
             "latest_version": release.version,
             "restart_required": False,
         }
-    codex_root = _managed_codex_root(plugin_root)
+    try:
+        codex_root = managed_codex_root(plugin_root, installed)
+    except InstallRootError as error:
+        raise UpdateError(str(error)) from error
     with tempfile.TemporaryDirectory(prefix="ytqjk-update-") as temporary:
         root = Path(temporary)
         archive = root / "release.zip"
@@ -205,7 +210,7 @@ def run_installer(
         sys.executable, str(source_root / "setup.py"),
         "--mode", "codex-stable-only", "--target-root", str(source_root),
         "--codex-root", str(codex_root), "--codex-import", "off",
-        "--project-bootstrap", "off", "--dashboard-service", "off",
+        "--project-bootstrap", "off",
         "--apply", "--yes", "--json",
     ]
     options: dict[str, object] = {}
@@ -272,16 +277,6 @@ def _validate_source(source: Path, version: str) -> None:
             raise UpdateError("GitHub 更新包插件清单无效。") from error
         if data.get("name") != name or data.get("version") != version:
             raise UpdateError("GitHub 更新包版本不一致。")
-
-
-def _managed_codex_root(plugin_root: Path) -> Path:
-    root = plugin_root.resolve()
-    if root.name != PLUGIN_NAMES[0] or root.parent.name != "plugins":
-        raise UpdateError("当前插件不是稳定安装目录。")
-    managed = root.parent / ".ytqjk-managed.json"
-    if not managed.is_file() or managed.is_symlink():
-        raise UpdateError("当前插件不受 YTQJK 安装器管理。")
-    return root.parent.parent
 
 
 def _version(value: object) -> str:
