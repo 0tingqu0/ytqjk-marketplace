@@ -53,7 +53,7 @@ def file_plan(mode: str, target: Path) -> Plan:
 class InstallTest(unittest.TestCase):
     def test_human_summary_highlights_warnings_and_failure(self) -> None:
         result = {
-            "version": "0.6.0",
+            "version": "0.6.1",
             "operation": "install",
             "dry_run": False,
             "apply": {"status": "APPLIED"},
@@ -76,7 +76,7 @@ class InstallTest(unittest.TestCase):
 
         output = summary_text(result)
 
-        self.assertIn("YTQJK v0.6.0：安装未完全成功", output)
+        self.assertIn("YTQJK v0.6.1：安装未完全成功", output)
         self.assertIn("资料导入：165 个成功，131 个未解析", output)
         self.assertIn("后台网页：启动失败（端口 8765）", output)
         self.assertIn("追加 --json", output)
@@ -94,7 +94,7 @@ class InstallTest(unittest.TestCase):
             [sys.executable, str(SETUP), "--version"], text=True,
             capture_output=True, check=False, cwd=ROOT,
         )
-        self.assertEqual(version.stdout.strip(), "0.6.0")
+        self.assertEqual(version.stdout.strip(), "0.6.1")
 
     def test_apply_needs_yes_and_target(self) -> None:
         self.assertNotEqual(run("--apply").returncode, 0)
