@@ -116,7 +116,9 @@ def test_unc_and_reparse_inputs_fail_closed(tmp_path: Path) -> None:
     with (
         mock.patch.object(Path, "lstat", lstat),
         mock.patch.object(Path, "is_symlink", lambda path: False),
-        mock.patch.object(Path, "is_junction", lambda path: False),
+        mock.patch.object(
+            Path, "is_junction", lambda path: False, create=True
+        ),
     ):
         result = import_codex_candidates(
             codex,

@@ -165,6 +165,11 @@ def _capture(
         descriptor = os.open(absolute, flags)
         with os.fdopen(descriptor, "rb") as stream:
             opened = os.fstat(stream.fileno())
+            if (
+                _identity(opened) != _identity(before)
+                or opened.st_nlink != before.st_nlink
+            ):
+                raise ArtifactSafetyError("ARTIFACT_CHANGED")
             _regular(opened)
             digest = hashlib.sha256()
             chunks = [] if retain else None
