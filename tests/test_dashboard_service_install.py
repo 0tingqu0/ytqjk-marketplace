@@ -166,6 +166,7 @@ class DashboardServiceInstallTest(unittest.TestCase):
 
         command = popen.call_args.args[0]
         self.assertEqual(command[-2:], ["--delay", "30.0"])
+        self.assertEqual(popen.call_args.kwargs["cwd"], str(script.parent))
 
 
 if __name__ == "__main__":

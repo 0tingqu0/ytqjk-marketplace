@@ -197,6 +197,7 @@ def schedule_dashboard_restart(
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "close_fds": True,
+        "cwd": str(script.parent),
     }
     if sys.platform == "win32":
         options["creationflags"] = (
