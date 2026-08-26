@@ -14,7 +14,19 @@ SKILL = PLUGIN / "skills" / "ytqjk"
 class DistributionLayoutTest(unittest.TestCase):
     def test_canonical_skill_has_no_repository_copy(self) -> None:
         named_skills = []
-        for candidate in REPOSITORY.rglob("SKILL.md"):
+        tracked = subprocess.run(
+            [
+                "git", "-C", str(REPOSITORY), "ls-files", "-z", "--",
+                ":(glob)**/SKILL.md",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        candidates = (
+            REPOSITORY / value.decode("utf-8")
+            for value in tracked if value
+        )
+        for candidate in candidates:
             text = candidate.read_text(encoding="utf-8")
             if "\nname: ytqjk\n" in text:
                 named_skills.append(candidate.resolve())
