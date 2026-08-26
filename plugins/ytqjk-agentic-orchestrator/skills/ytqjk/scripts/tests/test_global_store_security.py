@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -21,6 +22,9 @@ def approved_row(content: str) -> dict[str, object]:
         "line_start": 1,
         "line_end": 1,
         "content": content,
+        "source_sha256": hashlib.sha256(
+            content.encode("utf-8")
+        ).hexdigest(),
     }
 
 
@@ -44,7 +48,9 @@ class WindowsJunctionSecurityTest(unittest.TestCase):
             outside = base / "outside"
             knowledge.mkdir()
             outside.mkdir()
-            (outside / "fact.md").write_text("OUTSIDE_SCAN_MARKER", encoding="utf-8")
+            (outside / "fact.md").write_text(
+                "OUTSIDE_SCAN_MARKER", encoding="utf-8"
+            )
             make_directory_junction(knowledge / "verified", outside)
 
             chunks, stats = scan_global(knowledge, DEFAULT_CONFIG)
@@ -69,7 +75,9 @@ class WindowsJunctionSecurityTest(unittest.TestCase):
 
 
 class ApprovedPathSecurityTest(unittest.TestCase):
-    def test_current_hit_accepts_regular_file_inside_knowledge_root(self) -> None:
+    def test_current_hit_accepts_regular_file_inside_knowledge_root(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             knowledge = Path(temporary) / "knowledge"
             verified = knowledge / "verified"
@@ -80,6 +88,27 @@ class ApprovedPathSecurityTest(unittest.TestCase):
             self.assertTrue(
                 is_current_approved_hit(knowledge, approved_row(content))
             )
+
+    def test_current_hit_requires_exact_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            knowledge = Path(temporary) / "knowledge"
+            verified = knowledge / "verified"
+            verified.mkdir(parents=True)
+            content = "first\nsecond"
+            (verified / "fact.md").write_text(
+                content, encoding="utf-8"
+            )
+            row = approved_row("first")
+            row.pop("source_sha256")
+            self.assertFalse(is_current_approved_hit(knowledge, row))
+            row = approved_row("first")
+            row["source_sha256"] = "0" * 64
+            self.assertFalse(is_current_approved_hit(knowledge, row))
+            row = approved_row("second")
+            self.assertFalse(is_current_approved_hit(knowledge, row))
+            row = approved_row("first")
+            row["path"] = "verified\\fact.md"
+            self.assertFalse(is_current_approved_hit(knowledge, row))
 
     def test_current_hit_rejects_symlink_component_inside_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

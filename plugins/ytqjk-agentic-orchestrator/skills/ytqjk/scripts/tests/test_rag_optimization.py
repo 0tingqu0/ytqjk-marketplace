@@ -15,7 +15,11 @@ sys.path.insert(0, str(SCRIPTS))
 
 import project_source  # noqa: E402
 from rag_test_support import make_repo, query, run_rag  # noqa: E402
-from project_prefetch import list_prefetch, update_prefetch  # noqa: E402
+from project_prefetch import (  # noqa: E402
+    list_prefetch,
+    query_prefetch,
+    update_prefetch,
+)
 from project_tracking import identify_project  # noqa: E402
 
 
@@ -38,7 +42,9 @@ class RagOptimizationTest(unittest.TestCase):
             self.assertFalse(any("diff" in command for command in commands))
             rglob.assert_not_called()
 
-    def test_bootstrap_reuses_clean_indexes_and_preserves_auto_mode(self) -> None:
+    def test_bootstrap_reuses_clean_indexes_and_preserves_auto_mode(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             repo = make_repo(base / "repo", "自动建库只需词法索引。")
@@ -50,7 +56,9 @@ class RagOptimizationTest(unittest.TestCase):
             first = run_rag(
                 knowledge, "bootstrap", repo, "--vector-mode", "auto"
             )
-            project_database = Path(str(first["project_dir"])) / "lexical.sqlite3"
+            project_database = (
+                Path(str(first["project_dir"])) / "lexical.sqlite3"
+            )
             global_database = knowledge / "global-cache" / "lexical.sqlite3"
             project_mtime = project_database.stat().st_mtime_ns
             global_mtime = global_database.stat().st_mtime_ns
@@ -100,10 +108,16 @@ class RagOptimizationTest(unittest.TestCase):
                 knowledge, "bootstrap", workspace, "--vector-mode", "off"
             )
             candidate_result = query(
-                knowledge, workspace, "nested-session", "CANDIDATE_ONLY_MARKER_79421"
+                knowledge,
+                workspace,
+                "nested-session",
+                "CANDIDATE_ONLY_MARKER_79421",
             )
             dependency_result = query(
-                knowledge, workspace, "nested-session", "SKIPPED_TREE_MARKER_31859"
+                knowledge,
+                workspace,
+                "nested-session",
+                "SKIPPED_TREE_MARKER_31859",
             )
             safe_result = query(
                 knowledge, workspace, "nested-session", "普通目录安全知识"
@@ -199,7 +213,11 @@ class RagOptimizationTest(unittest.TestCase):
 
     def test_prefetch_purges_legacy_candidate_rows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project_dir = Path(temporary) / "project"
+            knowledge = Path(temporary) / "knowledge"
+            project_dir = knowledge / "projects" / "project"
+            source = knowledge / "verified" / "fact.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("批准知识。", encoding="utf-8")
             update_prefetch(
                 project_dir,
                 "批准",
@@ -213,13 +231,15 @@ class RagOptimizationTest(unittest.TestCase):
             database = project_dir / "cache" / "global-knowledge.sqlite3"
             with closing(sqlite3.connect(database)) as connection:
                 connection.execute(
-                    "INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO entries VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         "legacy-candidate",
                         "personal-experience/candidates/draft.md",
                         1,
                         1,
                         "旧候选缓存。",
+                        "0" * 64,
                         "候选",
                         "now",
                         "now",
@@ -231,7 +251,54 @@ class RagOptimizationTest(unittest.TestCase):
 
             rows = list_prefetch(project_dir)
 
-            self.assertEqual([row["path"] for row in rows], ["verified/fact.md"])
+            self.assertEqual(
+                [row["path"] for row in rows],
+                ["verified/fact.md"],
+            )
+
+    def test_prefetch_migrates_old_schema_without_field_shift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            knowledge = Path(temporary) / "knowledge"
+            project_dir = knowledge / "projects" / "project"
+            source = knowledge / "verified" / "fact.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("迁移知识", encoding="utf-8")
+            database = (
+                project_dir / "cache" / "global-knowledge.sqlite3"
+            )
+            database.parent.mkdir(parents=True)
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute(
+                    "CREATE TABLE entries ("
+                    "id TEXT PRIMARY KEY, path TEXT NOT NULL, "
+                    "line_start INTEGER NOT NULL, "
+                    "line_end INTEGER NOT NULL, content TEXT NOT NULL, "
+                    "query TEXT NOT NULL, cached_at TEXT NOT NULL, "
+                    "last_accessed TEXT NOT NULL, "
+                    "hit_count INTEGER NOT NULL, "
+                    "size_bytes INTEGER NOT NULL)"
+                )
+                connection.commit()
+
+            update_prefetch(
+                project_dir,
+                "迁移",
+                [{
+                    "path": "verified/fact.md",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "content": "迁移知识",
+                }],
+            )
+            rows = query_prefetch(
+                project_dir,
+                "迁移知识",
+                5,
+                knowledge_root=knowledge,
+            )
+
+            self.assertEqual(rows[0]["query"], "迁移")
+            self.assertEqual(len(rows[0]["source_sha256"]), 64)
 
 if __name__ == "__main__":
     unittest.main()

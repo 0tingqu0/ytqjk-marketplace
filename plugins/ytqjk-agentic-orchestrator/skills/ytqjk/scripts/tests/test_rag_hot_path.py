@@ -34,7 +34,9 @@ class RagHotPathTest(unittest.TestCase):
             with mock.patch.object(
                 global_session_query,
                 "scan_global",
-                side_effect=AssertionError("query path rescanned global knowledge"),
+                side_effect=AssertionError(
+                    "query path rescanned global knowledge"
+                ),
                 create=True,
             ):
                 result = global_session_query.query_global(
@@ -66,7 +68,9 @@ class RagHotPathTest(unittest.TestCase):
                 side_effect=AssertionError("query path walked project cache"),
             ), mock.patch(
                 "project_prefetch.enforce_project_capacity",
-                side_effect=AssertionError("query path enforced write-time capacity"),
+                side_effect=AssertionError(
+                    "query path enforced write-time capacity"
+                ),
             ):
                 result = global_session_query.query_global(
                     knowledge, repo, "FAST_PROJECT_CACHE_MARKER_912",
@@ -77,7 +81,11 @@ class RagHotPathTest(unittest.TestCase):
 
     def test_prefetch_stats_uses_unbounded_sql_aggregate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project_dir = Path(temporary) / "project"
+            knowledge = Path(temporary) / "knowledge"
+            project_dir = knowledge / "projects" / "project"
+            source = knowledge / "verified" / "seed.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("seed", encoding="utf-8")
             update_prefetch(
                 project_dir, "seed",
                 [{"path": "verified/seed.md", "line_start": 1,
@@ -85,12 +93,16 @@ class RagHotPathTest(unittest.TestCase):
             )
             database = project_dir / "cache" / "global-knowledge.sqlite3"
             with closing(sqlite3.connect(database)) as connection:
-                template = connection.execute("SELECT * FROM entries LIMIT 1").fetchone()
+                template = connection.execute(
+                    "SELECT * FROM entries LIMIT 1"
+                ).fetchone()
                 for index in range(1, 502):
                     row = list(template)
                     row[0], row[1] = f"entry-{index}", f"verified/{index}.md"
                     connection.execute(
-                        "INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row
+                        "INSERT INTO entries VALUES "
+                        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        row,
                     )
                 expected = connection.execute(
                     "SELECT COUNT(*), SUM(size_bytes) FROM entries"

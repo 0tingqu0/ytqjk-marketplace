@@ -9,31 +9,36 @@ from pathlib import Path
 from typing import Any
 
 from file_lock import exclusive_file_lock
-from global_store import is_current_approved_hit
+from knowledge_tree_runtime import (
+    QueryTree,
+    add_tree_evidence,
+    bootstrap_query_tree,
+    capture_bootstrap_intent,
+    query_node,
+    query_tree_transaction,
+    unavailable_node,
+)
 from platform_paths import default_knowledge_root
 from project_prefetch import (
     enforce_project_capacity,
     prefetch_stats,
-    query_prefetch,
     sync_prefetch_generation,
-    update_prefetch,
 )
-from project_source import project_query_state
 from project_tracking import identify_project, track_project
+from query_provenance import (
+    cache_ancestor_results,
+    current_governed_results,
+    project_stale as project_index_stale,
+)
 from rag_common import (
     DEFAULT_CONFIG,
-    SCHEMA_VERSION,
     atomic_json,
-    config_fingerprint,
     lexical_query,
     load_json,
 )
-from rag_locks import global_lock, project_id_lock
+from rag_locks import project_id_lock
 from rag_query import build_vector_cache, query_vector_cache, vector_enabled
 from session_memory import ensure_anchor, validate_session_binding
-
-
-GLOBAL_CACHE = "global-cache"
 
 
 def query_global(
@@ -55,108 +60,111 @@ def query_global(
             f"请求方项目标识与工作目录不匹配：expected={expected_project_id}。"
         )
     validate_session_binding(knowledge_root, session_id, project_id)
+    bootstrap_intent = capture_bootstrap_intent(knowledge_root, project_id)
     track_project(knowledge_root, project_root, project)
+    query_tree = bootstrap_query_tree(
+        knowledge_root, project_id, bootstrap_intent
+    )
+    with query_tree_transaction(knowledge_root, query_tree):
+        return _query_locked(
+            knowledge_root,
+            project_root,
+            query,
+            session_id,
+            project_id,
+            limit,
+            query_tree,
+        )
+
+
+def _query_locked(
+    knowledge_root: Path,
+    project_root: Path,
+    query: str,
+    session_id: str,
+    project_id: str,
+    limit: int,
+    query_tree: QueryTree,
+) -> dict[str, object]:
     anchor, created = ensure_anchor(knowledge_root, session_id, project_id)
     project_dir = knowledge_root / "projects" / project_id
-    config = load_json(knowledge_root / "config.json", DEFAULT_CONFIG)
-    with exclusive_file_lock(project_id_lock(knowledge_root, project_id)):
-        project_manifest_path = project_dir / "manifest.json"
-        project_manifest = load_json(project_manifest_path, {})
-        project_database = project_dir / "lexical.sqlite3"
-        if (
-            project_database.is_file()
-            and project_manifest.get("schema_version") != SCHEMA_VERSION
-        ):
-            raise RuntimeError("项目知识索引安全版本已过期，需要重新建立索引。")
-        project_stale = _project_stale(project_root, project_manifest, config)
-        project_results = _query_index(
-            project_dir,
-            project_database,
-            project_manifest_path,
-            project_manifest,
-            knowledge_root,
-            config,
-            query,
-            limit,
-            "project-source-cache",
-            allow_vector=not project_stale,
-            project_cache=True,
-        )
-        if project_results:
-            return _result(
-                project_id, knowledge_root, project_manifest.get("indexed_at"),
-                project_results, anchor, created, "PROJECT_CACHE_HIT",
-                "current-project-cache-only", project_stale,
-            )
-        cached = query_prefetch(
-            project_dir, query, limit, knowledge_root=knowledge_root
-        )
-        if cached:
-            return _result(
-                project_id, knowledge_root, cached[0].get("cached_at"), cached,
-                anchor, created, "PROJECT_CACHE_HIT",
-                "current-project-cache-only", project_stale,
-            )
-
-    cache = knowledge_root / GLOBAL_CACHE
-    with exclusive_file_lock(global_lock(knowledge_root)):
-        manifest_path = cache / "manifest.json"
-        manifest = load_json(manifest_path, {})
-        database = cache / "lexical.sqlite3"
-        global_absent = not manifest and not database.is_file()
-        if not global_absent and (
-            manifest.get("schema_version") != SCHEMA_VERSION
-            or not database.is_file()
-        ):
-            raise RuntimeError("全局知识索引不可用或已过期，需要重新建立索引。")
-        if global_absent:
-            generation = "GLOBAL_INDEX_ABSENT"
-            indexed_at = None
-        else:
-            if manifest.get("config_fingerprint") != config_fingerprint(config):
-                raise RuntimeError("全局知识索引配置已变化，需要重新建立索引。")
-            generation = str(
-                manifest.get("generation") or manifest.get("source_fingerprint") or ""
-            )
-            if not generation:
-                raise RuntimeError("全局知识索引缺少代际信息，需要重新建立索引。")
-            indexed_at = manifest.get("indexed_at")
-        if global_absent:
-            results: list[dict[str, Any]] = []
-        else:
-            results = _query_index(
-                cache,
-                database,
-                manifest_path,
-                manifest,
-                knowledge_root,
-                config,
-                query,
-                limit,
-                "global-fallback",
-                validator=lambda row: is_current_approved_hit(
-                    knowledge_root, row
-                ),
-            )
+    chain = "/".join(node.node_id for node in query_tree.chain)
+    cache_generation = "tree-chain:" + chain
+    if query_tree.revision > 0:
         with exclusive_file_lock(project_id_lock(knowledge_root, project_id)):
-            sync_prefetch_generation(project_dir, generation)
-            if results:
-                prefetched = update_prefetch(
-                    project_dir, query, results, generation=generation
-                )
-            else:
-                prefetched = []
-    status = "GLOBAL_FALLBACK_HIT" if results else "KNOWLEDGE_MISS"
-    scope = "global-fallback-current-project" if results else "no-knowledge"
+            sync_prefetch_generation(project_dir, cache_generation)
+    config = load_json(knowledge_root / "config.json", DEFAULT_CONFIG)
+    project_stale = True
+    visited: list[str] = []
+    unavailable: list[dict[str, str]] = []
+    last_indexed_at: object = None
+    for position, node in enumerate(query_tree.chain):
+        visited.append(node.node_id)
+        outcome = query_node(
+            node, position == 0, knowledge_root, project_root,
+            config, query, limit,
+            query_index=_query_index,
+            project_stale=project_index_stale,
+            request_project_id=project_id,
+        )
+        if position == 0:
+            project_stale = bool(outcome["stale"])
+        reason = outcome.get("unavailable_reason")
+        if isinstance(reason, str):
+            unavailable.append(unavailable_node(node, reason))
+            continue
+        last_indexed_at = outcome.get("indexed_at")
+        results = outcome["results"]
+        if not isinstance(results, list) or not results:
+            continue
+        peer_hit = node.kind == "mounted"
+        if not peer_hit:
+            results = current_governed_results(
+                knowledge_root, results, position > 0
+            )
+        if not results:
+            continue
+        prefetched = []
+        if position > 0 and not peer_hit:
+            results, prefetched = cache_ancestor_results(
+                knowledge_root,
+                project_dir,
+                project_id,
+                query,
+                results,
+                cache_generation,
+            )
+            if not results:
+                continue
+        status = "PROJECT_CACHE_HIT"
+        if peer_hit:
+            status = "PEER_FALLBACK_HIT"
+        elif position > 0:
+            status = "GLOBAL_FALLBACK_HIT"
+        if peer_hit:
+            scope = "peer-same-project-mounted"
+        elif position == 0:
+            scope = "current-project-cache-only"
+        else:
+            scope = "tree-ancestor-fallback-current-project"
+        result = _result(
+            project_id, knowledge_root, outcome.get("indexed_at"),
+            results, anchor, created, status, scope, project_stale,
+        )
+        result["prefetch_count"] = len(prefetched)
+        return add_tree_evidence(
+            result, query_tree, visited, unavailable, node.node_id,
+        )
     result = _result(
-        project_id, knowledge_root, indexed_at, results,
-        anchor, created, status, scope, project_stale,
+        project_id, knowledge_root, last_indexed_at, [], anchor, created,
+        "KNOWLEDGE_MISS", "no-knowledge", project_stale,
     )
-    result["prefetch_count"] = len(prefetched)
-    if not results:
-        result["next_action"] = "SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE"
-        result["intake_interface"] = "knowledge_intake_cli.py"
-    return result
+    result["prefetch_count"] = 0
+    result["next_action"] = "SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE"
+    result["intake_interface"] = "knowledge_intake_cli.py"
+    return add_tree_evidence(
+        result, query_tree, visited, unavailable, None,
+    )
 
 
 def _result(
@@ -200,6 +208,7 @@ def _query_index(
     allow_vector: bool = True,
     project_cache: bool = False,
     validator: Callable[[dict[str, Any]], bool] | None = None,
+    read_only: bool = False,
 ) -> list[dict[str, Any]]:
     if not database.is_file():
         return []
@@ -217,7 +226,9 @@ def _query_index(
             break
         offset += len(page)
     if not results:
-        mode = str(manifest.get("vector_mode", config.get("vector_mode", "auto")))
+        mode = str(
+            manifest.get("vector_mode", config.get("vector_mode", "auto"))
+        )
         stats = manifest.get("stats", {"text_bytes": 0, "chunks": 0})
         vector = manifest.get("vector", {})
         if (
@@ -225,7 +236,7 @@ def _query_index(
             and int(stats.get("chunks", 0)) > 0
             and vector_enabled(mode, stats, config)
         ):
-            if not vector.get("enabled"):
+            if not vector.get("enabled") and not read_only:
                 vector = build_vector_cache(cache_dir, knowledge_root, config)
                 manifest["vector"] = vector
                 atomic_json(manifest_path, manifest)
@@ -243,6 +254,10 @@ def _query_index(
                     if validator is not None:
                         results = [row for row in results if validator(row)]
                 except Exception as exc:
+                    if read_only:
+                        raise RuntimeError(
+                            "ANCESTOR_VECTOR_QUERY_FAILED"
+                        ) from exc
                     manifest["vector"] = {
                         "enabled": False,
                         "status": "DEGRADED",
@@ -255,32 +270,21 @@ def _query_index(
     return results
 
 
-def _project_stale(
-    project_root: Path, manifest: dict[str, object], config: dict[str, Any]
-) -> bool:
-    indexed = manifest.get("indexed_identity")
-    if not isinstance(indexed, dict):
-        indexed = manifest.get("identity")
-    if not isinstance(indexed, dict):
-        return True
-    current = project_query_state(project_root)
-    if current["head"] == "NON_GIT":
-        return True
-    return (
-        current["head"] != indexed.get("head")
-        or current["dirty"] != "false"
-        or indexed.get("dirty") not in {"false", "not-applicable"}
-        or current.get("materialization") != indexed.get("materialization")
-        or manifest.get("config_fingerprint") != config_fingerprint(config)
-    )
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Query global knowledge and anchor a Codex session.")
+    parser = argparse.ArgumentParser(
+        description="Query global knowledge and anchor a Codex session."
+    )
     parser.add_argument("query")
-    parser.add_argument("--knowledge-root", type=Path, default=default_knowledge_root())
+    parser.add_argument(
+        "--knowledge-root",
+        type=Path,
+        default=default_knowledge_root(),
+    )
     parser.add_argument("--project-root", type=Path, required=True)
-    parser.add_argument("--session-id", default=os.environ.get("CODEX_THREAD_ID", ""))
+    parser.add_argument(
+        "--session-id",
+        default=os.environ.get("CODEX_THREAD_ID", ""),
+    )
     parser.add_argument("--expected-project-id", required=True)
     parser.add_argument("--limit", type=int, default=5)
     args = parser.parse_args()
@@ -288,8 +292,12 @@ def main() -> int:
         if not args.session_id.strip():
             raise ValueError("宿主未提供稳定会话标识，无法创建会话锚点。")
         result = query_global(
-            args.knowledge_root.resolve(), args.project_root.resolve(), args.query,
-            args.session_id, args.expected_project_id, args.limit
+            args.knowledge_root.resolve(),
+            args.project_root.resolve(),
+            args.query,
+            args.session_id,
+            args.expected_project_id,
+            args.limit,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         result = {"ok": False, "error": str(exc)}
