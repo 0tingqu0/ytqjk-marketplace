@@ -89,6 +89,7 @@ const ids = {
   cancel: "33333333-3333-3333-3333-333333333333",
   folder: "44444444-4444-4444-4444-444444444444",
   error: "55555555-5555-5555-5555-555555555555",
+  refresh: "66666666-6666-6666-6666-666666666666",
 };
 const calls = [];
 function job(id, state, revision) {
@@ -123,6 +124,8 @@ globalThis.fetch = async (path, options = {}) => {
     value = job(ids.cancel, "RUNNING", 1);
   } else if (path.includes(ids.retry)) {
     value = job(ids.retry, "SUCCEEDED", 3);
+  } else if (path.includes(ids.refresh)) {
+    value = job(ids.refresh, "SUCCEEDED", 2);
   } else if (path.includes(ids.folder)) {
     value = job(ids.folder, "SUCCEEDED", 2);
   } else {
@@ -164,6 +167,22 @@ assert.match(elements.get("intake-stage").textContent, /complete.*3 页/);
 assert.equal(elements.get("intake-percent").textContent, "100%");
 assert.match([...saved.values()].join(""), new RegExp(ids.restored));
 assert.ok(refreshes >= 1);
+
+const refreshFailure = {
+  intakeResults: [{
+    name: "saved.xlsx", message: "RUNNING", jobId: ids.refresh,
+    jobState: "RUNNING", jobStage: "candidate-write", jobProgress: 90,
+    pageCount: 3, jobRevision: 1,
+  }],
+};
+intake.bindIntake(refreshFailure, async () => {
+  throw new Error("EXPECTED_REFRESH_FAILURE");
+});
+await new Promise((resolve) => setTimeout(resolve, 20));
+assert.equal(refreshFailure.intakeResults[0].jobState, "SUCCEEDED");
+assert.match(refreshFailure.intakeResults[0].message, /CANDIDATE.*4/);
+assert.match(elements.get("intake-status").textContent, /列表刷新失败/);
+assert.doesNotMatch(elements.get("intake-stage").textContent, /处理失败/);
 
 function find(node, label) {
   if (node.textContent === label) return node;

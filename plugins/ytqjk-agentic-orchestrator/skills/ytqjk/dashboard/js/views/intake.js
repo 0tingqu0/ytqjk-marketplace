@@ -3,6 +3,7 @@ import {
 } from "../api.js";
 import { byId, button, clear, text } from "../ui/dom.js";
 import { saveIntakeResults } from "../store.js";
+import { refreshAfterSuccess } from "./intake_refresh.js";
 
 function progress(stage, loaded, total) {
   const box = byId("intake-progress");
@@ -143,9 +144,10 @@ async function follow(context, name, initial) {
     throw tagged(error, initial.id);
   }
   if (current.state === "SUCCEEDED") {
-    try { jobMessage(current); }
+    let message;
+    try { message = jobMessage(current); }
     catch (error) { throw tagged(error, current.id); }
-    await context.refresh();
+    await refreshAfterSuccess(context.refresh, setStatus, message);
     return current;
   }
   throw tagged(new Error(jobMessage(current)), current.id);
@@ -197,7 +199,7 @@ async function publish(
   progress("已完成", 1, 1);
   setStatus(message);
   saveResult(context, { name, message });
-  await context.refresh();
+  await refreshAfterSuccess(context.refresh, setStatus, message);
   return response;
 }
 
@@ -237,11 +239,11 @@ async function publishFolder(context, files, purpose) {
       files.length,
     );
   }
-  setStatus(
-    `文件夹处理完成：可复审 ${ready} · 待补充 ${waiting} · 失败 ${failed}`,
-  );
+  const message =
+    `文件夹处理完成：可复审 ${ready} · 待补充 ${waiting} · 失败 ${failed}`;
+  setStatus(message);
   persist(context);
-  await context.refresh();
+  await refreshAfterSuccess(context.refresh, setStatus, message);
 }
 
 function restoredJob(row) {
