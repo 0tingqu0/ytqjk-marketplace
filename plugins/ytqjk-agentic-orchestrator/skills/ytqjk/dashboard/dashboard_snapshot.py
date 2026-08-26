@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from archive_sync import sync_archived_sessions
+from candidate_actions import candidate_document
 from global_store import is_current_approved_hit
 from project_prefetch import list_prefetch, prefetch_stats
 
@@ -29,28 +30,41 @@ def read_json(path: Path) -> dict[str, object]:
 def snapshot(root: Path, safe_document: object) -> dict[str, object]:
     sync_archived_sessions(root)
     documents = [
-        row for relative, label, state in SECTIONS for row in relative_files(root, relative, label, state, safe_document)
+        row
+        for relative, label, state in SECTIONS
+        for row in relative_files(
+            root, relative, label, state, safe_document
+        )
     ]
     sessions = session_rows(root)
     return {
-        "root": str(root), "config": read_json(root / "config.json"),
+        "root": str(root),
+        "config": read_json(root / "config.json"),
         "global": read_json(root / "global-cache" / "manifest.json"),
         "global_library": global_library(root, documents),
-        "projects": project_rows(root), "sessions": sessions, "documents": documents,
+        "projects": project_rows(root),
+        "sessions": sessions,
+        "documents": documents,
         "counts": {
             "verified": sum(item["state"] == "verified" for item in documents),
             "approved": sum(item["state"] == "approved" for item in documents),
-            "candidate": sum(item["state"] == "candidate" for item in documents),
+            "candidate": sum(
+                item["state"] == "candidate" for item in documents
+            ),
             "sessions": len(sessions),
         },
     }
 
 
-def global_library(root: Path, documents: list[dict[str, object]]) -> dict[str, object]:
+def global_library(
+    root: Path,
+    documents: list[dict[str, object]],
+) -> dict[str, object]:
     manifest = read_json(root / "global-cache" / "manifest.json")
     stats = manifest.get("stats", {})
     return {
-        "path": str(root), "indexed_at": manifest.get("indexed_at"),
+        "path": str(root),
+        "indexed_at": manifest.get("indexed_at"),
         "files": stats.get("files", 0) if isinstance(stats, dict) else 0,
         "chunks": stats.get("chunks", 0) if isinstance(stats, dict) else 0,
         "verified": sum(item["state"] == "verified" for item in documents),
@@ -70,23 +84,44 @@ def global_index_library(root: Path) -> dict[str, object]:
         lambda chunk: is_current_approved_hit(root, chunk),
     )
     return {
-        "indexed_at": manifest.get("indexed_at"), "files": files,
-        "file_count": len(files), "chunk_count": chunk_count,
+        "indexed_at": manifest.get("indexed_at"),
+        "files": files,
+        "file_count": len(files),
+        "chunk_count": chunk_count,
         "expected_files": stats.get("files", 0),
         "expected_chunks": stats.get("chunks", 0),
     }
 
 
-def relative_files(root: Path, relative: str, label: str, state: str, safe_document: object) -> list[dict[str, object]]:
+def relative_files(
+    root: Path,
+    relative: str,
+    label: str,
+    state: str,
+    safe_document: object,
+) -> list[dict[str, object]]:
     directory = root / relative
     if not directory.is_dir():
         return []
     rows = []
     for path in sorted(directory.rglob("*.md")):
         display_path = path.relative_to(root).as_posix()
-        if not callable(safe_document) or safe_document(root, display_path) is None:
+        if state == "candidate" and candidate_document(
+            root, display_path,
+        ) is None:
             continue
-        rows.append({"path": display_path, "label": label, "state": state, "bytes": path.stat().st_size, "modified": path.stat().st_mtime})
+        if (
+            not callable(safe_document)
+            or safe_document(root, display_path) is None
+        ):
+            continue
+        rows.append({
+            "path": display_path,
+            "label": label,
+            "state": state,
+            "bytes": path.stat().st_size,
+            "modified": path.stat().st_mtime,
+        })
     return rows
 
 
@@ -94,23 +129,61 @@ def project_rows(root: Path) -> list[dict[str, object]]:
     rows = []
     catalog = read_json(root / "catalog.json").get("projects", {})
     project_root = root / "projects"
-    directories = {path.name for path in project_root.iterdir() if path.is_dir()} if project_root.is_dir() else set()
+    directories = (
+        {path.name for path in project_root.iterdir() if path.is_dir()}
+        if project_root.is_dir()
+        else set()
+    )
     catalog_ids = set(catalog) if isinstance(catalog, dict) else set()
     for project_id in sorted(directories | catalog_ids):
         manifest = read_json(project_root / project_id / "manifest.json")
-        identity, stats = manifest.get("identity", {}), manifest.get("stats", {})
+        identity = manifest.get("identity", {})
+        stats = manifest.get("stats", {})
         vector = manifest.get("vector", {})
-        catalog_row = catalog.get(project_id, {}) if isinstance(catalog, dict) else {}
-        if not isinstance(identity, dict): identity = {}
-        if not isinstance(stats, dict): stats = {}
-        if not isinstance(catalog_row, dict): catalog_row = {}
+        catalog_row = (
+            catalog.get(project_id, {})
+            if isinstance(catalog, dict)
+            else {}
+        )
+        if not isinstance(identity, dict):
+            identity = {}
+        if not isinstance(stats, dict):
+            stats = {}
+        if not isinstance(catalog_row, dict):
+            catalog_row = {}
         project_dir = project_root / project_id
-        rows.append({"id": identity.get("id", project_id), "name": identity.get("name", catalog_row.get("name", project_id)), "head": identity.get("head", "未索引"), "dirty": identity.get("dirty", "unknown"), "indexed_at": manifest.get("indexed_at"), "files": stats.get("files", 0), "chunks": stats.get("chunks", 0), "text_bytes": stats.get("text_bytes", 0), "cache": prefetch_stats(project_dir), "vector": vector.get("status", "NOT_BUILT") if isinstance(vector, dict) else "NOT_BUILT", "tracking": manifest.get("index_state", catalog_row.get("tracking_state", "INDEXED" if manifest else "REGISTERED"))})
+        vector_status = (
+            vector.get("status", "NOT_BUILT")
+            if isinstance(vector, dict)
+            else "NOT_BUILT"
+        )
+        tracking = catalog_row.get(
+            "tracking_state",
+            "INDEXED" if manifest else "REGISTERED",
+        )
+        rows.append({
+            "id": identity.get("id", project_id),
+            "name": identity.get(
+                "name", catalog_row.get("name", project_id)
+            ),
+            "head": identity.get("head", "未索引"),
+            "dirty": identity.get("dirty", "unknown"),
+            "indexed_at": manifest.get("indexed_at"),
+            "files": stats.get("files", 0),
+            "chunks": stats.get("chunks", 0),
+            "text_bytes": stats.get("text_bytes", 0),
+            "cache": prefetch_stats(project_dir),
+            "vector": vector_status,
+            "tracking": manifest.get("index_state", tracking),
+        })
     return rows
 
 
 def project_library(root: Path, project_id: str) -> dict[str, object] | None:
-    if not project_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in project_id):
+    allowed = (
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    )
+    if not project_id or any(char not in allowed for char in project_id):
         return None
     project_dir = root / "projects" / project_id
     manifest = read_json(project_dir / "manifest.json")
@@ -119,11 +192,16 @@ def project_library(root: Path, project_id: str) -> dict[str, object] | None:
         return None
     files, chunk_count = index_contents(project_dir / "lexical.sqlite3")
     return {
-        "id": project_id, "name": identity.get("name", project_id),
-        "indexed_at": manifest.get("indexed_at"), "files": files,
-        "file_count": len(files), "chunk_count": chunk_count,
-        "expected_files": stats.get("files", 0), "expected_chunks": stats.get("chunks", 0),
-        "prefetch": list_prefetch(project_dir), "cache": prefetch_stats(project_dir),
+        "id": project_id,
+        "name": identity.get("name", project_id),
+        "indexed_at": manifest.get("indexed_at"),
+        "files": files,
+        "file_count": len(files),
+        "chunk_count": chunk_count,
+        "expected_files": stats.get("files", 0),
+        "expected_chunks": stats.get("chunks", 0),
+        "prefetch": list_prefetch(project_dir),
+        "cache": prefetch_stats(project_dir),
     }
 
 
@@ -159,7 +237,9 @@ def read_index_chunks(database: Path) -> list[dict[str, object]]:
         connection.close()
     return [
         {
-            "path": row[0], "line_start": row[1], "line_end": row[2],
+            "path": row[0],
+            "line_start": row[1],
+            "line_end": row[2],
             "content": row[3],
             **({"source_sha256": row[4]} if len(row) > 4 else {}),
         }
@@ -173,5 +253,16 @@ def session_rows(root: Path) -> list[dict[str, object]]:
         anchor = read_json(path)
         key, project = anchor.get("session_key"), anchor.get("project_id")
         if isinstance(key, str) and isinstance(project, str):
-            rows.append({"key": key[:12], "project": project, "created_at": anchor.get("created_at"), "last_activity_at": anchor.get("last_activity_at"), "archived_at": anchor.get("archived_at"), "has_memory": bool(anchor.get("memory"))})
-    return sorted(rows, key=lambda item: str(item["last_activity_at"] or ""), reverse=True)
+            rows.append({
+                "key": key[:12],
+                "project": project,
+                "created_at": anchor.get("created_at"),
+                "last_activity_at": anchor.get("last_activity_at"),
+                "archived_at": anchor.get("archived_at"),
+                "has_memory": bool(anchor.get("memory")),
+            })
+    return sorted(
+        rows,
+        key=lambda item: str(item["last_activity_at"] or ""),
+        reverse=True,
+    )

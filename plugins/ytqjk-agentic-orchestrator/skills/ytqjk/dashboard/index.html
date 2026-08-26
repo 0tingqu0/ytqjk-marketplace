@@ -3,68 +3,143 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>YTQJK 知识库</title>
+  <meta name="color-scheme" content="light dark">
+  <title>YTQJK 本地知识工作台</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="tree.css">
+  <link rel="stylesheet" href="peer.css">
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">YK</span>
-      <div class="brand-copy">
-        <p class="eyebrow">YTQJK LOCAL KNOWLEDGE</p>
-        <h1>知识库控制台</h1>
-        <div class="version-control">
-          <button id="version-trigger" class="version-trigger" type="button" aria-expanded="false" aria-controls="update-panel" aria-label="查看版本和更新">v–</button>
-          <div id="update-panel" class="update-panel" hidden>
-            <span id="update-status" role="status">正在检查更新</span>
-            <button id="install-update" type="button" title="安装最新版本" hidden>↓ 更新</button>
+<body data-theme="system">
+  <div class="app-shell">
+    <aside id="app-rail" class="app-rail" aria-label="主导航">
+      <div class="rail-brand"><span aria-hidden="true">YK</span><b>YTQJK</b></div>
+      <nav class="rail-nav" aria-label="知识工作台视图">
+        <button type="button" data-route="overview">总览</button>
+        <button type="button" data-route="intake">投递任务</button>
+        <button type="button" data-route="documents">知识文档</button>
+        <button type="button" data-route="review">候选审阅 <strong id="rail-candidate-count">–</strong></button>
+        <button type="button" data-route="libraries">知识库树</button>
+        <button type="button" data-route="sessions">会话锚点</button>
+      </nav>
+      <div class="rail-footer"><button id="theme-toggle" type="button">主题：系统</button><button id="shortcut-help" type="button">快捷键</button></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="appbar">
+        <button id="rail-toggle" class="mobile-only" type="button" aria-expanded="false" aria-controls="app-rail">菜单</button>
+        <div><p id="view-kicker" class="eyebrow">LOCAL KNOWLEDGE</p><h1 id="view-title">总览</h1></div>
+        <div class="appbar-actions">
+          <button id="command-trigger" type="button">搜索 <kbd>Ctrl K</kbd></button>
+          <output id="updated" aria-live="polite">读取中</output>
+          <button id="refresh" type="button" title="刷新数据">刷新</button>
+          <div class="version-control">
+            <button id="version-trigger" class="version-trigger" type="button" aria-expanded="false" aria-controls="update-panel" aria-label="查看版本和更新">v–</button>
+            <div id="update-panel" class="update-panel" hidden>
+              <span id="update-status" role="status">正在检查更新</span>
+              <button id="install-update" type="button" title="安装最新版本" hidden>更新</button>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-    <div class="actions"><span class="sync-state"><i></i><span id="updated">读取中</span></span><button id="refresh" title="刷新数据" aria-label="刷新数据">↻</button></div>
-  </header>
-  <main>
-    <section class="summary" aria-label="知识库摘要">
-      <article><span>已验证</span><strong id="verified-count">-</strong></article>
-      <article><span>已批准经验</span><strong id="approved-count">-</strong></article>
-      <article><span>候选经验</span><strong id="candidate-count">-</strong></article>
-      <article><span>锚定会话</span><strong id="session-count">-</strong></article>
-      <article class="root"><span>知识根</span><strong id="root">-</strong></article>
-    </section>
-    <section class="libraries" aria-label="知识库结构">
-      <article class="global-library"><div><span class="section-kicker">总库</span><h2>总知识库</h2></div><dl id="global-library"></dl><button id="open-global-library" class="open-project-library" type="button">打开总库索引</button></article>
-      <article class="project-library"><div><span class="section-kicker">子库</span><h2>项目知识子库</h2><p>项目首次访问后自动登记；按需建立源码索引。</p></div><strong id="project-library-count">-</strong></article>
-    </section>
-    <section class="workspace">
-      <aside>
-        <section class="intake" aria-labelledby="intake-title">
-          <div class="panel-heading"><span class="panel-index">01</span><h2 id="intake-title">投递资料</h2></div>
-          <label class="drop-zone" for="file-input"><span class="drop-title">拖入资料</span><small>文本、Office、图片或音频，单份最大 10 MiB</small></label>
-          <input id="file-input" type="file" accept=".aac,.adoc,.asciidoc,.bat,.bib,.c,.cc,.cfg,.clj,.cljc,.cljs,.cmake,.coffee,.conf,.cpp,.cs,.css,.csv,.dart,.diff,.docx,.dockerfile,.elm,.env.example,.ex,.exs,.fish,.flac,.fs,.fsx,.gitattributes,.gitignore,.gif,.go,.gradle,.graphql,.groovy,.h,.hcl,.hpp,.html,.ini,.jade,.java,.jpeg,.jl,.jpg,.js,.json,.jsonl,.jsx,.kt,.kts,.less,.liquid,.log,.lua,.m4a,.md,.mdx,.mjs,.mk,.mp3,.nim,.nix,.ogg,.opus,.php,.pl,.pm,.png,.pptx,.properties,.proto,.prisma,.ps1,.psd1,.pug,.py,.r,.rake,.rb,.rst,.rs,.sass,.sbt,.scss,.sh,.sol,.sql,.styl,.svg,.swift,.tf,.toml,.ts,.tsx,.txt,.v,.vala,.vim,.vue,.wav,.webp,.xaml,.xlsx,.xml,.yaml,.yml,.zsh" hidden>
-          <input id="folder-input" type="file" webkitdirectory multiple hidden>
-          <label class="folder-select" for="folder-input">选择文件夹</label>
-          <label for="purpose">资料作用</label>
-          <input id="purpose" maxlength="500" placeholder="例如：说明部署步骤、记录故障根因、作为接口规范参考">
-          <label for="note">也可直接粘贴</label>
-          <textarea id="note" rows="4" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
-          <button id="submit-intake">存为候选资料</button><div id="intake-progress" hidden role="status"><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><i><i id="intake-progress-bar"></i></i></div><p id="intake-status" role="status"></p>
+      </header>
+
+      <main id="view-root" tabindex="-1">
+        <p id="snapshot-error" class="snapshot-error" role="alert" hidden></p>
+        <section id="view-overview" class="view-panel" data-view="overview">
+          <div class="view-heading"><div><p class="eyebrow">状态</p><h2>知识库概况</h2></div><span id="overview-stale" class="stale-note" hidden>显示上次成功数据</span></div>
+          <div id="overview-summary" class="metric-grid" aria-live="polite"></div>
+          <div class="split-grid"><section class="surface"><p class="eyebrow">总库</p><h3>全局知识索引</h3><dl id="global-library"></dl><button id="open-global-library" class="secondary" type="button">浏览总库索引</button></section><section class="surface"><p class="eyebrow">子库</p><h3>项目索引</h3><p id="project-library-summary" class="muted">读取中</p><button class="secondary" type="button" data-route="libraries">查看知识库树</button></section></div>
+          <section class="surface"><div class="section-row"><div><p class="eyebrow">待处理</p><h3>候选资料</h3></div><button class="text-button" type="button" data-route="review">进入审阅</button></div><div id="overview-candidates" class="compact-list"></div></section>
         </section>
-        <label class="filter-label" for="filter">筛选条目</label>
-        <div class="search-wrap"><input id="filter" type="search" placeholder="路径、类别或状态"></div>
-        <div class="legend"><span class="dot verified"></span>已验证 <span class="dot approved"></span>已批准 <span class="dot candidate"></span>候选</div>
-        <nav id="documents" aria-label="知识文档"></nav>
-      </aside>
-      <section class="detail" aria-live="polite">
-        <div id="empty"><span class="empty-mark">+</span><h2>选择一条知识</h2><p>候选条目只用于审阅，不等同于已批准经验。</p></div>
-        <article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" hidden></textarea><div id="preview-actions" hidden><button id="approve-candidate" hidden>批准入库</button><button id="save-candidate">保存修改</button><button id="delete-candidate">删除候选资料</button></div></article>
-      </section>
+
+        <section id="view-intake" class="view-panel" data-view="intake" hidden>
+          <div class="view-heading"><div><p class="eyebrow">投递</p><h2>投递任务</h2><p class="muted">投递资料只会保存为候选，不会自动批准。</p></div></div>
+          <div class="intake-layout"><form id="intake-form" class="surface intake-form"><label class="drop-zone" for="file-input"><b>选择或拖入资料</b><span>文本、Office、图片或音频；单份最大 10 MiB</span></label><input id="file-input" type="file" hidden><input id="folder-input" type="file" webkitdirectory multiple hidden><div class="form-actions"><label class="secondary" for="folder-input">选择文件夹</label><button id="submit-intake" type="submit">保存文本为候选</button></div><label for="purpose">资料作用</label><input id="purpose" maxlength="500" placeholder="例如：部署步骤或故障根因"><label for="note">直接粘贴</label><textarea id="note" rows="7" placeholder="输入可复用的资料、结论或复盘记录"></textarea></form><section class="surface task-panel"><p class="eyebrow">最近浏览器记录</p><h3>导入进度</h3><div id="intake-progress" class="progress" hidden><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><span class="progress-track"><span id="intake-progress-bar"></span></span></div><p id="intake-status" class="status-message" role="status">尚无投递任务。</p><div id="intake-results" class="compact-list"></div></section></div>
+        </section>
+
+        <section id="view-documents" class="view-panel" data-view="documents" hidden>
+          <div class="view-heading"><div><p class="eyebrow">检索</p><h2>知识文档</h2></div><label class="search-label">筛选<input id="document-filter" data-view-search type="search" placeholder="路径、类别或状态"></label></div>
+          <div class="workbench"><section class="surface document-list-panel"><div class="filter-row" role="group" aria-label="文档状态"><button data-document-state="all" type="button">全部</button><button data-document-state="verified" type="button">已验证</button><button data-document-state="approved" type="button">已批准</button><button data-document-state="candidate" type="button">候选</button></div><div id="documents" class="document-list"></div></section><section class="surface document-detail"><div id="document-empty" class="empty-state"><h3>选择一条知识</h3><p>候选资料只用于人工审阅，不等同于已批准经验。</p></div><article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" rows="18" hidden></textarea><div id="preview-actions" class="form-actions" hidden><button id="approve-candidate" type="button">批准入库</button><button id="save-candidate" class="secondary" type="button">保存修改</button><button id="delete-candidate" class="danger" type="button">删除候选</button></div></article></section></div>
+        </section>
+
+        <section id="view-review" class="view-panel" data-view="review" hidden>
+          <div class="view-heading"><div><p class="eyebrow">人工决策</p><h2>候选审阅</h2><p class="muted">人工批准会改变状态；批准不代表来源已验证。</p></div></div>
+          <div class="workbench"><section class="surface"><div id="review-list" class="document-list"></div></section><section class="surface"><div id="review-empty" class="empty-state"><h3>选择候选资料</h3><p>可编辑、查看评估说明，再决定批准或删除。</p></div><div id="review-detail" hidden></div></section></div>
+        </section>
+
+        <section id="view-libraries" class="view-panel" data-view="libraries" hidden>
+          <div class="view-heading">
+            <div><p class="eyebrow">层级管理</p><h2>知识库树</h2><p id="tree-status" class="muted">读取中</p></div>
+            <button id="new-root-library" type="button">新建根库</button>
+          </div>
+          <div id="project-grid" class="project-grid"></div>
+          <section class="surface peer-workspace" aria-labelledby="peer-heading">
+            <div class="peer-heading"><div><p class="eyebrow">局域网协作</p><h3 id="peer-heading">已授权知识库</h3><p id="peer-runtime" class="muted">服务状态读取中</p></div><span id="peer-state" class="status-pill">读取中</span></div>
+            <div class="peer-toolbar"><button id="peer-bootstrap" type="button">初始化局域网服务</button><button id="peer-new" class="secondary" type="button">新增授权电脑</button><button id="peer-secret" class="secondary" type="button">生成一次性共享密钥</button></div>
+            <form id="peer-service-form" class="peer-service-form"><label>监听地址<input id="peer-bind-host" required value="127.0.0.1"></label><label>端口<input id="peer-port" type="number" required min="1" max="65535" value="8766"></label><label class="check-row"><input id="peer-service-enabled" type="checkbox">启用局域网服务</label><label class="check-row"><input id="peer-service-insecure" type="checkbox">允许未加密局域网 HTTP</label><button id="peer-service-save" type="submit">保存服务配置</button></form>
+            <p id="peer-status" class="status-message" role="status"></p>
+            <div class="peer-grid"><section><div class="section-row"><h3>授权电脑</h3><span class="muted">保存的密钥永不回显</span></div><div id="peer-list" class="peer-list"></div></section><section><h3>同级知识检索</h3><form id="peer-dispatch-form" class="peer-dispatch-form"><label>当前项目<input id="peer-dispatch-project" list="peer-project-options" required></label><datalist id="peer-project-options"></datalist><datalist id="peer-node-options"></datalist><label>检索内容<input id="peer-dispatch-query" type="search" required maxlength="2000"></label><label>最多结果<input id="peer-dispatch-limit" type="number" required min="1" max="20" value="5"></label><button id="peer-dispatch-submit" type="submit">向同级库检索</button></form><div id="peer-results" class="peer-results" aria-live="polite"></div></section></div>
+          </section>
+        </section>
+        <section id="view-sessions" class="view-panel" data-view="sessions" hidden><div class="view-heading"><div><p class="eyebrow">会话层</p><h2>会话锚点</h2><p class="muted">按项目聚合的匿名锚点。</p></div></div><div id="session-grid" class="session-grid"></div></section>
+      </main>
     </section>
-    <section class="projects"><div class="section-title"><div><span class="section-kicker">项目层</span><h2>项目知识子库</h2></div><span id="global-status"></span></div><div id="project-grid"></div></section>
-    <section class="projects"><div class="section-title"><div><span class="section-kicker">会话层</span><h2>锚定会话</h2></div><span>按项目聚合，展开查看匿名会话</span></div><div id="session-grid"></div></section>
-  </main>
-  <dialog id="project-library-dialog"><header><div><span id="library-kicker" class="section-kicker">索引</span><h2 id="project-library-title">读取中</h2><p id="project-library-meta"></p></div><button id="close-project-library" title="关闭" aria-label="关闭">×</button></header><p id="project-library-empty" hidden>尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
-  <script src="app.js"></script>
+  </div>
+
+  <nav class="bottom-nav" aria-label="移动导航"><button data-route="overview" type="button">总览</button><button data-route="intake" type="button">投递</button><button data-route="documents" type="button">文档</button><button id="bottom-more" type="button">更多</button></nav>
+  <dialog id="project-library-dialog"><header><div><p id="library-kicker" class="eyebrow">索引</p><h2 id="project-library-title">读取中</h2><p id="project-library-meta" class="muted"></p></div><button id="close-project-library" type="button">关闭</button></header><p id="project-library-empty" class="empty-state" hidden>尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
+  <dialog id="tree-dialog" aria-labelledby="tree-action-title">
+    <header>
+      <div><p class="eyebrow">拓扑变更</p><h2 id="tree-action-title">知识库操作</h2></div>
+      <button id="close-tree-dialog" type="button">关闭</button>
+    </header>
+    <form id="tree-action-form" class="tree-action-form">
+      <p id="tree-action-target" class="muted"></p>
+      <div class="tree-form-grid">
+        <label id="tree-node-id-field">唯一标识
+          <input id="tree-node-id" required maxlength="128"
+                 pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}">
+        </label>
+        <label id="tree-title-field">显示名称
+          <input id="tree-title" required maxlength="160">
+        </label>
+        <label id="tree-node-type-field">知识库类型
+          <select id="tree-node-type">
+            <option value="group">本地分组库</option>
+            <option value="mounted">只读挂载库</option>
+          </select>
+        </label>
+        <label id="tree-parent-id-field">父知识库
+          <select id="tree-parent-id"></select>
+        </label>
+        <label id="tree-middle-id-field">作为中间库的根节点
+          <select id="tree-middle-id" required></select>
+        </label>
+        <label id="tree-mount-id-field">挂载标识
+          <input id="tree-mount-id" required maxlength="128">
+        </label>
+        <label id="tree-capability-field">能力范围
+          <input id="tree-capability" required maxlength="128"
+                 value="query-v1">
+        </label>
+      </div>
+      <section id="tree-preview" class="tree-preview" hidden>
+        <h3>变更预览</h3>
+        <ul id="tree-preview-list"></ul>
+      </section>
+      <p id="tree-action-status" class="status-message" role="status"></p>
+      <div class="form-actions">
+        <button id="cancel-tree-action" class="secondary"
+                type="button">取消</button>
+        <button id="tree-action-submit" type="submit">生成变更预览</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="peer-dialog" aria-labelledby="peer-dialog-title"><header><div><p class="eyebrow">授权连接</p><h2 id="peer-dialog-title">新增授权电脑</h2></div><button id="close-peer-dialog" type="button">关闭</button></header><form id="peer-form" class="peer-dialog-form"><label>连接标识<input id="peer-id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}"></label><label>显示名称<input id="peer-title" required maxlength="100"></label><label>项目标识<input id="peer-project-id" list="peer-project-options" required maxlength="128"></label><label>对方地址<input id="peer-endpoint" required type="url" placeholder="http://192.168.1.20:8766"></label><label>访问对方节点<input id="peer-remote-node-id" list="peer-node-options" required maxlength="128"></label><label>允许对方访问本机节点<input id="peer-export-node-id" list="peer-node-options" required maxlength="128"></label><label class="peer-secret-field">共享密钥<input id="peer-shared-secret" required type="password" autocomplete="new-password"></label><label class="check-row"><input id="peer-allow-insecure" type="checkbox">确认使用未加密 HTTP</label><label class="check-row"><input id="peer-enabled" type="checkbox" checked>启用此连接</label><p id="peer-form-status" class="status-message" role="status"></p><div class="form-actions"><button id="cancel-peer" class="secondary" type="button">取消</button><button id="save-peer" type="submit">保存连接</button></div></form></dialog>
+  <dialog id="peer-secret-dialog" aria-labelledby="peer-secret-title"><header><div><p class="eyebrow">仅显示一次</p><h2 id="peer-secret-title">共享密钥</h2></div><button id="close-peer-secret" type="button">关闭</button></header><p class="muted">把连接标识和密钥安全发送给对方；关闭后本页立即清除。</p><label>本机连接标识<input id="peer-local-id" readonly></label><label>一次性共享密钥<textarea id="peer-secret-value" rows="3" readonly></textarea></label><p id="peer-secret-status" class="status-message" role="status"></p><div class="form-actions"><button id="copy-peer-secret" type="button">复制密钥</button><button id="dismiss-peer-secret" class="secondary" type="button">完成</button></div></dialog>
+  <dialog id="peer-material-dialog" aria-labelledby="peer-material-title"><header><div><p class="eyebrow">远程材料</p><h2 id="peer-material-title">知识材料</h2><p id="peer-material-meta" class="muted"></p></div><button id="close-peer-material" type="button">关闭</button></header><pre id="peer-material-content" class="peer-material-content"></pre></dialog>
+  <dialog id="confirm-dialog"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-message"></p><div class="form-actions"><button value="cancel" class="secondary">取消</button><button id="confirm-action" value="confirm">确认</button></div></form></dialog>
+  <dialog id="command-dialog"><header><h2>跳转与操作</h2><button id="close-command" type="button">关闭</button></header><label>搜索视图或文档<input id="command-filter" type="search" autocomplete="off"></label><div id="command-results" class="command-results"></div></dialog>
+  <script type="module" src="app.js"></script>
   <script src="update.js"></script>
 </body>
 </html>

@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DashboardDocumentationTest(unittest.TestCase):
-    def test_readme_uses_stable_dashboard_path_and_loopback_contract(self) -> None:
+    def test_readme_uses_stable_dashboard_path_and_loopback_contract(
+        self,
+    ) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         dashboard = (
             ROOT / "plugins" / "ytqjk-agentic-orchestrator" / "skills"
@@ -53,11 +55,19 @@ class DashboardDocumentationTest(unittest.TestCase):
             / "ytqjk" / "dashboard"
         )
         html = (dashboard / "index.html").read_text(encoding="utf-8")
-        script = (dashboard / "app.js").read_text(encoding="utf-8")
-        handler = (dashboard / "knowledge_dashboard.py").read_text(encoding="utf-8")
+        api = (dashboard / "js" / "api.js").read_text(encoding="utf-8")
+        dialog = (
+            dashboard / "js" / "ui" / "library-dialog.js"
+        ).read_text(encoding="utf-8")
+        handler = (dashboard / "knowledge_dashboard.py").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('id="open-global-library"', html)
         self.assertIn('id="library-kicker"', html)
-        self.assertIn('fetch("/api/global-library")', script)
-        self.assertIn('appendIndexFiles(library.files, "已验证与已批准知识")', script)
+        self.assertIn('"/api/global-library"', api)
+        self.assertIn(
+            'appendIndexFiles(library.files, "已验证与已批准知识")',
+            dialog,
+        )
         self.assertIn('url.path == "/api/global-library"', handler)

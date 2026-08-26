@@ -47,6 +47,8 @@ class DashboardServiceTest(unittest.TestCase):
                 str(root),
                 "--port",
                 str(port),
+                "--document-runtime",
+                "off",
             ]
             started = subprocess.run(
                 [sys.executable, str(script), "start", *common],
@@ -92,6 +94,8 @@ class DashboardServiceTest(unittest.TestCase):
                     str(root),
                     "--port",
                     str(port),
+                    "--document-runtime",
+                    "off",
                 ],
                 capture_output=True,
                 text=True,
@@ -125,6 +129,8 @@ class DashboardServiceTest(unittest.TestCase):
                         str(root),
                         "--port",
                         str(port),
+                        "--document-runtime",
+                        "off",
                     ],
                     capture_output=True,
                     text=True,
@@ -158,6 +164,8 @@ class DashboardServiceTest(unittest.TestCase):
                 str(root),
                 "--port",
                 str(port),
+                "--document-runtime",
+                "off",
             ]
             try:
                 installed = subprocess.run(
@@ -205,6 +213,8 @@ class DashboardServiceTest(unittest.TestCase):
                 str(root),
                 "--port",
                 str(port),
+                "--document-runtime",
+                "off",
             ]
             started = subprocess.run(
                 [sys.executable, str(SERVICE), "start", *common],
