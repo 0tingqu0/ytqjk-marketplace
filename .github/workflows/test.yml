@@ -30,7 +30,7 @@ jobs:
       - name: Prepare test temp directory
         run: python -c "import os; from pathlib import Path; Path(os.environ['TEMP']).mkdir(parents=True, exist_ok=True)"
       - name: Install test dependencies
-        run: python -m pip install pytest
+        run: python -m pip install pytest Pillow==12.3.0 numpy==2.3.5
       - name: Run the complete repository suite
         run: python -B -m pytest -q
 
