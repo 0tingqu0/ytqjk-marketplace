@@ -6,7 +6,7 @@ function Test-PythonRuntime {
   if (-not $Executable -or -not (Test-Path -LiteralPath $Executable)) {
     return $false
   }
-  & $Executable @Prefix -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>$null
+  & $Executable @Prefix -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>$null
   return $LASTEXITCODE -eq 0
 }
 
@@ -42,10 +42,10 @@ $python = Find-PythonRuntime
 if ($null -eq $python) {
   $winget = Get-Command winget -ErrorAction SilentlyContinue
   if ($null -eq $winget) {
-    Write-Error 'Python 3.10+ is unavailable and winget was not found.'
+    Write-Error 'Python 3.11+ is unavailable and winget was not found.'
     exit 127
   }
-  Write-Host 'YTQJK: 未检测到 Python 3.10+，正在安装用户级 Python 3.12。'
+  Write-Host 'YTQJK: 未检测到 Python 3.11+，正在安装用户级 Python 3.12。'
   & $winget.Source install --id Python.Python.3.12 --exact --source winget `
     --scope user --silent --accept-package-agreements `
     --accept-source-agreements --disable-interactivity

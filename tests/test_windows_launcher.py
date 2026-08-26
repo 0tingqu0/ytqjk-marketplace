@@ -58,6 +58,8 @@ class WindowsLauncherTest(unittest.TestCase):
         launcher = LAUNCHER.read_text(encoding="utf-8-sig")
 
         self.assertIn("Test-PythonRuntime", launcher)
+        self.assertIn("sys.version_info >= (3, 11)", launcher)
+        self.assertNotIn("Python 3.10+", launcher)
         self.assertIn("Python.Python.3.12", launcher)
         self.assertIn("--scope user", launcher)
         self.assertIn("--disable-interactivity", launcher)

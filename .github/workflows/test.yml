@@ -11,12 +11,12 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.10", "3.12"]
+        python: ["3.11", "3.12"]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       TEMP: ${{ github.workspace }}/../.ytqjk-test-tmp
@@ -31,10 +31,8 @@ jobs:
         run: python -c "import os; from pathlib import Path; Path(os.environ['TEMP']).mkdir(parents=True, exist_ok=True)"
       - name: Install test dependencies
         run: python -m pip install pytest
-      - name: Test distribution layout
-        run: python -B -m unittest discover -s tests -p "test_*.py" -v
-      - name: Test skill scripts
-        run: python -B -m unittest discover -s plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/tests -p "test_*.py" -v
+      - name: Run the complete repository suite
+        run: python -B -m pytest -q
 
   vector-linux:
     name: Ubuntu vector round-trip
@@ -47,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Prepare isolated vector runtime
         run: python -B plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/bootstrap_runtime.py --knowledge-root "$RUNNER_TEMP/ytqjk"
       - name: Run vector integration test

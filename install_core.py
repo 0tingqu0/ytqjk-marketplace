@@ -22,7 +22,7 @@ from install_external import (
 )
 from install_external_codex import materialize_plugins
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 MODES = PUBLIC_MODES
 Recovery = tuple[Path, Path | None, tuple[Path, ...]]
@@ -36,8 +36,9 @@ class Plan:
 
 
 def require_python() -> None:
-    if sys.version_info < (3, 10):
-        raise ValueError("Python 3.10+ is required.")
+    if sys.version_info < (3, 11):
+        message = "Python 3.11+ is required; Python 3.12 is recommended."
+        raise ValueError(message)
 
 
 def normalize_mode(mode: str) -> str:

@@ -146,4 +146,4 @@ def test_default_launchers_bind_project_root_to_script_directory() -> None:
     shell = (ROOT / "install.sh").read_text(encoding="utf-8")
 
     assert "'--project-root', $PSScriptRoot" in powershell
-    assert '--project-root "$script_dir"' in shell
+    assert '--project-root "${script_dir}"' in shell

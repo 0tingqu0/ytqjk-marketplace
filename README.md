@@ -15,8 +15,8 @@ extension 可加载独立 skills，但不加载 plugin；完整多会话编排�
 ### 1. 检查运行环境
 
 Windows 只需预先安装 Git。`install.cmd` 会仅为本次安装绕过 PowerShell 脚本执行策略，不修改
-系统或用户策略。缺少 Python 3.10+ 时，`install.ps1` 会通过 `winget` 静默安装当前
-用户级 Python 3.12；缺少 Node.js、npm、`npx` 或 Codex CLI 时，
+系统或用户策略。缺少 Python 3.11+ 时，`install.ps1` 会通过 `winget` 静默安装当前用户级
+Python 3.12；缺少 Node.js、npm、`npx` 或 Codex CLI 时，
 `install.ps1` 会自动在 `%LOCALAPPDATA%\YTQJK\runtime` 准备便携 Node.js 24.15.0，校验
 Node.js 官方 `SHASUMS256.txt`，再安装固定版 `@openai/codex@0.147.0`。该运行时不需要管理员
 权限、不修改系统 PATH，只在本次安装进程中使用；重复运行会验证并复用有效运行时。
@@ -259,7 +259,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.5.0`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.6.0`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
@@ -286,13 +286,23 @@ npx --yes skills@latest add https://github.com/0tingqu0/ytqjk-marketplace/tree/<
 
 ## 环境要求
 
-- Git；Linux、macOS 和 WSL 还需 Python 3.10 或更高版本。Windows 缺失 Python 时由安装入口
-  通过 `winget` 安装当前用户级 Python 3.12。
+- Git；Linux、macOS 和 WSL 还需 Python 3.11 或更高版本，建议使用 Python 3.12。
+  Windows 缺失 Python 时由安装入口通过 `winget` 安装当前用户级 Python 3.12。
 - Windows 缺少 Node.js/npm、`npx` 或 Codex CLI 时会自动使用用户级便携运行时；Linux、macOS
   和 WSL 仍需自行安装这些命令。
 - Node.js/npm 必须满足 `npm view skills@latest engines`；当前 Windows 自举版本为 Node.js
   24.15.0，Codex CLI 固定为 0.147.0。发布时 `skills@1.5.22` 要求 Node.js 22.20.0 或更高版本。
 - Linux 需要可用的 Python `venv` 模块；Ubuntu/Debian 通常由 `python3-venv` 提供。
+- 首次需要图片或 PDF 深度解析时，会在知识根中创建隔离的
+  Python 运行时，安装固定版本的直接依赖，并下载功能所需的官方模型。
+  已验证的运行时和模型会幂等复用，不会每次投递重新下载。
+- 传递依赖由首次安装时的 `pip` 解析结果决定；安装后会核对完整分发
+  清单、必需导入、CPU Provider，并以运行时整树 SHA-256 封存。因此单次
+  安装可检测漂移，但不同日期或平台的首次安装并非逐字节可复现构建。
+- 文档运行时包含 Docling、RapidOCR、PaddleOCR、PyTorch 与本地
+  视觉模型。首次下载和安装可能产生数 GiB 流量与更大的磁盘占用；
+  一般需要数分钟到数十分钟，取决于网络、CPU/GPU 和 Python wheel 平台。
+  离线环境必须先准备完整且通过哈希校验的本地运行时与模型。
 - Windows 优先使用 `D:\knowledge`。没有 D 盘时使用 `%LOCALAPPDATA%\YTQJK\knowledge`。
 - Linux/WSL2 使用 `${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk`。
 - `YTQJK_KNOWLEDGE_ROOT` 可显式覆盖任一平台默认值。WSL 不会自动复用 Windows 缓存；不要让 Windows 与 WSL 同时打开同一 SQLite/LanceDB 缓存。
@@ -333,15 +343,49 @@ python3 "$service" stop
 
 打开 `http://127.0.0.1:8765`。服务只绑定本机回环地址；可以拖入、选择或粘贴文本、
 Word（`.docx`）、PowerPoint（`.pptx`）、Excel（`.xlsx`/`.csv`）、常见图片和音频资料，最大
-10 MiB。Office 正文和表格会被提取分析，图片记录格式、尺寸和文件大小；WAV 音频记录声道、
+10 MiB。Office 正文和表格会被提取分析；WAV 音频记录声道、
 采样率和时长，其他音频只记录格式。音频不做语音识别或转写。原文件随候选
 分析记录保存在 `imports/originals`。候选资料不会自动批准、不会进入 `verified`、不会
 自动重新索引。敏感文件名和提取文本中的高置信凭据会被拒绝。
+
+图片默认先由 RapidOCR 提取文字；无文本、短页低置信，或低置信文字块
+占比达到 20% 时再交给 PP-OCRv6 复核。图片分类使用
+DocumentFigureClassifier-v2.5，并尝试与 SmolVLM-256M-Instruct 的本地描述
+合并为摘要和标签。描述格式无效或无法验证时会保留 OCR 与分类结果，转入
+人工复审，不会丢弃整份图片。OCR 文字、摘要和标签都会进入结构化知识分块，
+可通过文本检索。所有推理均使用通过 manifest 哈希校验的本地模型；必需模型
+未配置或完整性证据不成立时会失败关闭。
+自动安装固定直接依赖版本并验证完整运行时，只使用 CPU 推理，
+不安装 `onnxruntime-gpu`；所有
+Hugging Face 模型均固定到提交 SHA，RapidOCR 字典同时校验 SHA-256。
+
+PDF 使用 Docling 区分原生文字页、扫描页和混合页，并保留表格、
+物理页码、坐标和置信证据。无文字、测得低置信或复杂版式的扫描页由
+PaddleOCR 二次识别，复杂版式再由 PP-StructureV3 的八类本地模型分析；
+正常高置信页面不会重复处理。识别器返回全零置信度时按“未报告置信度”处理，
+保留文字并转人工复审，不把它误判为已测得低置信。PDF 内嵌图片默认只保留
+位置，不运行 SmolVLM，并标记人工复审。任一必需模型缺失、版本不符或摘要
+校验失败都会返回 `NOT_CONFIGURED`，不会联网补模型或伪造二次识别成功。
 此外支持常见 UTF-8 源码、配置和数据文本（如 `.py`、`.ts`、`.java`、`.go`、`.sql`、
 `.xml`、`.toml`、`.ini`、`.sh`、`.ps1`、`.diff`、`.jsonl`、`.svg`）。旧版二进制 Office
 格式（`.doc`、`.ppt`、`.xls`）需要先转换为现代格式后投递。
 候选资料可在控制台中编辑或删除，已验证和已批准知识不提供此入口；删除投递资料时会一并
 删除其关联原件。
+
+### 局域网知识库协作
+
+“知识库树”页面可初始化独立的局域网知识服务、生成一次性共享密钥、配置授权电脑，
+并对同一项目中经授权的远端节点及其本地子树执行显式检索和材料读取。网页管理端始终只监听本机；局域网
+服务默认也只监听回环地址，只有明确填写私有网段 IP、勾选未加密 HTTP 风险并重启工作台后
+才会对局域网开放。HTTP 只提供 HMAC 身份认证、请求完整性和防重放，不加密内容；跨不可信
+网络应使用 HTTPS 反向代理或 VPN。插件不修改防火墙、不广播发现设备，也不自动建立信任。
+
+每条授权连接有两个方向明确的节点：`remote_node_id` 是本机允许访问的远端目标，
+`export_node_id` 是本机开放给对方的根节点。跨电脑查询只能读取被授权节点及其本地后代，
+绝不向上访问其父库，也不读取无关兄弟库、其他项目库或经挂载节点转发到第三台电脑。
+远端材料读取会再次校验其真实来源节点仍在授权子树内。已保存密钥不会在页面回显；编辑连接
+时留空会保留原密钥，重新填写才会轮换。普通会话查询仍只访问当前项目子库和总库回源链，
+不会因配置了局域网连接就自动跨电脑检索。
 
 控制台启动后会检查 `0tingqu0/ytqjk-marketplace` 的最新正式 GitHub Release。页面左上角常显
 当前版本；发现更高版本时版本号会变色，点击版本号后显示“更新”按钮。确认后会下载固定仓库的 Release 包，校验安全路径及两个插件

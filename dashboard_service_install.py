@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -11,6 +13,28 @@ from codex_plugin_paths import stable_path
 
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+DEFAULT_INSTALL_TIMEOUT: float | None = None
+INSTALL_TIMEOUT_ENV = "YTQJK_DASHBOARD_INSTALL_TIMEOUT"
+_RECEIPT_FIELDS = (
+    "status",
+    "port",
+    "autostart",
+    "autostart_kind",
+    "autostart_name",
+    "changed",
+    "failure_code",
+)
+_RUNTIME_FIELDS = (
+    "schema_version",
+    "status",
+    "runtime_status",
+    "changed",
+    "reason",
+    "python",
+    "requirements_sha256",
+    "packages",
+    "models",
+)
 
 
 DashboardConfigurator = Callable[
@@ -46,6 +70,7 @@ def configure_dashboard(
     codex_root: Path,
     knowledge_root: Path,
     action: str = "install",
+    timeout: float | None = None,
 ) -> dict[str, object]:
     if action == "install":
         plugin = stable_path(codex_root, "ytqjk-agentic-orchestrator")
@@ -60,43 +85,96 @@ def configure_dashboard(
         raise ValueError("unsupported dashboard service action")
     if not script.is_file():
         raise RuntimeError("dashboard service entrypoint is missing")
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            action,
-            "--knowledge-root",
-            str(knowledge_root.resolve()),
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=30,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError("dashboard service configuration failed")
+    limit = _install_timeout(timeout) if action == "install" else 30.0
     try:
-        value = json.loads(completed.stdout)
-    except json.JSONDecodeError as error:
-        raise RuntimeError("dashboard service returned invalid receipt") from error
-    allowed = {
-        key: value[key]
-        for key in (
-            "status",
-            "port",
-            "autostart",
-            "autostart_kind",
-            "autostart_name",
-            "changed",
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                action,
+                "--knowledge-root",
+                str(knowledge_root.resolve()),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=limit,
         )
-        if key in value
-    }
+    except subprocess.TimeoutExpired:
+        return _failed_dashboard_receipt("DASHBOARD_SERVICE_TIMEOUT")
+    try:
+        allowed = _safe_receipt(completed.stdout)
+    except RuntimeError:
+        if completed.returncode != 0:
+            return _failed_dashboard_receipt("DASHBOARD_SERVICE_FAILED")
+        raise
+    if completed.returncode != 0:
+        if allowed.get("status") != "FAILED":
+            return _failed_dashboard_receipt("DASHBOARD_SERVICE_FAILED")
+        if not _is_failure_code(allowed.get("failure_code")):
+            allowed["failure_code"] = "DASHBOARD_SERVICE_FAILED"
+        return allowed
     expected = "RUNNING" if action == "install" else "STOPPED"
     if allowed.get("status") != expected:
         raise RuntimeError("dashboard service did not reach expected state")
     return allowed
+
+
+def _safe_receipt(output: str) -> dict[str, object]:
+    try:
+        value = json.loads(output)
+    except (TypeError, json.JSONDecodeError) as error:
+        message = "dashboard service returned invalid receipt"
+        raise RuntimeError(message) from error
+    if type(value) is not dict:
+        raise RuntimeError("dashboard service returned invalid receipt")
+    allowed = {key: value[key] for key in _RECEIPT_FIELDS if key in value}
+    if not _is_failure_code(allowed.get("failure_code")):
+        allowed.pop("failure_code", None)
+    runtime = value.get("document_runtime")
+    if type(runtime) is dict:
+        allowed["document_runtime"] = {
+            key: runtime[key] for key in _RUNTIME_FIELDS if key in runtime
+        }
+    return allowed
+
+
+def _is_failure_code(value: object) -> bool:
+    return (
+        type(value) is str
+        and 1 <= len(value) <= 64
+        and "A" <= value[0] <= "Z"
+        and all(
+            "A" <= character <= "Z"
+            or "0" <= character <= "9"
+            or character == "_"
+            for character in value
+        )
+    )
+
+
+def _failed_dashboard_receipt(code: str) -> dict[str, object]:
+    receipt = dashboard_receipt("FAILED")
+    receipt["failure_code"] = code
+    return receipt
+
+
+def _install_timeout(override: float | None) -> float | None:
+    value: object = override
+    if value is None:
+        configured = os.environ.get(INSTALL_TIMEOUT_ENV, "").strip()
+        if not configured:
+            return DEFAULT_INSTALL_TIMEOUT
+        value = configured
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("invalid dashboard install timeout") from error
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise RuntimeError("invalid dashboard install timeout")
+    return parsed
 
 
 def schedule_dashboard_restart(
