@@ -2,3 +2,4 @@
 *.py[cod]
 .pytest_cache/
 .venv/
+/skills/
