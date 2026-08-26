@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,35 +20,10 @@ from knowledge_peer_query import (
     fetch_subtree_material,
     query_library_subtree,
 )
+from knowledge_peer_replay import PeerReplayError, ReplayGuard
+from knowledge_peer_response import signed_response_headers
 from knowledge_peer_scope import PeerScopeError, exported_libraries
 from knowledge_peer_store import PeerConfigStore, PeerStoreError
-
-
-class ReplayGuard:
-    def __init__(self) -> None:
-        self._seen: dict[tuple[str, str], int] = {}
-        self._lock = threading.Lock()
-
-    def accept(
-        self,
-        peer_id: str,
-        nonce: str,
-        timestamp: int,
-    ) -> bool:
-        with self._lock:
-            cutoff = int(time.time()) - 240
-            self._seen = {
-                key: value for key, value in self._seen.items()
-                if value >= cutoff
-            }
-            key = (peer_id, nonce)
-            if key in self._seen:
-                return False
-            if len(self._seen) >= 4096:
-                oldest = min(self._seen, key=self._seen.get)
-                self._seen.pop(oldest, None)
-            self._seen[key] = timestamp
-            return True
 
 
 class KnowledgePeerHandler(BaseHTTPRequestHandler):
@@ -85,9 +59,16 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
             result = self._route(
                 settings.local_peer_id, peer, project_id, payload
             )
-            self._send({"ok": True, **result})
+            self._send(
+                {"ok": True, **result},
+                response_peer_id=settings.local_peer_id,
+                response_secret=peer.secret,
+                request_nonce=nonce,
+            )
         except PeerContractError as error:
             self._send_error(HTTPStatus.UNAUTHORIZED, str(error))
+        except PeerReplayError as error:
+            self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
         except PeerQueryError as error:
             self._send_error(HTTPStatus.BAD_REQUEST, str(error))
         except PeerScopeError as error:
@@ -120,7 +101,11 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
                 "project_id": project_id,
                 "export_node_id": peer.export_node_id,
                 "library_count": len(libraries),
-                "capabilities": ["query-v1", "material-v1"],
+                "capabilities": [
+                    "query-v1",
+                    "material-v1",
+                    "response-hmac-v1",
+                ],
             }
         if self.path == "/v1/query":
             _exact(payload, {"project_id", "node_id", "query", "limit"})
@@ -180,6 +165,9 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
         self,
         value: dict[str, object],
         status: int = HTTPStatus.OK,
+        response_peer_id: str | None = None,
+        response_secret: str | None = None,
+        request_nonce: str | None = None,
     ) -> None:
         body = json.dumps(
             value, ensure_ascii=False, allow_nan=False
@@ -188,6 +176,21 @@ class KnowledgePeerHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
+        if (
+            response_peer_id is not None
+            and response_secret is not None
+            and request_nonce is not None
+        ):
+            headers = signed_response_headers(
+                response_peer_id,
+                response_secret,
+                int(status),
+                self.path,
+                request_nonce,
+                body,
+            )
+            for name, value in headers.items():
+                self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -210,7 +213,7 @@ def start_peer_server(
     attributes = {
         "knowledge_root": Path(root).resolve(),
         "store": store,
-        "replay": ReplayGuard(),
+        "replay": ReplayGuard(root),
     }
     handler = type("RootPeerHandler", (KnowledgePeerHandler,), attributes)
     server = ThreadingHTTPServer(

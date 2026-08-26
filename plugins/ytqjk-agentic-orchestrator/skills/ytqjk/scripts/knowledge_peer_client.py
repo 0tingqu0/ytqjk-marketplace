@@ -15,6 +15,7 @@ from knowledge_peer_contract import (
     identifier,
     signed_headers,
 )
+from knowledge_peer_response import verify_response_signature
 from knowledge_peer_store import PeerConfigStore, PeerStoreError
 
 
@@ -137,14 +138,24 @@ class KnowledgePeerClient:
             {"project_id": project_id},
         )
         _exact(result, {
-            "ok", "status", "peer_id", "project_id", "capabilities",
+            "ok", "status", "peer_id", "project_id",
+            "export_node_id", "library_count", "capabilities",
         })
+        export_node_id = result.get("export_node_id")
+        library_count = result.get("library_count")
+        try:
+            identifier("export_node_id", export_node_id)
+        except PeerContractError as error:
+            raise PeerClientError("PEER_RESPONSE_INVALID") from error
         if (
             result.get("status") != "READY"
             or result.get("peer_id") != peer.peer_id
             or result.get("project_id") != project_id
+            or export_node_id != peer.remote_node_id
+            or type(library_count) is not int
+            or library_count < 0
             or result.get("capabilities")
-            != ["query-v1", "material-v1"]
+            != ["query-v1", "material-v1", "response-hmac-v1"]
         ):
             raise PeerClientError("PEER_RESPONSE_INVALID")
         return result
@@ -184,6 +195,7 @@ class KnowledgePeerClient:
         except PeerContractError as error:
             raise PeerClientError(str(error)) from error
         headers["Content-Type"] = "application/json"
+        nonce = headers["X-YTQJK-Nonce"]
         request = urllib.request.Request(
             peer.endpoint + path,
             data=body,
@@ -194,13 +206,28 @@ class KnowledgePeerClient:
             with self.opener.open(request, timeout=self.timeout) as response:
                 content = response.read(MAX_RESPONSE_BYTES + 1)
                 status = response.status
+                response_headers = response.headers
         except (
             OSError,
             urllib.error.HTTPError,
             urllib.error.URLError,
         ) as error:
             raise PeerClientError("PEER_UNAVAILABLE") from error
-        if status != 200 or len(content) > MAX_RESPONSE_BYTES:
+        if len(content) > MAX_RESPONSE_BYTES:
+            raise PeerClientError("PEER_RESPONSE_INVALID")
+        try:
+            verify_response_signature(
+                response_headers,
+                peer.secret,
+                peer.peer_id,
+                status,
+                path,
+                nonce,
+                content,
+            )
+        except PeerContractError as error:
+            raise PeerClientError("PEER_RESPONSE_INVALID") from error
+        if status != 200:
             raise PeerClientError("PEER_RESPONSE_INVALID")
         try:
             result = json.loads(

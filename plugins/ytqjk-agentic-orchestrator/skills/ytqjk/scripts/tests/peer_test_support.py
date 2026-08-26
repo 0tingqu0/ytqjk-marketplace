@@ -6,7 +6,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from knowledge_peer_contract import PeerRecord, new_secret
-from knowledge_peer_server import KnowledgePeerHandler, ReplayGuard
+from knowledge_peer_replay import ReplayGuard
+from knowledge_peer_server import KnowledgePeerHandler
 from knowledge_peer_store import PeerConfigStore
 from knowledge_tree_store import KnowledgeTreeStore
 from rag_common import Chunk, SCHEMA_VERSION, atomic_json, build_lexical
@@ -55,7 +56,7 @@ def start_server(
     attributes = {
         "knowledge_root": root.resolve(),
         "store": PeerConfigStore(root),
-        "replay": ReplayGuard(),
+        "replay": ReplayGuard(root),
     }
     handler = type("TestPeerHandler", (KnowledgePeerHandler,), attributes)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)

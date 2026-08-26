@@ -151,6 +151,12 @@ def new_secret() -> str:
     ).rstrip("=")
 
 
+def request_nonce(value: object) -> str:
+    if type(value) is not str or _NONCE.fullmatch(value) is None:
+        raise PeerContractError("INVALID_PEER_AUTH")
+    return value
+
+
 def signed_headers(
     peer_id: str,
     secret: str,
@@ -163,16 +169,17 @@ def signed_headers(
 ) -> dict[str, str]:
     identifier("peer_id", peer_id)
     timestamp = int(time.time()) if now is None else now
-    request_nonce = nonce or secrets.token_urlsafe(18)
-    if type(timestamp) is not int or _NONCE.fullmatch(request_nonce) is None:
+    auth_nonce = nonce or secrets.token_urlsafe(18)
+    if type(timestamp) is not int:
         raise PeerContractError("INVALID_PEER_AUTH")
+    request_nonce(auth_nonce)
     signature = _signature(
-        secret, peer_id, method, path, body, timestamp, request_nonce
+        secret, peer_id, method, path, body, timestamp, auth_nonce
     )
     return {
         "X-YTQJK-Peer": peer_id,
         "X-YTQJK-Timestamp": str(timestamp),
-        "X-YTQJK-Nonce": request_nonce,
+        "X-YTQJK-Nonce": auth_nonce,
         "X-YTQJK-Signature": signature,
     }
 
@@ -194,8 +201,7 @@ def verify_signature(
     except AttributeError as error:
         raise PeerContractError("PEER_AUTH_REQUIRED") from error
     identifier("peer_id", peer_id)
-    if _NONCE.fullmatch(nonce) is None:
-        raise PeerContractError("INVALID_PEER_AUTH")
+    request_nonce(nonce)
     try:
         timestamp = int(raw_time)
     except (TypeError, ValueError) as error:
@@ -239,6 +245,7 @@ __all__ = [
     "identifier",
     "is_loopback_host",
     "new_secret",
+    "request_nonce",
     "signed_headers",
     "verify_signature",
 ]
