@@ -1,6 +1,7 @@
 import { ROUTES } from "./router.js";
 import { state } from "./store.js";
 import { byId, button, clear, text } from "./ui/dom.js";
+import { closeRail } from "./ui/rail.js";
 
 function entries(router, openDocument) {
   const commands = Object.entries(ROUTES).map(([route, [, label]]) => ({
@@ -87,7 +88,7 @@ export function bindCommandPalette(router, openDocument) {
       document.querySelectorAll("dialog[open]").forEach((dialog) => {
         dialog.close();
       });
-      document.querySelector(".app-shell").classList.remove("rail-open");
+      closeRail();
     }
   });
 }

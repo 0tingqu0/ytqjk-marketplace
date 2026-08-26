@@ -104,6 +104,8 @@ class DashboardV2StaticTest(unittest.TestCase):
         self.assertIn("event.target.closest?.(allowed)", rail)
         self.assertIn("#app-rail, #rail-toggle, #bottom-more", rail)
         self.assertIn("event.target === event.currentTarget", command)
+        self.assertIn("closeRail();", command)
+        self.assertNotIn('classList.remove("rail-open")', command)
         self.assertIn("event.target === event.currentTarget", confirm)
         self.assertIn('dialog.close("cancel")', confirm)
 
