@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -9,8 +10,14 @@ import time
 from pathlib import Path
 from threading import Lock
 
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from runtime_logging import get_logger, log_event
+
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+LOGGER = get_logger("dashboard.restart")
 
 
 def interpreter() -> Path:
@@ -51,6 +58,13 @@ def single_restart_scheduler(root: Path, port: int):
         try:
             schedule(root, port)
         except OSError:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "dashboard_restart_schedule_failed",
+                port=port,
+                reason="PROCESS_START_FAILED",
+            )
             lock.release()
 
     return request

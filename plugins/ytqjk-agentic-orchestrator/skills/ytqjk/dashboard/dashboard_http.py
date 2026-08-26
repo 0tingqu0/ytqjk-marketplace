@@ -6,16 +6,39 @@ from http import HTTPStatus
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from runtime_logging import SafeHttpLogMixin
+
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'"
 )
+_DASHBOARD_ROUTES = frozenset({
+    "/api/candidate",
+    "/api/candidate/approve",
+    "/api/document",
+    "/api/global-library",
+    "/api/intake",
+    "/api/project-library",
+    "/api/snapshot",
+    "/api/update",
+})
 
 
-class DashboardHttpMixin:
+class DashboardHttpMixin(SafeHttpLogMixin):
     dashboard_dir: Path
     max_intake_bytes: int
+    request_log_component = "dashboard.http"
+
+    def request_log_route(self, request_path: str) -> str:
+        path = urlparse(request_path).path
+        if path.startswith("/api/intake/jobs/"):
+            return "/api/intake/jobs/{job_id}"
+        if path.startswith("/api/tree/"):
+            return "/api/tree/{operation}"
+        if path in _DASHBOARD_ROUTES:
+            return path
+        return "/api/{unknown}" if path.startswith("/api/") else "/assets"
 
     def api_host_allowed(self) -> bool:
         host = self.headers.get("Host", "")
@@ -109,6 +132,3 @@ class DashboardHttpMixin:
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
-
-    def log_message(self, _format: str, *_args: object) -> None:
-        return
