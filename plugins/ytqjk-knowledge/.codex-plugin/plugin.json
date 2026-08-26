@@ -1,6 +1,6 @@
 {
   "name": "ytqjk-knowledge",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Local-first, versioned knowledge storage service for Codex adapters.",
   "author": {
     "name": "一听曲就困",
