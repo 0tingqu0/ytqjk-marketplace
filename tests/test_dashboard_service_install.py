@@ -32,7 +32,9 @@ class DashboardServiceInstallTest(unittest.TestCase):
             )
             with (
                 mock.patch.object(
-                    service_install, "stable_path", return_value=plugin
+                    service_install,
+                    "materialize_dashboard_bundle",
+                    return_value=plugin,
                 ),
                 mock.patch.object(
                     service_install.subprocess,
@@ -84,7 +86,9 @@ class DashboardServiceInstallTest(unittest.TestCase):
             )
             with (
                 mock.patch.object(
-                    service_install, "stable_path", return_value=plugin
+                    service_install,
+                    "materialize_dashboard_bundle",
+                    return_value=plugin,
                 ),
                 mock.patch.object(
                     service_install.subprocess,
@@ -118,7 +122,9 @@ class DashboardServiceInstallTest(unittest.TestCase):
             )
             with (
                 mock.patch.object(
-                    service_install, "stable_path", return_value=plugin
+                    service_install,
+                    "materialize_dashboard_bundle",
+                    return_value=plugin,
                 ),
                 mock.patch.object(
                     service_install.subprocess,
@@ -140,14 +146,20 @@ class DashboardServiceInstallTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             script = (
-                root / "plugins/ytqjk-agentic-orchestrator/skills/ytqjk"
-                / "dashboard/dashboard_restart.py"
+                root / "skills/ytqjk/dashboard/dashboard_restart.py"
             )
             script.parent.mkdir(parents=True)
             script.touch()
-            with mock.patch.object(
-                service_install.subprocess, "Popen"
-            ) as popen:
+            with (
+                mock.patch.object(
+                    service_install,
+                    "materialize_dashboard_bundle",
+                    return_value=root,
+                ),
+                mock.patch.object(
+                    service_install.subprocess, "Popen"
+                ) as popen,
+            ):
                 service_install.schedule_dashboard_restart(
                     root, root / "knowledge"
                 )

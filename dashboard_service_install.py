@@ -9,7 +9,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from codex_plugin_paths import stable_path
+from dashboard_bundle import DashboardBundleError
+from dashboard_bundle import materialize_dashboard_bundle
 
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
@@ -73,7 +74,10 @@ def configure_dashboard(
     timeout: float | None = None,
 ) -> dict[str, object]:
     if action == "install":
-        plugin = stable_path(codex_root, "ytqjk-agentic-orchestrator")
+        try:
+            plugin = materialize_dashboard_bundle(codex_root)
+        except DashboardBundleError as error:
+            return _failed_dashboard_receipt(error.code)
         script = plugin / "skills/ytqjk/dashboard/dashboard_service.py"
     elif action == "uninstall":
         script = (
@@ -180,7 +184,7 @@ def _install_timeout(override: float | None) -> float | None:
 def schedule_dashboard_restart(
     codex_root: Path, knowledge_root: Path
 ) -> dict[str, object]:
-    plugin = stable_path(codex_root, "ytqjk-agentic-orchestrator")
+    plugin = materialize_dashboard_bundle(codex_root)
     script = plugin / "skills/ytqjk/dashboard/dashboard_restart.py"
     if not script.is_file():
         raise RuntimeError("dashboard restart entrypoint is missing")
