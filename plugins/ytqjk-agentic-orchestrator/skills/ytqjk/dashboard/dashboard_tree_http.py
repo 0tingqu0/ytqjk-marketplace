@@ -29,16 +29,15 @@ def tree_service(handler: object) -> DashboardTreeApi:
         current = type(handler).tree_api
         if current is None:
             store = KnowledgeTreeStore(handler.knowledge_root / "tree.json")
-            if not store.path.exists():
-                catalog = handler.knowledge_root / "catalog.json"
-                source = catalog if catalog.exists() else {"projects": {}}
-                try:
-                    store.bootstrap(source)
-                except (RevisionConflict, TreeStoreError) as error:
-                    raise DashboardTreeApiError(
-                        HTTPStatus.SERVICE_UNAVAILABLE,
-                        str(error) or "TREE_BOOTSTRAP_FAILED",
-                    ) from error
+            catalog = handler.knowledge_root / "catalog.json"
+            source = catalog if catalog.exists() else {"projects": {}}
+            try:
+                store.bootstrap(source)
+            except (RevisionConflict, TreeStoreError) as error:
+                raise DashboardTreeApiError(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    str(error) or "TREE_BOOTSTRAP_FAILED",
+                ) from error
             current = DashboardTreeApi(store)
             type(handler).tree_api = current
     return current

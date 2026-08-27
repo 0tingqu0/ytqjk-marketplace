@@ -22,6 +22,10 @@ from path_safety import is_reparse
 from stable_file import StableFileError, read_stable_bytes
 
 
+LEGACY_PERSONAL_ROOT_TITLE = "总知识库"
+PERSONAL_ROOT_TITLE = "个人总库"
+
+
 class KnowledgeTreeStore:
     def __init__(self, path: Path) -> None:
         self.path = Path(path).absolute()
@@ -66,12 +70,24 @@ class KnowledgeTreeStore:
             by_id = {node.node_id: node for node in nodes}
             changed = current is None
             if "global" not in by_id:
-                node = LibraryNode("global", "总知识库", "global")
+                node = LibraryNode(
+                    "global", PERSONAL_ROOT_TITLE, "global"
+                )
                 nodes.append(node)
                 by_id[node.node_id] = node
                 changed = True
             elif by_id["global"].kind != "global":
                 raise TreeStoreError("GLOBAL_NODE_CONFLICT")
+            elif by_id["global"].title == LEGACY_PERSONAL_ROOT_TITLE:
+                node = LibraryNode(
+                    "global", PERSONAL_ROOT_TITLE, "global"
+                )
+                nodes = [
+                    node if item.node_id == "global" else item
+                    for item in nodes
+                ]
+                by_id[node.node_id] = node
+                changed = True
             for node in projects:
                 existing = by_id.get(node.node_id)
                 if existing is None:

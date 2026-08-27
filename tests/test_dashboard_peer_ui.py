@@ -67,8 +67,9 @@ def test_peer_workspace_has_complete_accessible_controls() -> None:
     assert dom["peer-project-id"][0] == "select"
     assert dom["peer-dispatch-project"][0] == "select"
     assert dom["peer-remote-node-id"][0] == "select"
-    assert dom["peer-export-node-ids"][0] == "select"
-    assert "multiple" in dom["peer-export-node-ids"][1]
+    assert dom["peer-export-node-ids"][0] == "div"
+    assert dom["peer-export-node-ids"][1]["role"] == "tree"
+    assert dom["peer-export-node-ids"][1]["aria-multiselectable"] == "true"
     assert "disabled" in dom["peer-remote-node-id"][1]
 
 
@@ -112,8 +113,11 @@ def test_peer_contract_fields_and_material_scope_are_explicit() -> None:
         assert f'/api/peers/{action}' in api
 
 
-def test_project_and_node_selects_show_names_and_submit_ids() -> None:
+def test_project_selects_and_local_library_tree_submit_ids() -> None:
     render = (DASHBOARD / "js/peers/render.js").read_text(
+        encoding="utf-8"
+    )
+    library_tree = (DASHBOARD / "js/peers/library-tree.js").read_text(
         encoding="utf-8"
     )
     assert "option.value = project.id" in render
@@ -123,11 +127,15 @@ def test_project_and_node_selects_show_names_and_submit_ids() -> None:
     assert "option.value = node.id" in render
     assert "option.textContent = node.title || node.id" in render
     assert 'renderNodeSelect("peer-remote-node-id"' in render
-    assert '"peer-export-node-ids"' in render
     assert "state.peerRemoteLibraries" in render
-    assert "levelOf(node) === projectLevel" in render
-    assert "projectScope.has(node.id)" in render
-    assert 'node.type !== "mounted"' in render
+    assert "renderLocalLibraryTree" in render
+    assert 'node.id === "global" ? "个人总库"' in library_tree
+    assert "level === projectLevel" in library_tree
+    assert "projectScope.has(node.id)" in library_tree
+    assert 'node.type !== "mounted"' in library_tree
+    assert 'input.type = "checkbox"' in library_tree
+    assert "input.disabled = !selectable" in library_tree
+    assert 'text("span", `${level} 级`' in library_tree
 
 
 def test_saved_secret_is_not_rendered_or_persisted() -> None:

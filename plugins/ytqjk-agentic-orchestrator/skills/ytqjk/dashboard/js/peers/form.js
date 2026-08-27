@@ -1,5 +1,9 @@
 import { api } from "../api.js";
 import { byId } from "../ui/dom.js";
+import {
+  selectedLocalLibraryIds,
+  selectLocalLibraryIds,
+} from "./library-tree.js";
 
 let state;
 let accept;
@@ -11,20 +15,6 @@ function field(id, value) {
   const control = byId(id);
   if (control.type === "checkbox") control.checked = Boolean(value);
   else control.value = String(value ?? "");
-}
-
-function selectValues(id, values) {
-  const selected = new Set(values || []);
-  Array.from(byId(id).options).forEach((option) => {
-    option.selected = selected.has(option.value);
-  });
-}
-
-function selectedValues(id) {
-  return Array.from(
-    byId(id).selectedOptions,
-    (option) => option.value,
-  );
 }
 
 export function openPeer(record = null) {
@@ -43,8 +33,7 @@ export function openPeer(record = null) {
   field("peer-project-id", record?.project_id || defaultProject);
   field("peer-endpoint", record?.endpoint);
   field("peer-remote-node-id", record?.remote_node_id);
-  selectValues(
-    "peer-export-node-ids",
+  selectLocalLibraryIds(
     record?.export_node_ids || [record?.export_node_id || defaultProject],
   );
   field("peer-allow-insecure", record?.allow_insecure);
@@ -69,7 +58,7 @@ function peerPayload() {
     endpoint: byId("peer-endpoint").value.trim(),
     secret: secret || null,
     remote_node_id: byId("peer-remote-node-id").value.trim() || null,
-    export_node_ids: selectedValues("peer-export-node-ids"),
+    export_node_ids: selectedLocalLibraryIds(),
     allow_insecure: byId("peer-allow-insecure").checked,
     enabled: byId("peer-enabled").checked,
   };
@@ -114,12 +103,20 @@ function invalidateDiscovery(resetExports = false) {
   rerender();
   byId("peer-form-status").textContent = "连接信息已变化，请重新获取开放库。";
   if (resetExports) {
-    selectValues("peer-export-node-ids", [byId("peer-project-id").value]);
+    selectLocalLibraryIds([byId("peer-project-id").value]);
   }
 }
 
 async function savePeer(event) {
   event.preventDefault();
+  if (selectedLocalLibraryIds().length === 0) {
+    const tree = byId("peer-export-node-ids");
+    tree.setAttribute("aria-invalid", "true");
+    tree.focus();
+    byId("peer-form-status").textContent = "请至少开放一个可选择的本机库。";
+    return;
+  }
+  byId("peer-export-node-ids").removeAttribute("aria-invalid");
   const control = byId("save-peer");
   await run(control, async () => {
     const result = await api.peerUpsert(peerPayload());

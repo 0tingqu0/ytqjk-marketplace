@@ -1,4 +1,5 @@
 import { byId, button, clear, text } from "../ui/dom.js";
+import { renderLocalLibraryTree } from "./library-tree.js";
 
 function settings(state) {
   return state.peer?.peer_service || null;
@@ -109,60 +110,14 @@ function nodeOptions(nodes) {
   });
 }
 
-function renderNodeSelect(id, nodes, multiple = false) {
+function renderNodeSelect(id, nodes) {
   const control = byId(id);
-  const selected = multiple
-    ? new Set(Array.from(control.selectedOptions, (option) => option.value))
-    : control.value;
+  const selected = control.value;
   const options = nodeOptions(nodes);
   clear(control, options);
-  if (multiple) {
-    options.forEach((option) => {
-      option.selected = selected.has(option.value);
-    });
-  } else if (options.some((option) => option.value === selected)) {
+  if (options.some((option) => option.value === selected)) {
     control.value = selected;
   }
-}
-
-function localExportNodes(tree, projectId) {
-  const nodes = tree?.nodes || [];
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const children = new Map();
-  nodes.forEach((node) => {
-    if (!node.parent_id) return;
-    const items = children.get(node.parent_id) || [];
-    items.push(node.id);
-    children.set(node.parent_id, items);
-  });
-  const levelOf = (node) => {
-    let level = 1;
-    let current = node;
-    while (current.parent_id) {
-      current = nodeById.get(current.parent_id);
-      if (!current) return null;
-      level += 1;
-    }
-    return level;
-  };
-  const project = nodeById.get(projectId);
-  const projectLevel = project ? levelOf(project) : null;
-  if (projectLevel === null) return [];
-  const projectScope = new Set();
-  const pending = [projectId];
-  while (pending.length) {
-    const nodeId = pending.shift();
-    projectScope.add(nodeId);
-    pending.push(...(children.get(nodeId) || []));
-  }
-  return nodes.filter((node) => (
-    node.type !== "mounted" && (
-      levelOf(node) === projectLevel || (
-        projectScope.has(node.id)
-        && (node.id === projectId || node.type !== "project")
-      )
-    )
-  ));
 }
 
 function resultCard(row, index) {
@@ -219,11 +174,7 @@ export function renderPeerWorkspace(state) {
   renderNodeSelect("peer-remote-node-id", remoteLibraries);
   byId("peer-remote-node-id").disabled = remoteLibraries.length === 0;
   const projectId = byId("peer-project-id").value;
-  renderNodeSelect(
-    "peer-export-node-ids",
-    localExportNodes(state.tree, projectId),
-    true,
-  );
+  renderLocalLibraryTree(state.tree, projectId);
   const status = state.peerError
     ? `局域网服务读取失败：${state.peerError}`
     : state.peerStatus;
