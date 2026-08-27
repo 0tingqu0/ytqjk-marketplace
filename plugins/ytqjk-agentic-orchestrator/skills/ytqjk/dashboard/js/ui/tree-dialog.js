@@ -13,6 +13,15 @@ let context = null;
 let issued = null;
 let onCommitted = () => {};
 
+function createNodeId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const suffix = Array.from(
+    bytes,
+    (value) => value.toString(16).padStart(2, "0"),
+  ).join("");
+  return `library-${suffix}`;
+}
+
 function field(id, visible) {
   const wrapper = byId(id);
   wrapper.hidden = !visible;
@@ -176,6 +185,9 @@ export function openTreeAction(action, node, tree) {
   context = { action, node, tree };
   const form = byId("tree-action-form");
   form.reset();
+  if (action === "create") {
+    byId("tree-node-id").value = createNodeId();
+  }
   byId("tree-action-title").textContent = LABELS[action];
   byId("tree-action-target").textContent = node
     ? `当前节点：${node.title} · ${node.id}`

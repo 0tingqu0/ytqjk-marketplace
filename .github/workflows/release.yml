@@ -1,0 +1,125 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Validate release contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate tag, version, and main history
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "::error::Release tag must use pure SemVer: vX.Y.Z"
+              exit 1
+          fi
+          version="${tag#v}"
+          manifest_version="$(
+              python - << 'PY'
+          import json
+          from pathlib import Path
+
+          from install_core import VERSION
+
+          paths = (
+              Path("plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json"),
+              Path("plugins/ytqjk-knowledge/.codex-plugin/plugin.json"),
+          )
+          versions = {VERSION}
+          for path in paths:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              versions.add(str(data.get("version")))
+          if len(versions) != 1:
+              raise SystemExit("release versions are inconsistent")
+          print(versions.pop())
+          PY
+          )"
+          if [[ "${manifest_version}" != "${version}" ]]; then
+              echo "::error::Tag and manifest versions do not match"
+              exit 1
+          fi
+
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor \
+              "${GITHUB_SHA}" refs/remotes/origin/main; then
+              echo "::error::Release commit is not contained in main"
+              exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  tests:
+    name: Run complete test suite
+    needs: contract
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    name: Publish GitHub Release
+    needs: [contract, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Create stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          version="${{ needs.contract.outputs.version }}"
+          if release_state="$(
+              gh release view "${tag}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --json isDraft,isPrerelease \
+                  --jq '[.isDraft, .isPrerelease] | @tsv' \
+                  2> /dev/null
+          )"; then
+              if [[ "${release_state}" != $'false\tfalse' ]]; then
+                  echo "::error::Existing release is not stable"
+                  exit 1
+              fi
+          else
+              gh release create "${tag}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --verify-tag \
+                  --target "${GITHUB_SHA}" \
+                  --title "YTQJK v${version}" \
+                  --generate-notes \
+                  --fail-on-no-commits \
+                  --latest
+          fi
+
+          release_url="$(
+              gh release view "${tag}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --json url \
+                  --jq .url
+          )"
+          echo "Published ${release_url}" >> "${GITHUB_STEP_SUMMARY}"

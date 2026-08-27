@@ -265,7 +265,7 @@ codex plugin add ytqjk-knowledge@ytqjk
 ```
 
 安装完成后必须新建任务，已有任务不会重新载入 bundled skills。当前正式发布版本为纯
-SemVer `0.6.7`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
+SemVer `0.6.8`；`+codex.*` 仅供本地开发临时缓存刷新，不提交、不进入正式发布清单。
 
 IDE 项目级 skills 更新后重载 IDE 或新建聊天：
 
