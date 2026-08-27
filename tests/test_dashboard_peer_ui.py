@@ -125,6 +125,9 @@ def test_project_and_node_selects_show_names_and_submit_ids() -> None:
     assert 'renderNodeSelect("peer-remote-node-id"' in render
     assert '"peer-export-node-ids"' in render
     assert "state.peerRemoteLibraries" in render
+    assert "levelOf(node) === projectLevel" in render
+    assert "projectScope.has(node.id)" in render
+    assert 'node.type !== "mounted"' in render
 
 
 def test_saved_secret_is_not_rendered_or_persisted() -> None:

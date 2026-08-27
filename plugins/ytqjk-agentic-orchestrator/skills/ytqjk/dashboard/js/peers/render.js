@@ -127,6 +127,7 @@ function renderNodeSelect(id, nodes, multiple = false) {
 
 function localExportNodes(tree, projectId) {
   const nodes = tree?.nodes || [];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const children = new Map();
   nodes.forEach((node) => {
     if (!node.parent_id) return;
@@ -134,15 +135,33 @@ function localExportNodes(tree, projectId) {
     items.push(node.id);
     children.set(node.parent_id, items);
   });
-  const allowed = new Set();
-  const pending = projectId ? [projectId] : [];
+  const levelOf = (node) => {
+    let level = 1;
+    let current = node;
+    while (current.parent_id) {
+      current = nodeById.get(current.parent_id);
+      if (!current) return null;
+      level += 1;
+    }
+    return level;
+  };
+  const project = nodeById.get(projectId);
+  const projectLevel = project ? levelOf(project) : null;
+  if (projectLevel === null) return [];
+  const projectScope = new Set();
+  const pending = [projectId];
   while (pending.length) {
     const nodeId = pending.shift();
-    allowed.add(nodeId);
+    projectScope.add(nodeId);
     pending.push(...(children.get(nodeId) || []));
   }
-  return nodes.filter((node) => allowed.has(node.id) && (
-    node.id === projectId || !["mounted", "project"].includes(node.type)
+  return nodes.filter((node) => (
+    node.type !== "mounted" && (
+      levelOf(node) === projectLevel || (
+        projectScope.has(node.id)
+        && (node.id === projectId || node.type !== "project")
+      )
+    )
   ));
 }
 

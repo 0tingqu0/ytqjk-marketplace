@@ -123,12 +123,14 @@ def test_discovery_lists_only_authorized_roots(
             LibraryNode("open-a", "Open A", "group"),
             LibraryNode("open-b", "Open B", "group"),
             LibraryNode("closed", "Closed", "group"),
+            LibraryNode("peer-project", "Peer project", "project"),
         ),
         (
             *current.edges,
             (PROJECT_ID, "open-a"),
             (PROJECT_ID, "open-b"),
             (PROJECT_ID, "closed"),
+            ("global", "peer-project"),
         ),
         revision=current.revision + 1,
     )
@@ -141,7 +143,7 @@ def test_discovery_lists_only_authorized_roots(
             server_root,
             endpoint,
             remote_node_id="open-a",
-            server_export_node_ids=("open-a", "open-b"),
+            server_export_node_ids=("open-a", "open-b", "peer-project"),
         )
 
         health = KnowledgePeerClient(client_root).health(
@@ -151,6 +153,11 @@ def test_discovery_lists_only_authorized_roots(
         assert health["export_nodes"] == [
             {"id": "open-a", "title": "Open A", "type": "group"},
             {"id": "open-b", "title": "Open B", "type": "group"},
+            {
+                "id": "peer-project",
+                "title": "Peer project",
+                "type": "project",
+            },
         ]
         forbidden = {
             "project_id": PROJECT_ID,

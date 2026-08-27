@@ -69,13 +69,18 @@ def exported_libraries(
     if export is None:
         raise PeerScopeError("PEER_EXPORT_NODE_MISSING")
     project_scope = set(_descendants(tree, project_id))
-    if export_node_id not in project_scope:
-        raise PeerScopeError("PEER_EXPORT_OUTSIDE_PROJECT")
-    if export.kind in {"mounted", "project"} and export_node_id != project_id:
-        raise PeerScopeError("PEER_EXPORT_PROJECT_FORBIDDEN")
-    node_ids = _exported_descendants(
-        tree, nodes, export_node_id, project_id
+    same_level = (
+        len(tree.ancestors(export_node_id))
+        == len(tree.ancestors(project_id))
     )
+    if export_node_id not in project_scope and not same_level:
+        raise PeerScopeError("PEER_EXPORT_OUTSIDE_PROJECT")
+    if export.kind == "mounted":
+        raise PeerScopeError("PEER_EXPORT_MOUNTED_FORBIDDEN")
+    if export.kind == "project" and export_node_id != project_id:
+        if not same_level:
+            raise PeerScopeError("PEER_EXPORT_PROJECT_FORBIDDEN")
+    node_ids = _exported_descendants(tree, nodes, export_node_id)
     return tuple(_library(root, nodes[node_id]) for node_id in node_ids)
 
 
@@ -129,7 +134,6 @@ def _exported_descendants(
     tree: KnowledgeTree,
     nodes: dict[str, LibraryNode],
     root_node: str,
-    project_id: str,
 ) -> tuple[str, ...]:
     children: dict[str, list[str]] = {}
     for parent, child in tree.edges:
@@ -141,7 +145,7 @@ def _exported_descendants(
         node = nodes[current]
         blocked = node.kind == "mounted"
         blocked = blocked or (
-            node.kind == "project" and current != project_id
+            node.kind == "project" and current != root_node
         )
         if blocked:
             continue
