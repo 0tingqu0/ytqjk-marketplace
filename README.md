@@ -200,7 +200,7 @@ codex plugin add ytqjk-agentic-orchestrator@ytqjk
 codex plugin add ytqjk-knowledge@ytqjk
 ```
 
-Create a new task after installation; existing tasks do not reload bundled skills. The current release version is pure SemVer `0.6.8`. `+codex.*` is only for refreshing local development caches and is neither committed nor included in release manifests.
+Create a new task after installation; existing tasks do not reload bundled skills. The current release version is pure SemVer `0.6.9`. `+codex.*` is only for refreshing local development caches and is neither committed nor included in release manifests.
 
 After updating project-level IDE skills, reload the IDE or create a new chat:
 

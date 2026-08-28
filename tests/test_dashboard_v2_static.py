@@ -109,6 +109,15 @@ class DashboardV2StaticTest(unittest.TestCase):
         self.assertIn("event.target === event.currentTarget", confirm)
         self.assertIn('dialog.close("cancel")', confirm)
 
+    def test_command_search_filters_before_limiting_results(self) -> None:
+        command = (DASHBOARD / "js/command-palette.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn(".slice(0, 40).forEach", command)
+        self.assertIn(".filter((item) => (", command)
+        self.assertIn(")).slice(0, 20);", command)
+
 
 if __name__ == "__main__":
     unittest.main()

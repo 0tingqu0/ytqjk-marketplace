@@ -22,7 +22,7 @@ from install_external import (
 )
 from install_external_codex import materialize_plugins
 
-VERSION = "0.6.8"
+VERSION = "0.6.9"
 PUBLIC_MODES = ("all", "codex-only", "ide-only", "knowledge-only")
 INTERNAL_MODES = ("codex-stable-only",)
 MODES = PUBLIC_MODES + INTERNAL_MODES

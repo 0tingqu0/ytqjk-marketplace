@@ -9,7 +9,7 @@ function entries(router, openDocument) {
     detail: "视图",
     run: () => router.go(route),
   }));
-  (state.snapshot?.documents || []).slice(0, 40).forEach((item) => {
+  (state.snapshot?.documents || []).forEach((item) => {
     commands.push({
       label: item.path,
       detail: item.label,
@@ -22,11 +22,19 @@ function entries(router, openDocument) {
   return commands;
 }
 
-function render(router, openDocument) {
-  const query = byId("command-filter").value.trim().toLowerCase();
-  const matches = entries(router, openDocument).filter((item) => (
+function findCommands(router, openDocument, rawQuery) {
+  const query = rawQuery.trim().toLowerCase();
+  return entries(router, openDocument).filter((item) => (
     `${item.label} ${item.detail}`.toLowerCase().includes(query)
   )).slice(0, 20);
+}
+
+function render(router, openDocument) {
+  const matches = findCommands(
+    router,
+    openDocument,
+    byId("command-filter").value,
+  );
   const rows = matches.map((item) => {
     const row = button("", "command-row");
     row.append(text("span", item.label), text("small", item.detail));
