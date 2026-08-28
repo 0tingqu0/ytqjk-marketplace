@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="assets/icons/phosphor/regular.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="topology.css">
+  <link rel="stylesheet" href="knowledge-graph-workbench.css">
   <link rel="stylesheet" href="tree.css">
   <link rel="stylesheet" href="peer.css">
   <link rel="stylesheet" href="space-theme.css">
@@ -52,10 +53,22 @@
             <div class="overview-main">
               <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">知识关系</p><h2 id="knowledge-network-title">知识图谱</h2></div></div><span id="overview-stale" class="stale-note" hidden>显示上次成功数据</span></div>
               <section class="surface topology-surface" aria-labelledby="knowledge-network-title">
-                <div id="knowledge-topology" class="knowledge-topology" aria-live="polite" aria-describedby="knowledge-graph-help"></div>
+                <div id="graph-workbench" class="graph-workbench" data-mode="semantic">
+                  <div class="graph-toolbar">
+                    <div class="graph-mode-switch" role="group" aria-label="图谱视图"><button type="button" data-graph-mode="semantic" aria-pressed="true"><i class="ph ph-graph" aria-hidden="true"></i>语义图谱</button><button type="button" data-graph-mode="topology" aria-pressed="false"><i class="ph ph-tree-structure" aria-hidden="true"></i>库拓扑</button></div>
+                    <form id="graph-search-form" class="graph-search" role="search"><label for="graph-search-input">语义搜索</label><div><input id="graph-search-input" list="graph-search-options" type="search" maxlength="2000" autocomplete="off" placeholder="搜索实体、概念或问题"><datalist id="graph-search-options"></datalist><button id="graph-search-submit" type="submit" aria-label="搜索知识"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>搜索</span></button><button id="graph-search-clear" class="secondary" type="button">清除</button></div></form>
+                    <div class="graph-search-meta"><span id="graph-search-mode">正在识别检索能力</span><span id="graph-search-status" role="status" aria-live="polite"></span></div>
+                  </div>
+                  <div class="graph-stage">
+                    <div id="knowledge-topology" class="knowledge-topology" aria-live="polite" aria-describedby="knowledge-graph-help"></div>
+                    <aside id="graph-inspector" class="graph-inspector" aria-labelledby="graph-inspector-title" hidden><header><div><p class="eyebrow">节点详情</p><h3 id="graph-inspector-title">知识节点</h3></div></header><div id="graph-inspector-body"></div><div class="graph-endpoint-actions"><button id="graph-set-source" class="secondary" type="button" disabled>设为起点</button><button id="graph-set-target" class="secondary" type="button" disabled>设为终点</button></div><section><p class="eyebrow">相似知识推荐</p><div id="graph-recommendations" class="graph-result-list"></div></section></aside>
+                  </div>
+                  <div id="graph-search-results" class="graph-result-list graph-search-results" aria-live="polite"></div>
+                  <section class="graph-path-panel" aria-labelledby="graph-path-title"><div><p class="eyebrow">路径探索</p><h3 id="graph-path-title">实体与知识之间如何连接</h3></div><dl><div><dt>起点</dt><dd id="graph-path-source">未选择</dd></div><div><dt>终点</dt><dd id="graph-path-target">未选择</dd></div></dl><div class="graph-path-actions"><button id="graph-run-path" type="button" disabled><i class="ph ph-path" aria-hidden="true"></i>探索路径</button><button id="graph-clear-path" class="secondary" type="button">重置</button></div><p id="graph-path-status" role="status" aria-live="polite">选择节点后设为起点或终点。</p></section>
+                </div>
                 <div class="topology-footer">
-                  <p id="knowledge-graph-help" class="graph-help">选择节点可进入对应视图</p>
-                  <div class="topology-legend" aria-label="知识图谱图例"><span><i class="ph ph-circle" aria-hidden="true"></i>本地总库</span><span><i class="ph ph-circle" aria-hidden="true"></i>项目子库</span><span><i class="ph ph-circle" aria-hidden="true"></i>知识文档</span><span><i class="ph ph-circle" aria-hidden="true"></i>会话锚点</span></div>
+                  <p id="knowledge-graph-help" class="graph-help">选择节点查看证据；键盘可用 Enter 或空格</p>
+                  <div class="topology-legend" aria-label="知识图谱图例"><span><i class="ph ph-file-text" aria-hidden="true"></i>知识文档</span><span><i class="ph ph-circle" aria-hidden="true"></i>实体</span><span><i class="ph ph-link" aria-hidden="true"></i>显式关系</span><span><i class="ph ph-intersect" aria-hidden="true"></i>相似关系</span></div>
                   <details class="topology-index-details"><summary>索引详情<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div class="topology-index-content"><div><p class="eyebrow">总库状态</p><dl id="global-library"></dl></div><div><p class="eyebrow">项目状态</p><p id="project-library-summary" class="muted">读取中</p></div><button id="open-global-library" class="secondary" type="button"><i class="ph ph-database" aria-hidden="true"></i>浏览总库索引</button></div></details>
                 </div>
               </section>

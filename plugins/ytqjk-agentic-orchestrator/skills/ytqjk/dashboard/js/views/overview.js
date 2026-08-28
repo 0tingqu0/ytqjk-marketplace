@@ -1,5 +1,7 @@
 import { byId, button, clear, formatTime, text } from "../ui/dom.js";
-import { renderKnowledgeGraph } from "./knowledge-graph.js";
+import {
+  renderKnowledgeGraphWorkbench,
+} from "./knowledge-graph-workbench.js";
 
 const STATUS_ITEMS = [
   ["已验证", "verified", "ph-shield-check"],
@@ -55,7 +57,7 @@ function renderCandidates(documents, target, onReview) {
   }));
 }
 
-export function renderOverview(snapshot, stale, onReview) {
+export function renderOverview(snapshot, stale, onReview, graph, graphError) {
   const summary = byId("overview-summary");
   const candidates = byId("overview-candidates");
   if (!snapshot) {
@@ -70,7 +72,9 @@ export function renderOverview(snapshot, stale, onReview) {
   const { counts, global_library: library, projects, documents } = snapshot;
   clear(summary, STATUS_ITEMS.map(([label, stateName, iconName]) =>
     metric(label, counts[stateName], iconName, stateName)));
-  renderKnowledgeGraph(byId("knowledge-topology"), snapshot);
+  renderKnowledgeGraphWorkbench(
+    byId("knowledge-topology"), snapshot, graph, graphError,
+  );
   clear(byId("global-library"), [libraryRows(library)]);
   const globalState = snapshot.global.indexed_at ? "已建立" : "未建立";
   byId("project-library-summary").textContent =

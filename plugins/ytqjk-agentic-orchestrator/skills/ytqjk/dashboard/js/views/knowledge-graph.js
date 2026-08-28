@@ -224,10 +224,10 @@ function graphStats(snapshot) {
   return stats;
 }
 
-export function renderKnowledgeGraph(target, snapshot) {
+export function renderLibraryTopology(target, snapshot) {
   const svg = svgNode("svg", {
     viewBox: `0 0 ${GRAPH.width} ${GRAPH.height}`,
-    role: "img",
+    role: "group",
     "aria-label": "本地总库、项目子库、知识文档与会话锚点关系图",
   }, "knowledge-graph");
   const edges = svgNode("g", {}, "graph-edges");
@@ -238,3 +238,5 @@ export function renderKnowledgeGraph(target, snapshot) {
   target.replaceChildren(svg, graphStats(snapshot));
   bindKnowledgeGraphMotion(target);
 }
+
+export const renderKnowledgeGraph = renderLibraryTopology;

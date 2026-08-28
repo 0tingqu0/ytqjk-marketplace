@@ -17,6 +17,7 @@ import { renderReview } from "./js/views/review.js";
 import { renderLibraries } from "./js/views/libraries.js";
 import { renderSessions } from "./js/views/sessions.js";
 import { bindIntake } from "./js/views/intake.js";
+import { bindKnowledgeGraphWorkbench } from "./js/views/knowledge-graph-workbench.js";
 import { bindPeerWorkspace, renderPeerWorkspace } from "./js/peers/control.js";
 const THEME_LABELS = {
   system: "系统", light: "浅色", dark: "暗色",
@@ -50,7 +51,7 @@ function renderAll() {
   renderOverview(snapshot, state.stale, (item) => {
     documentActions.selectReview(item);
     router.go("review");
-  });
+  }, state.knowledgeGraph, state.knowledgeGraphError);
   renderDocuments(snapshot, state, documentActions.selectDocument);
   renderReview(snapshot, state, {
     select: documentActions.selectReview,
@@ -91,8 +92,8 @@ async function refresh() {
   byId("updated").textContent = state.snapshot ? "刷新中，保留当前数据" : "正在读取快照";
   renderAll();
   try {
-    const [snapshotResult, treeResult, peerResult] = await Promise.allSettled([
-      api.snapshot(), api.tree(), api.peers(),
+    const [snapshotResult, treeResult, peerResult, graphResult] = await Promise.allSettled([
+      api.snapshot(), api.tree(), api.peers(), api.knowledgeGraph(),
     ]);
     if (treeResult.status === "fulfilled") {
       state.tree = treeResult.value.tree;
@@ -105,6 +106,12 @@ async function refresh() {
       state.peerError = "";
     } else {
       state.peerError = peerResult.reason.message;
+    }
+    if (graphResult.status === "fulfilled") {
+      state.knowledgeGraph = graphResult.value.graph;
+      state.knowledgeGraphError = "";
+    } else {
+      state.knowledgeGraphError = graphResult.reason.message;
     }
     if (snapshotResult.status === "rejected") throw snapshotResult.reason;
     state.snapshot = snapshotResult.value;
@@ -186,6 +193,7 @@ bindTreeDialog((tree) => {
   renderAll();
 });
 bindPeerWorkspace(state, renderAll);
+bindKnowledgeGraphWorkbench(api);
 bindControls();
 bindIntake(state, refresh);
 refresh();

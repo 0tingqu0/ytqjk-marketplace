@@ -27,17 +27,17 @@ from dashboard_candidate_http import (  # noqa: E402
     document_payload,
     update_payload,
 )
-from dashboard_documents import (  # noqa: E402
-    build_snapshot, global_index_library, project_library,
-    safe_document, snapshot,
+from dashboard_api_routes import (  # noqa: E402
+    handle_dashboard_get, handle_dashboard_post,
 )
+from dashboard_documents import build_snapshot, global_index_library  # noqa: E402
+from dashboard_documents import project_library, safe_document, snapshot  # noqa: E402
 from dashboard_intake_api import (  # noqa: E402
     DashboardIntakeApi, IntakeApiError,
     intake_document,
     intake_upload,
 )
 from dashboard_http import DashboardHttpMixin  # noqa: E402
-from dashboard_tree_http import handle_tree_get, handle_tree_post  # noqa: E402
 from dashboard_update_http import (  # noqa: E402
     handle_update_request,
     send_update_status,
@@ -74,7 +74,7 @@ class KnowledgeHandler(DashboardHttpMixin, SimpleHTTPRequestHandler):
                 HTTPStatus.FORBIDDEN,
             )
             return
-        if handle_tree_get(self, url.path):
+        if handle_dashboard_get(self, url.path, url.query):
             return
         if url.path.startswith("/api/intake/jobs/"):
             try:
@@ -169,7 +169,7 @@ class KnowledgeHandler(DashboardHttpMixin, SimpleHTTPRequestHandler):
                 HTTPStatus.FORBIDDEN,
             )
             return
-        if handle_tree_post(self, request_path):
+        if handle_dashboard_post(self, request_path):
             return
         if request_path.startswith("/api/intake/jobs/"):
             try:
