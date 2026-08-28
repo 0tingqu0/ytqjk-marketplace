@@ -1,4 +1,4 @@
-import { byId, clear, formatTime, text } from "../ui/dom.js";
+import { byId, clear, formatTime, icon, text } from "../ui/dom.js";
 
 export function renderSessions(snapshot) {
   const target = byId("session-grid");
@@ -21,13 +21,15 @@ export function renderSessions(snapshot) {
     const archived = sessions.length - active;
     const memories = sessions.filter((item) => item.has_memory).length;
     const heading = text("summary", "");
-    heading.append(
+    const copy = text("div", "", "session-group-copy");
+    copy.append(
       text("h3", project),
       text(
         "p",
         `${active} 活动 · ${archived} 已归档 · ${memories} 已保存记忆`,
       ),
     );
+    heading.append(icon("ph-anchor-simple"), copy);
     const list = text("div", "", "session-list");
     sessions.forEach((session) => {
       const row = document.createElement("article");

@@ -13,6 +13,12 @@ export function button(label, className = "") {
   return node;
 }
 
+export function icon(name, className = "") {
+  const node = text("i", "", `ph ${name} ${className}`.trim());
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
 export function clear(node, children = []) {
   node.replaceChildren(...children);
 }

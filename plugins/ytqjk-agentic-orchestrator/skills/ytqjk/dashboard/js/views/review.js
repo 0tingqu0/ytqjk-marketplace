@@ -1,4 +1,4 @@
-import { byId, button, clear, text } from "../ui/dom.js";
+import { byId, button, clear, icon, text } from "../ui/dom.js";
 
 function reviewEditor(selected, state, actions) {
   const target = byId("review-detail");
@@ -21,9 +21,12 @@ function reviewEditor(selected, state, actions) {
   editor.rows = 18;
   editor.value = state.drafts.get(item.path) ?? selected.content ?? "";
   editor.oninput = () => state.drafts.set(item.path, editor.value);
-  const save = button("保存修改", "secondary");
-  const approve = button("批准入库");
-  const remove = button("删除候选", "danger");
+  const save = button("保存修改", "secondary icon-leading");
+  const approve = button("批准入库", "icon-leading");
+  const remove = button("删除候选", "danger icon-leading");
+  save.prepend(icon("ph-floppy-disk"));
+  approve.prepend(icon("ph-seal-check"));
+  remove.prepend(icon("ph-trash"));
   save.onclick = () => actions.save(item, editor.value);
   approve.onclick = () => actions.approve(item);
   remove.onclick = () => actions.remove(item);

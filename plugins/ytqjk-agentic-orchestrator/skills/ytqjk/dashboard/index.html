@@ -5,33 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>YTQJK 本地知识工作台</title>
+  <link rel="stylesheet" href="assets/icons/phosphor/regular.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="topology.css">
   <link rel="stylesheet" href="tree.css">
   <link rel="stylesheet" href="peer.css">
+  <link rel="stylesheet" href="space-theme.css">
 </head>
 <body data-theme="system">
   <div class="app-shell">
     <aside id="app-rail" class="app-rail" aria-label="主导航">
-      <div class="rail-brand"><span aria-hidden="true">YK</span><b>YTQJK</b></div>
+      <div class="rail-brand"><span aria-hidden="true">YK</span><div><b>YTQJK</b><small>本地知识工作台</small></div></div>
       <nav class="rail-nav" aria-label="知识工作台视图">
-        <button type="button" data-route="overview">总览</button>
-        <button type="button" data-route="intake">投递任务</button>
-        <button type="button" data-route="documents">知识文档</button>
-        <button type="button" data-route="review">候选审阅 <strong id="rail-candidate-count">–</strong></button>
-        <button type="button" data-route="libraries">知识库树</button>
-        <button type="button" data-route="sessions">会话锚点</button>
+        <button type="button" data-route="overview"><i class="ph ph-house" aria-hidden="true"></i><span>总览</span></button>
+        <button type="button" data-route="intake"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span>投递任务</span></button>
+        <button type="button" data-route="documents"><i class="ph ph-file-text" aria-hidden="true"></i><span>知识文档</span></button>
+        <button type="button" data-route="review"><i class="ph ph-user-list" aria-hidden="true"></i><span>候选审阅</span><strong id="rail-candidate-count">–</strong></button>
+        <button type="button" data-route="libraries"><i class="ph ph-tree-structure" aria-hidden="true"></i><span>知识库树</span></button>
+        <button type="button" data-route="sessions"><i class="ph ph-anchor-simple" aria-hidden="true"></i><span>会话锚点</span></button>
       </nav>
-      <div class="rail-footer"><button id="theme-toggle" type="button">主题：系统</button><button id="shortcut-help" type="button">快捷键</button></div>
+      <div class="rail-footer"><button id="theme-toggle" type="button">主题：系统</button><button id="shortcut-help" type="button"><i class="ph ph-keyboard" aria-hidden="true"></i><span>快捷键</span></button></div>
     </aside>
 
     <section class="workspace">
       <header class="appbar">
-        <button id="rail-toggle" class="mobile-only" type="button" aria-expanded="false" aria-controls="app-rail">菜单</button>
-        <div><p id="view-kicker" class="eyebrow">LOCAL KNOWLEDGE</p><h1 id="view-title">总览</h1></div>
+        <button id="rail-toggle" class="mobile-only icon-button" type="button" aria-expanded="false" aria-controls="app-rail"><i class="ph ph-list" aria-hidden="true"></i><span class="sr-only">菜单</span></button>
+        <div class="appbar-title"><h1>YTQJK 本地知识工作台</h1><p><span id="view-kicker">状态</span><span aria-hidden="true">/</span><strong id="view-title">总览</strong></p></div>
         <div class="appbar-actions">
-          <button id="command-trigger" type="button">搜索 <kbd>Ctrl K</kbd></button>
+          <button id="command-trigger" class="command-button" type="button"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>搜索</span><kbd>Ctrl K</kbd></button>
           <output id="updated" aria-live="polite">读取中</output>
-          <button id="refresh" type="button" title="刷新数据">刷新</button>
+          <button id="refresh" class="icon-button" type="button" title="刷新数据"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i><span class="sr-only">刷新</span></button>
           <div class="version-control">
             <button id="version-trigger" class="version-trigger" type="button" aria-expanded="false" aria-controls="update-panel" aria-label="查看版本和更新">v–</button>
             <div id="update-panel" class="update-panel" hidden>
@@ -45,31 +48,46 @@
       <main id="view-root" tabindex="-1">
         <p id="snapshot-error" class="snapshot-error" role="alert" hidden></p>
         <section id="view-overview" class="view-panel" data-view="overview">
-          <div class="view-heading"><div><p class="eyebrow">状态</p><h2>知识库概况</h2></div><span id="overview-stale" class="stale-note" hidden>显示上次成功数据</span></div>
-          <div id="overview-summary" class="metric-grid" aria-live="polite"></div>
-          <div class="split-grid"><section class="surface"><p class="eyebrow">总库</p><h3>全局知识索引</h3><dl id="global-library"></dl><button id="open-global-library" class="secondary" type="button">浏览总库索引</button></section><section class="surface"><p class="eyebrow">子库</p><h3>项目索引</h3><p id="project-library-summary" class="muted">读取中</p><button class="secondary" type="button" data-route="libraries">查看知识库树</button></section></div>
-          <section class="surface"><div class="section-row"><div><p class="eyebrow">待处理</p><h3>候选资料</h3></div><button class="text-button" type="button" data-route="review">进入审阅</button></div><div id="overview-candidates" class="compact-list"></div></section>
+          <div class="overview-layout">
+            <div class="overview-main">
+              <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">知识关系</p><h2 id="knowledge-network-title">知识图谱</h2></div></div><span id="overview-stale" class="stale-note" hidden>显示上次成功数据</span></div>
+              <section class="surface topology-surface" aria-labelledby="knowledge-network-title">
+                <div id="knowledge-topology" class="knowledge-topology" aria-live="polite" aria-describedby="knowledge-graph-help"></div>
+                <div class="topology-footer">
+                  <p id="knowledge-graph-help" class="graph-help">选择节点可进入对应视图</p>
+                  <div class="topology-legend" aria-label="知识图谱图例"><span><i class="ph ph-circle" aria-hidden="true"></i>本地总库</span><span><i class="ph ph-circle" aria-hidden="true"></i>项目子库</span><span><i class="ph ph-circle" aria-hidden="true"></i>知识文档</span><span><i class="ph ph-circle" aria-hidden="true"></i>会话锚点</span></div>
+                  <details class="topology-index-details"><summary>索引详情<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div class="topology-index-content"><div><p class="eyebrow">总库状态</p><dl id="global-library"></dl></div><div><p class="eyebrow">项目状态</p><p id="project-library-summary" class="muted">读取中</p></div><button id="open-global-library" class="secondary" type="button"><i class="ph ph-database" aria-hidden="true"></i>浏览总库索引</button></div></details>
+                </div>
+              </section>
+            </div>
+            <aside class="overview-aside">
+              <section class="surface status-surface"><div class="panel-title"><span class="section-accent" aria-hidden="true"></span><h3>知识状态</h3></div><div id="overview-summary" class="status-list" aria-live="polite"></div></section>
+              <section class="surface review-surface"><div class="panel-title"><span class="section-accent" aria-hidden="true"></span><h3>候选审阅</h3></div><div id="overview-candidates" class="compact-list"></div></section>
+              <button class="overview-primary-action" type="button" data-route="intake"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span><b>投递资料</b><small>上传候选资料，进入知识体系</small></span><i class="ph ph-caret-right" aria-hidden="true"></i></button>
+              <button class="overview-secondary-action" type="button" data-route="libraries"><i class="ph ph-tree-structure" aria-hidden="true"></i><span>查看知识库树</span><i class="ph ph-caret-right" aria-hidden="true"></i></button>
+            </aside>
+          </div>
         </section>
 
         <section id="view-intake" class="view-panel" data-view="intake" hidden>
-          <div class="view-heading"><div><p class="eyebrow">投递</p><h2>投递任务</h2><p class="muted">投递资料只会保存为候选，不会自动批准。</p></div></div>
-          <div class="intake-layout"><form id="intake-form" class="surface intake-form"><label class="drop-zone" for="file-input"><b>选择或拖入资料</b><span>文本、Office、图片或音频；单份最大 10 MiB</span></label><input id="file-input" type="file" hidden><input id="folder-input" type="file" webkitdirectory multiple hidden><div class="form-actions"><label class="secondary" for="folder-input">选择文件夹</label><button id="submit-intake" type="submit">保存文本为候选</button></div><label for="purpose">资料作用</label><input id="purpose" maxlength="500" placeholder="例如：部署步骤或故障根因"><label for="note">直接粘贴</label><textarea id="note" rows="7" placeholder="输入可复用的资料、结论或复盘记录"></textarea></form><section class="surface task-panel"><p class="eyebrow">最近浏览器记录</p><h3>导入进度</h3><div id="intake-progress" class="progress" hidden><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><span class="progress-track"><span id="intake-progress-bar"></span></span></div><p id="intake-status" class="status-message" role="status">尚无投递任务。</p><div id="intake-results" class="compact-list"></div></section></div>
+          <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">投递</p><h2>投递任务</h2><p class="muted">投递资料只会保存为候选，不会自动批准。</p></div></div></div>
+          <div class="intake-layout"><form id="intake-form" class="surface intake-form"><label class="drop-zone" for="file-input"><b>选择或拖入资料</b><span>文本、Office、图片或音频；单份最大 10 MiB</span></label><input id="file-input" type="file" hidden><input id="folder-input" type="file" webkitdirectory multiple hidden><div class="form-actions"><label class="secondary" for="folder-input"><i class="ph ph-folder-open" aria-hidden="true"></i>选择文件夹</label><button id="submit-intake" class="icon-leading" type="submit"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i>保存文本为候选</button></div><label for="purpose">资料作用</label><input id="purpose" maxlength="500" placeholder="例如：部署步骤或故障根因"><label for="note">直接粘贴</label><textarea id="note" rows="7" placeholder="输入可复用的资料、结论或复盘记录"></textarea></form><section class="surface task-panel"><p class="eyebrow">最近浏览器记录</p><h3>导入进度</h3><div id="intake-progress" class="progress" hidden><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><span class="progress-track"><span id="intake-progress-bar"></span></span></div><p id="intake-status" class="status-message" role="status">尚无投递任务。</p><div id="intake-results" class="compact-list"></div></section></div>
         </section>
 
         <section id="view-documents" class="view-panel" data-view="documents" hidden>
-          <div class="view-heading"><div><p class="eyebrow">检索</p><h2>知识文档</h2></div><label class="search-label">筛选<input id="document-filter" data-view-search type="search" placeholder="路径、类别或状态"></label></div>
-          <div class="workbench"><section class="surface document-list-panel"><div class="filter-row" role="group" aria-label="文档状态"><button data-document-state="all" type="button">全部</button><button data-document-state="verified" type="button">已验证</button><button data-document-state="approved" type="button">已批准</button><button data-document-state="candidate" type="button">候选</button></div><div id="documents" class="document-list"></div></section><section class="surface document-detail"><div id="document-empty" class="empty-state"><h3>选择一条知识</h3><p>候选资料只用于人工审阅，不等同于已批准经验。</p></div><article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" rows="18" hidden></textarea><div id="preview-actions" class="form-actions" hidden><button id="approve-candidate" type="button">批准入库</button><button id="save-candidate" class="secondary" type="button">保存修改</button><button id="delete-candidate" class="danger" type="button">删除候选</button></div></article></section></div>
+          <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">检索</p><h2>知识文档</h2></div></div><label class="search-label">筛选<input id="document-filter" data-view-search type="search" placeholder="路径、类别或状态"></label></div>
+          <div class="workbench"><section class="surface document-list-panel"><div class="filter-row" role="group" aria-label="文档状态"><button data-document-state="all" type="button">全部</button><button data-document-state="verified" type="button">已验证</button><button data-document-state="approved" type="button">已批准</button><button data-document-state="candidate" type="button">候选</button></div><div id="documents" class="document-list"></div></section><section class="surface document-detail"><div id="document-empty" class="empty-state"><h3>选择一条知识</h3><p>候选资料只用于人工审阅，不等同于已批准经验。</p></div><article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" rows="18" hidden></textarea><div id="preview-actions" class="form-actions" hidden><button id="approve-candidate" class="icon-leading" type="button"><i class="ph ph-seal-check" aria-hidden="true"></i>批准入库</button><button id="save-candidate" class="secondary icon-leading" type="button"><i class="ph ph-floppy-disk" aria-hidden="true"></i>保存修改</button><button id="delete-candidate" class="danger icon-leading" type="button"><i class="ph ph-trash" aria-hidden="true"></i>删除候选</button></div></article></section></div>
         </section>
 
         <section id="view-review" class="view-panel" data-view="review" hidden>
-          <div class="view-heading"><div><p class="eyebrow">人工决策</p><h2>候选审阅</h2><p class="muted">人工批准会改变状态；批准不代表来源已验证。</p></div></div>
+          <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">人工决策</p><h2>候选审阅</h2><p class="muted">人工批准会改变状态；批准不代表来源已验证。</p></div></div></div>
           <div class="workbench"><section class="surface"><div id="review-list" class="document-list"></div></section><section class="surface"><div id="review-empty" class="empty-state"><h3>选择候选资料</h3><p>可编辑、查看评估说明，再决定批准或删除。</p></div><div id="review-detail" hidden></div></section></div>
         </section>
 
         <section id="view-libraries" class="view-panel" data-view="libraries" hidden>
-          <div class="view-heading">
-            <div><p class="eyebrow">层级管理</p><h2>知识库树</h2><p id="tree-status" class="muted">读取中</p></div>
-            <button id="new-root-library" type="button">新建根库</button>
+          <div class="overview-heading">
+            <div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">层级管理</p><h2>知识库树</h2><p id="tree-status" class="muted">读取中</p></div></div>
+            <button id="new-root-library" class="icon-leading" type="button"><i class="ph ph-plus" aria-hidden="true"></i>新建根库</button>
           </div>
           <div id="project-grid" class="project-grid"></div>
           <section class="surface peer-workspace" aria-labelledby="peer-heading">
@@ -80,7 +98,7 @@
             <div class="peer-grid"><section><div class="section-row"><h3>授权电脑</h3><span class="muted">保存的密钥永不回显</span></div><div id="peer-list" class="peer-list"></div></section><section><h3>同级知识检索</h3><form id="peer-dispatch-form" class="peer-dispatch-form"><label>当前项目<input id="peer-dispatch-project" list="peer-project-options" required></label><datalist id="peer-project-options"></datalist><datalist id="peer-node-options"></datalist><label>检索内容<input id="peer-dispatch-query" type="search" required maxlength="2000"></label><label>最多结果<input id="peer-dispatch-limit" type="number" required min="1" max="20" value="5"></label><button id="peer-dispatch-submit" type="submit">向同级库检索</button></form><div id="peer-results" class="peer-results" aria-live="polite"></div></section></div>
           </section>
         </section>
-        <section id="view-sessions" class="view-panel" data-view="sessions" hidden><div class="view-heading"><div><p class="eyebrow">会话层</p><h2>会话锚点</h2><p class="muted">按项目聚合的匿名锚点。</p></div></div><div id="session-grid" class="session-grid"></div></section>
+        <section id="view-sessions" class="view-panel" data-view="sessions" hidden><div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">会话层</p><h2>会话锚点</h2><p class="muted">按项目聚合的匿名锚点。</p></div></div></div><div id="session-grid" class="session-grid"></div></section>
       </main>
     </section>
   </div>

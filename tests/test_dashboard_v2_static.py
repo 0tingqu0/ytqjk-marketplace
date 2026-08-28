@@ -109,6 +109,47 @@ class DashboardV2StaticTest(unittest.TestCase):
         self.assertIn("event.target === event.currentTarget", confirm)
         self.assertIn('dialog.close("cancel")', confirm)
 
+    def test_overview_uses_technology_knowledge_graph(self) -> None:
+        html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
+        overview = (DASHBOARD / "js/views/overview.js").read_text(
+            encoding="utf-8"
+        )
+        graph = (DASHBOARD / "js/views/knowledge-graph.js").read_text(
+            encoding="utf-8"
+        )
+        motion = (
+            DASHBOARD / "js/views/knowledge-graph-motion.js"
+        ).read_text(encoding="utf-8")
+        topology = (DASHBOARD / "topology.css").read_text(
+            encoding="utf-8"
+        )
+        theme = (DASHBOARD / "space-theme.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("知识图谱", html)
+        self.assertIn("renderKnowledgeGraph", overview)
+        for node_type in ("root", "project", "document", "session"):
+            self.assertIn(f'type: "{node_type}"', graph)
+        self.assertLessEqual(len(graph.splitlines()), 300)
+        self.assertLessEqual(len(motion.splitlines()), 300)
+        self.assertIn("bindKnowledgeGraphMotion", graph)
+        self.assertIn("onpointermove", motion)
+        self.assertIn('classList.toggle("is-related"', motion)
+        self.assertIn("graph-hub-breathe", topology)
+        self.assertIn("graph-edge-flow", topology)
+        self.assertIn("has-active-node", topology)
+        self.assertIn("prefers-reduced-motion", topology)
+        combined = "\n".join((html, overview, graph, theme)).lower()
+        for discarded_style in (
+            "gargantua",
+            "event-horizon",
+            "orbital-intake",
+            "starfield",
+            "black-hole",
+        ):
+            self.assertNotIn(discarded_style, combined)
+
 
 if __name__ == "__main__":
     unittest.main()
