@@ -142,6 +142,7 @@ async function intakeAction(id, action) {
 export const api = {
   snapshot: () => request("/api/snapshot"),
   knowledgeGraph: () => request("/api/knowledge-graph?limit=120"),
+  knowledgeGraphRevision: () => request("/api/knowledge-graph-revision"),
   semanticSearch: (query, limit = 8) => post(
     "/api/knowledge-search", { query, limit },
   ),

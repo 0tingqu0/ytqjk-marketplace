@@ -7,10 +7,11 @@ function clearRelations(target) {
 
 function activateRelations(target, nodeId) {
   const related = new Set([nodeId]);
-  target.querySelectorAll(".graph-edge").forEach((edge) => {
+  target.querySelectorAll(".semantic-edge-link").forEach((edge) => {
     const connected = edge.dataset.source === nodeId
       || edge.dataset.target === nodeId;
     edge.classList.toggle("is-related", connected);
+    edge.querySelector(".graph-edge")?.classList.toggle("is-related", connected);
     if (!connected) return;
     related.add(edge.dataset.source);
     related.add(edge.dataset.target);

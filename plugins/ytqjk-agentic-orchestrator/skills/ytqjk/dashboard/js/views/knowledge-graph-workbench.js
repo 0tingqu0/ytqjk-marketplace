@@ -1,9 +1,17 @@
-import { byId, button, clear, text } from "../ui/dom.js";
+import { byId, clear, text } from "../ui/dom.js";
+import { bindGraphExplorer } from "./knowledge-graph-explorer.js";
+import { bindGraphNodeDirectory } from "./knowledge-graph-accessibility.js";
 import { renderLibraryTopology } from "./knowledge-graph.js";
 import {
   applyGraphHighlight,
   renderSemanticGraph,
 } from "./semantic-graph-render.js";
+import {
+  graphResultButton,
+  renderEdgeInspector,
+  renderGraphSearchResults,
+  renderNodeInspector,
+} from "./knowledge-graph-presenters.js";
 
 let client = null;
 const runtime = {
@@ -13,10 +21,15 @@ const runtime = {
   error: "",
   mode: "semantic",
   selected: null,
+  selectedEdge: null,
   pathSource: null,
   pathTarget: null,
   pathNodes: new Set(),
   pathEdges: new Set(),
+  pathRequest: 0,
+  viewport: null,
+  explorer: null,
+  directory: null,
 };
 
 function graphNodes() {
@@ -30,6 +43,14 @@ function modeButtons() {
     );
   });
   byId("graph-workbench").dataset.mode = runtime.mode;
+}
+
+function updateZoomControls(state = null) {
+  const semantic = runtime.mode === "semantic" && state;
+  byId("graph-zoom-in").disabled = !semantic || !state.canZoomIn;
+  byId("graph-zoom-out").disabled = !semantic || !state.canZoomOut;
+  byId("graph-zoom-reset").disabled = !semantic;
+  byId("graph-zoom-level").textContent = `${state?.percent || 100}%`;
 }
 
 function emptyGraph(message) {
@@ -47,6 +68,8 @@ function renderMode() {
     return;
   }
   if (runtime.mode === "topology") {
+    runtime.viewport = null;
+    updateZoomControls();
     renderLibraryTopology(runtime.target, runtime.snapshot);
     return;
   }
@@ -54,41 +77,30 @@ function renderMode() {
     emptyGraph(runtime.error || "索引中尚无可用知识，批准资料后可再次刷新。");
     return;
   }
-  renderSemanticGraph(runtime.target, runtime.graph, selectNode);
+  runtime.viewport = renderSemanticGraph(
+    runtime.target, runtime.graph, selectNode, selectEdge, updateZoomControls,
+  );
   applyHighlight();
+  runtime.explorer?.sync();
+  runtime.directory?.sync();
   updateOptions();
 }
 
-function nodeType(node) {
-  if (node.type === "document") return "知识文档";
-  return node.kind === "topic" ? "主题实体" : "知识实体";
-}
-
-function detailRows(node) {
-  const list = text("dl", "", "graph-detail-list");
-  const rows = [
-    ["类型", nodeType(node)],
-    ["范围", node.scope || "跨文档实体"],
-    ["提及", node.mentions ? `${node.mentions} 次` : "—"],
-    ["文档", node.document_count ? `${node.document_count} 份` : node.path || "—"],
-  ];
-  rows.forEach(([label, value]) => {
-    list.append(text("dt", label), text("dd", value));
-  });
-  return list;
-}
-
-function selectNode(node) {
+function selectNode(node, focus = false) {
+  const visible = graphNodes().has(node.id);
   runtime.selected = node;
-  byId("graph-inspector").hidden = false;
-  byId("graph-inspector-title").textContent = node.label;
-  const body = byId("graph-inspector-body");
-  const copy = node.snippet || node.evidence?.[0]?.excerpt || "暂无摘要。";
-  clear(body, [detailRows(node), text("p", copy, "graph-detail-copy")]);
-  byId("graph-set-source").disabled = false;
-  byId("graph-set-target").disabled = false;
+  runtime.selectedEdge = null;
+  renderNodeInspector(node, visible);
   applyHighlight();
+  if (focus && visible) runtime.viewport?.focus(node.id);
+  runtime.explorer?.sync();
   loadRecommendations(node.id);
+}
+
+function selectEdge(edge) {
+  runtime.selectedEdge = edge;
+  renderEdgeInspector(edge, graphNodes());
+  applyHighlight();
 }
 
 function applyHighlight() {
@@ -96,23 +108,10 @@ function applyHighlight() {
   applyGraphHighlight(
     runtime.target,
     runtime.selected?.id || "",
+    runtime.selectedEdge?.id || "",
     runtime.pathNodes,
     runtime.pathEdges,
   );
-}
-
-function relatedButton(item) {
-  const control = button("", "graph-result-item");
-  const head = text("span", "", "graph-result-head");
-  head.append(
-    text("strong", item.label || item.title),
-    text("b", `${Math.round((item.score || 0) * 100)}%`),
-  );
-  const details = [...(item.reasons || []), item.path].filter(Boolean);
-  const reason = details.join(" · ") || "相关知识";
-  control.append(head, text("small", reason));
-  control.onclick = () => selectNode(graphNodes().get(item.id || item.node_id) || item);
-  return control;
 }
 
 async function loadRecommendations(nodeId) {
@@ -123,7 +122,9 @@ async function loadRecommendations(nodeId) {
     if (runtime.selected?.id !== nodeId) return;
     const rows = response.results || [];
     clear(target, rows.length
-      ? rows.map(relatedButton)
+      ? rows.map((item) => graphResultButton(item, (selected) => selectNode(
+        graphNodes().get(selected.id || selected.node_id) || selected, true,
+      )))
       : [text("p", "暂无达到阈值的相似知识。", "graph-empty-copy")]);
   } catch (error) {
     clear(target, [text("p", `推荐失败：${error.message}`, "graph-error-copy")]);
@@ -143,23 +144,6 @@ function updateOptions() {
     : "概念相似度召回（向量索引未启用）";
 }
 
-function renderSearchResults(response) {
-  const target = byId("graph-search-results");
-  const rows = response.results || [];
-  if (!rows.length) {
-    const suggestions = response.suggestions?.join("；") || "尝试实体名称。";
-    clear(target, [text("p", `没有匹配结果。${suggestions}`, "graph-empty-copy")]);
-    return;
-  }
-  clear(target, rows.map((item) => relatedButton({
-    ...item,
-    id: item.node_id,
-    label: item.title,
-    type: "document",
-    reasons: [`${Math.round(item.score * 100)}% 匹配`],
-  })));
-}
-
 async function search(event) {
   event.preventDefault();
   const input = byId("graph-search-input");
@@ -174,7 +158,9 @@ async function search(event) {
   byId("graph-search-status").textContent = "正在检索本地知识…";
   try {
     const response = await client.semanticSearch(query, 8);
-    renderSearchResults(response);
+    renderGraphSearchResults(response, (item) => selectNode(
+      graphNodes().get(item.id || item.node_id) || item, true,
+    ));
     byId("graph-search-status").textContent = response.results.length
       ? `找到 ${response.results.length} 条结果`
       : "未找到匹配知识，可尝试缩短检索词。";
@@ -195,12 +181,18 @@ function setPathEndpoint(kind) {
 
 async function runPath() {
   if (!runtime.pathSource || !runtime.pathTarget) return;
+  const sourceId = runtime.pathSource.id;
+  const targetId = runtime.pathTarget.id;
+  const requestId = ++runtime.pathRequest;
   const status = byId("graph-path-status");
   status.textContent = "正在探索最短知识路径…";
   try {
     const response = await client.knowledgePath(
-      runtime.pathSource.id, runtime.pathTarget.id, 5,
+      sourceId, targetId, 5,
     );
+    if (requestId !== runtime.pathRequest
+        || runtime.pathSource?.id !== sourceId
+        || runtime.pathTarget?.id !== targetId) return;
     runtime.pathNodes = new Set((response.nodes || []).map((node) => node.id));
     runtime.pathEdges = new Set((response.edges || []).map((edge) => edge.id));
     applyHighlight();
@@ -215,6 +207,7 @@ async function runPath() {
 }
 
 function clearPath() {
+  runtime.pathRequest += 1;
   runtime.pathSource = null;
   runtime.pathTarget = null;
   runtime.pathNodes = new Set();
@@ -226,8 +219,33 @@ function clearPath() {
   applyHighlight();
 }
 
+function reconcileGraphState(graph) {
+  const nodes = new Map((graph?.nodes || []).map((node) => [node.id, node]));
+  const edges = new Set((graph?.edges || []).map((edge) => edge.id));
+  runtime.pathRequest += 1;
+  runtime.selected = nodes.get(runtime.selected?.id) || null;
+  runtime.selectedEdge = (graph?.edges || []).find(
+    (edge) => edge.id === runtime.selectedEdge?.id,
+  ) || null;
+  runtime.pathSource = nodes.get(runtime.pathSource?.id) || null;
+  runtime.pathTarget = nodes.get(runtime.pathTarget?.id) || null;
+  runtime.pathNodes = new Set([...runtime.pathNodes].filter((id) => nodes.has(id)));
+  runtime.pathEdges = new Set([...runtime.pathEdges].filter((id) => edges.has(id)));
+  byId("graph-inspector").hidden = !runtime.selected && !runtime.selectedEdge;
+  byId("graph-set-source").disabled = !runtime.selected;
+  byId("graph-set-target").disabled = !runtime.selected;
+  byId("graph-path-source").textContent = runtime.pathSource?.label || "未选择";
+  byId("graph-path-target").textContent = runtime.pathTarget?.label || "未选择";
+  byId("graph-run-path").disabled = !runtime.pathSource || !runtime.pathTarget;
+}
+
 export function bindKnowledgeGraphWorkbench(api) {
   client = api;
+  runtime.explorer = bindGraphExplorer(() => ({ target: runtime.target, graph: runtime.graph, selectedId: runtime.selected?.id, viewport: runtime.viewport }));
+  runtime.directory = bindGraphNodeDirectory(
+    () => ({ target: runtime.target, graph: runtime.graph }),
+    selectNode,
+  );
   document.querySelectorAll("[data-graph-mode]").forEach((control) => {
     control.onclick = () => {
       runtime.mode = control.dataset.graphMode;
@@ -242,14 +260,28 @@ export function bindKnowledgeGraphWorkbench(api) {
   };
   byId("graph-set-source").onclick = () => setPathEndpoint("pathSource");
   byId("graph-set-target").onclick = () => setPathEndpoint("pathTarget");
+  byId("graph-focus-local").onclick = () => runtime.explorer?.focusLocal();
+  byId("graph-inspector-close").onclick = () => { byId("graph-inspector").hidden = true; };
   byId("graph-run-path").onclick = runPath;
   byId("graph-clear-path").onclick = clearPath;
+  byId("graph-zoom-in").onclick = () => runtime.viewport?.zoomIn();
+  byId("graph-zoom-out").onclick = () => runtime.viewport?.zoomOut();
+  byId("graph-zoom-reset").onclick = () => runtime.viewport?.reset();
 }
 
 export function renderKnowledgeGraphWorkbench(target, snapshot, graph, error) {
+  const targetChanged = runtime.target !== target;
+  const snapshotChanged = runtime.snapshot !== snapshot;
+  const graphChanged = runtime.graph !== graph;
+  const errorChanged = runtime.error !== error;
+  if (graphChanged) reconcileGraphState(graph);
   runtime.target = target;
   runtime.snapshot = snapshot;
   runtime.graph = graph;
   runtime.error = error;
+  const needsRender = targetChanged || (runtime.mode === "semantic"
+    ? graphChanged || (!graph && errorChanged)
+    : snapshotChanged);
+  if (!needsRender) return;
   renderMode();
 }

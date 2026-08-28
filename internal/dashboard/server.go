@@ -97,6 +97,9 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 
 func (s *Server) handleAPI(writer http.ResponseWriter, request *http.Request) int {
 	path := request.URL.Path
+	if status, handled := s.handleKnowledgeGraphAPI(writer, request); handled {
+		return status
+	}
 	if request.Method == http.MethodGet {
 		switch {
 		case path == "/api/health":
@@ -115,8 +118,6 @@ func (s *Server) handleAPI(writer http.ResponseWriter, request *http.Request) in
 			return http.StatusOK
 		case path == "/api/libraries/tree":
 			return s.tree(writer)
-		case path == "/api/knowledge-graph":
-			return s.graph(writer, request.URL.Query().Get("limit"))
 		case path == "/api/peers":
 			writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "state": "NOT_CONFIGURED", "peers": []any{}})
 			return http.StatusOK
@@ -127,12 +128,6 @@ func (s *Server) handleAPI(writer http.ResponseWriter, request *http.Request) in
 	}
 	if request.Method == http.MethodPost {
 		switch path {
-		case "/api/knowledge-search":
-			return s.search(writer, request)
-		case "/api/knowledge-recommendations":
-			return s.recommend(writer, request)
-		case "/api/knowledge-path":
-			return s.graphPath(writer, request)
 		case "/api/intake":
 			return s.intake(writer, request)
 		case "/api/candidate/approve":
@@ -215,73 +210,6 @@ func (s *Server) document(writer http.ResponseWriter, relative string) int {
 		preview = preview[:24000]
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "path": filepath.ToSlash(relative), "content": preview, "size": len(data), "truncated": len(preview) < len(data)})
-	return http.StatusOK
-}
-
-func (s *Server) search(writer http.ResponseWriter, request *http.Request) int {
-	var payload struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
-	}
-	if err := readJSON(request, &payload); err != nil || strings.TrimSpace(payload.Query) == "" {
-		writeError(writer, http.StatusBadRequest, "INVALID_QUERY", "Search query is invalid")
-		return http.StatusBadRequest
-	}
-	if payload.Limit < 1 || payload.Limit > 20 {
-		payload.Limit = 8
-	}
-	results, err := searchAll(s.KnowledgeRoot, payload.Query, payload.Limit)
-	if err != nil {
-		writeError(writer, http.StatusInternalServerError, "SEARCH_FAILED", "Knowledge search failed")
-		return http.StatusInternalServerError
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "query": payload.Query, "results": results, "result_count": len(results)})
-	return http.StatusOK
-}
-
-func (s *Server) recommend(writer http.ResponseWriter, request *http.Request) int {
-	var payload struct {
-		NodeID string `json:"node_id"`
-		Limit  int    `json:"limit"`
-	}
-	if err := readJSON(request, &payload); err != nil || payload.NodeID == "" {
-		writeError(writer, http.StatusBadRequest, "INVALID_NODE", "Node identifier is invalid")
-		return http.StatusBadRequest
-	}
-	results, _ := searchAll(s.KnowledgeRoot, strings.ReplaceAll(payload.NodeID, "-", " "), clamp(payload.Limit, 1, 20))
-	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "node_id": payload.NodeID, "recommendations": results})
-	return http.StatusOK
-}
-
-func (s *Server) graph(writer http.ResponseWriter, rawLimit string) int {
-	limit, _ := strconv.Atoi(rawLimit)
-	limit = clamp(limit, 1, 500)
-	chunks, _ := allChunks(s.KnowledgeRoot, limit)
-	nodes := make([]map[string]any, 0, len(chunks))
-	edges := make([]map[string]any, 0)
-	lastByPath := map[string]string{}
-	for _, chunk := range chunks {
-		nodes = append(nodes, map[string]any{"id": chunk.ID, "label": filepath.Base(chunk.Path), "path": chunk.Path, "kind": "chunk", "score": 1})
-		if prior := lastByPath[chunk.Path]; prior != "" {
-			edges = append(edges, map[string]any{"id": prior + ":" + chunk.ID, "source": prior, "target": chunk.ID, "kind": "sequence"})
-		}
-		lastByPath[chunk.Path] = chunk.ID
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges)})
-	return http.StatusOK
-}
-
-func (s *Server) graphPath(writer http.ResponseWriter, request *http.Request) int {
-	var payload struct {
-		Source   string `json:"source"`
-		Target   string `json:"target"`
-		MaxDepth int    `json:"max_depth"`
-	}
-	if err := readJSON(request, &payload); err != nil || payload.Source == "" || payload.Target == "" {
-		writeError(writer, http.StatusBadRequest, "INVALID_PATH_QUERY", "Path query is invalid")
-		return http.StatusBadRequest
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "found": payload.Source == payload.Target, "nodes": []string{payload.Source, payload.Target}, "edges": []any{}, "max_depth": clamp(payload.MaxDepth, 1, 10)})
 	return http.StatusOK
 }
 
