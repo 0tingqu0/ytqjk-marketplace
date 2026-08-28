@@ -1,5 +1,7 @@
 import { bindKnowledgeGraphMotion } from "./knowledge-graph-motion.js";
 import { layoutKnowledgeGraph } from "./knowledge-graph-layout.js";
+import { bindGraphViewport } from "./knowledge-graph-viewport.js";
+import { bindRovingGraphNavigation } from "./knowledge-graph-accessibility.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -16,17 +18,38 @@ function shortened(value, length = 18) {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value;
 }
 
-function edgeNode(edge, source, target) {
-  const line = svgNode("line", {
+function edgeCoordinates(source, target) {
+  return {
     x1: source.x,
     y1: source.y,
     x2: target.x,
     y2: target.y,
-  }, `graph-edge semantic-edge semantic-edge--${edge.type}`);
-  line.dataset.edge = edge.id;
-  line.dataset.source = edge.source;
-  line.dataset.target = edge.target;
-  return line;
+  };
+}
+
+function edgeNode(edge, source, target, onSelect) {
+  const group = svgNode("g", {
+    tabindex: "-1",
+    role: "button",
+    "aria-label": `${edge.label}关系，置信度${Math.round(edge.confidence * 100)}%`,
+  }, "semantic-edge-link");
+  group.dataset.edge = edge.id;
+  group.dataset.source = edge.source;
+  group.dataset.target = edge.target;
+  const title = svgNode("title");
+  title.textContent = `${edge.label} · ${Math.round(edge.confidence * 100)}%`;
+  const hit = svgNode("line", edgeCoordinates(source, target), "semantic-edge-hit");
+  const line = svgNode(
+    "line",
+    edgeCoordinates(source, target),
+    `graph-edge semantic-edge semantic-edge--${edge.type}`,
+  );
+  group.append(title, hit, line);
+  group.onclick = (event) => {
+    event.stopPropagation();
+    onSelect(edge);
+  };
+  return group;
 }
 
 function edgeLabel(edge, source, target) {
@@ -40,41 +63,65 @@ function edgeLabel(edge, source, target) {
   return label;
 }
 
-function nodeRadius(node) {
-  if (node.type === "document") return 7.5;
-  return Math.min(8, 3.8 + Math.log2((node.mentions || 1) + 1));
+function nodeRadius(node, degree) {
+  const importance = Math.max(node.mentions || 1, degree || 0);
+  if (node.type === "document") {
+    return Math.min(12, 6.4 + Math.log2(importance + 1) * 1.15);
+  }
+  return Math.min(9.5, 3.8 + Math.log2(importance + 1));
 }
 
-function graphNode(node, position, degree, onSelect) {
+function displayLabel(node) {
+  return node.display_label || node.label;
+}
+
+function graphNode(node, position, degree, index, onSelect) {
   const group = svgNode(
     "g",
     {
       transform: `translate(${position.x.toFixed(2)} ${position.y.toFixed(2)})`,
-      tabindex: "0",
+      tabindex: index === 0 ? "0" : "-1",
       role: "button",
-      "aria-label": `${node.type === "document" ? "文档" : "实体"} ${node.label}`,
+      "aria-label": `${node.type === "document" ? "文档" : "实体"} ${displayLabel(node)}`,
     },
     `graph-node-link semantic-node semantic-node--${node.type}`,
   );
   group.dataset.node = node.id;
+  group.dataset.x = position.x.toFixed(2);
+  group.dataset.y = position.y.toFixed(2);
   const title = svgNode("title");
-  title.textContent = node.path ? `${node.label} · ${node.path}` : node.label;
+  title.textContent = node.path ? `${displayLabel(node)} · ${node.path}` : displayLabel(node);
   const hit = svgNode("circle", { r: 16 }, "graph-node-hit");
-  const dot = svgNode("circle", { r: nodeRadius(node) }, "graph-node-dot");
+  const radius = nodeRadius(node, degree);
+  const dot = svgNode("circle", {
+    r: radius,
+    "data-base-radius": radius,
+  }, "graph-node-dot");
   const label = svgNode("text", {
     x: 11,
     y: 4,
     "text-anchor": "start",
   }, `graph-node-label${degree >= 5 ? " is-prominent" : ""}`);
-  label.textContent = shortened(node.label);
+  label.textContent = shortened(displayLabel(node));
   group.append(title, hit, dot, label);
   group.onclick = () => onSelect(node);
-  group.onkeydown = (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(node);
-    }
-  };
+  return group;
+}
+
+function clusterNode(cluster) {
+  const group = svgNode("g", {}, "semantic-cluster");
+  group.dataset.cluster = cluster.id;
+  const halo = svgNode("circle", {
+    cx: cluster.x,
+    cy: cluster.y,
+    r: cluster.radius,
+  }, "semantic-cluster-halo");
+  const label = svgNode("text", {
+    x: cluster.x - cluster.radius + 14,
+    y: cluster.y - cluster.radius + 22,
+  }, "semantic-cluster-label");
+  label.textContent = `${shortened(cluster.label, 22)} · ${cluster.count}`;
+  group.append(halo, label);
   return group;
 }
 
@@ -95,13 +142,17 @@ function statsNode(graph) {
   return stats;
 }
 
-export function renderSemanticGraph(target, graph, onSelect) {
+export function renderSemanticGraph(
+  target, graph, onSelect, onEdgeSelect, onZoom,
+) {
   const layout = layoutKnowledgeGraph(graph);
   const svg = svgNode("svg", {
     viewBox: `0 0 ${layout.width} ${layout.height}`,
+    tabindex: "0",
     role: "group",
     "aria-label": "知识文档、实体以及语义关系图",
   }, "knowledge-graph semantic-knowledge-graph");
+  const clusterLayer = svgNode("g", {}, "semantic-clusters");
   const edgeLayer = svgNode("g", {}, "graph-edges semantic-edges");
   const labelLayer = svgNode("g", {}, "semantic-edge-labels");
   const nodeLayer = svgNode("g", {}, "graph-nodes semantic-nodes");
@@ -112,31 +163,51 @@ export function renderSemanticGraph(target, graph, onSelect) {
     const source = layout.positions.get(edge.source);
     const targetPosition = layout.positions.get(edge.target);
     if (!source || !targetPosition) return;
-    edgeLayer.append(edgeNode(edge, source, targetPosition));
+    edgeLayer.append(edgeNode(edge, source, targetPosition, onEdgeSelect));
     if (edge.type !== "mentions") {
       labelLayer.append(edgeLabel(edge, source, targetPosition));
     }
   });
-  graph.nodes.forEach((node) => {
+  layout.clusters.forEach((cluster) => clusterLayer.append(clusterNode(cluster)));
+  graph.nodes.forEach((node, index) => {
     const position = layout.positions.get(node.id);
     if (position) nodeLayer.append(graphNode(
-      node, position, degree.get(node.id) || 0, onSelect,
+      node, position, degree.get(node.id) || 0, index, onSelect,
     ));
   });
-  svg.append(edgeLayer, labelLayer, nodeLayer);
+  svg.append(clusterLayer, edgeLayer, labelLayer, nodeLayer);
+  target.graphViewport?.destroy?.();
   target.replaceChildren(svg, statsNode(graph));
   bindKnowledgeGraphMotion(target);
+  bindRovingGraphNavigation(svg);
+  const viewport = bindGraphViewport(svg, target, onZoom);
+  target.graphViewport = viewport;
+  return viewport;
 }
 
 export function applyGraphHighlight(
-  target, selectedId, pathNodeIds = new Set(), pathEdgeIds = new Set(),
+  target, selectedId, selectedEdgeId = "", pathNodeIds = new Set(),
+  pathEdgeIds = new Set(),
 ) {
+  const neighbors = new Set();
+  target.querySelectorAll(".semantic-edge-link").forEach((edge) => {
+    const connected = edge.dataset.source === selectedId
+      || edge.dataset.target === selectedId;
+    edge.classList.toggle("is-neighbor", connected);
+    edge.classList.toggle("is-selected", edge.dataset.edge === selectedEdgeId);
+    if (connected) {
+      neighbors.add(edge.dataset.source);
+      neighbors.add(edge.dataset.target);
+    }
+  });
   target.querySelectorAll("[data-node]").forEach((node) => {
     node.classList.toggle("is-selected", node.dataset.node === selectedId);
+    node.classList.toggle("is-neighbor", neighbors.has(node.dataset.node));
     node.classList.toggle("is-path", pathNodeIds.has(node.dataset.node));
   });
   target.querySelectorAll("[data-edge]").forEach((edge) => {
     edge.classList.toggle("is-path", pathEdgeIds.has(edge.dataset.edge));
   });
+  target.classList.toggle("has-selection", Boolean(selectedId));
   target.classList.toggle("has-path", pathNodeIds.size > 0);
 }

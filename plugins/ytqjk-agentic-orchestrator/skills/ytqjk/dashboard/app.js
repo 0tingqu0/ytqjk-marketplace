@@ -19,6 +19,11 @@ import { renderSessions } from "./js/views/sessions.js";
 import { bindIntake } from "./js/views/intake.js";
 import { bindKnowledgeGraphWorkbench } from "./js/views/knowledge-graph-workbench.js";
 import { bindPeerWorkspace, renderPeerWorkspace } from "./js/peers/control.js";
+import {
+  loadKnowledgeGraph,
+  sameData,
+  shouldAutoRefresh,
+} from "./js/refresh-policy.js";
 const THEME_LABELS = {
   system: "系统", light: "浅色", dark: "暗色",
 };
@@ -85,38 +90,73 @@ function renderAll() {
   error.hidden = !state.error;
   error.textContent = state.error;
 }
-async function refresh() {
+
+function updateState(key, value) {
+  if (sameData(state[key], value)) return false;
+  state[key] = value;
+  return true;
+}
+
+function updateError(key, value) {
+  if (state[key] === value) return false;
+  state[key] = value;
+  return true;
+}
+
+async function refresh(silent = false) {
   if (state.loading) return;
   state.loading = true;
-  state.error = "";
-  byId("updated").textContent = state.snapshot ? "刷新中，保留当前数据" : "正在读取快照";
-  renderAll();
+  const clearedError = updateError("error", "");
+  let needsRender = !state.snapshot || clearedError;
+  if (!silent) {
+    byId("updated").textContent = state.snapshot
+      ? "刷新中，保留当前数据"
+      : "正在读取快照";
+  }
+  if (!state.snapshot) renderAll();
   try {
     const [snapshotResult, treeResult, peerResult, graphResult] = await Promise.allSettled([
-      api.snapshot(), api.tree(), api.peers(), api.knowledgeGraph(),
+      api.snapshot(), api.tree(), api.peers(), loadKnowledgeGraph(
+        api,
+        state.knowledgeGraph ? state.knowledgeGraphRevision : "",
+      ),
     ]);
     if (treeResult.status === "fulfilled") {
-      state.tree = treeResult.value.tree;
-      state.treeError = "";
+      needsRender = updateState("tree", treeResult.value.tree) || needsRender;
+      needsRender = updateError("treeError", "") || needsRender;
     } else {
-      state.treeError = treeResult.reason.message;
+      needsRender = updateError(
+        "treeError", treeResult.reason.message,
+      ) || needsRender;
     }
     if (peerResult.status === "fulfilled") {
-      state.peer = peerResult.value;
-      state.peerError = "";
+      needsRender = updateState("peer", peerResult.value) || needsRender;
+      needsRender = updateError("peerError", "") || needsRender;
     } else {
-      state.peerError = peerResult.reason.message;
+      needsRender = updateError(
+        "peerError", peerResult.reason.message,
+      ) || needsRender;
     }
     if (graphResult.status === "fulfilled") {
-      state.knowledgeGraph = graphResult.value.graph;
-      state.knowledgeGraphError = "";
+      if (graphResult.value.changed) {
+        state.knowledgeGraph = graphResult.value.graph;
+        needsRender = true;
+      }
+      state.knowledgeGraphRevision = graphResult.value.revision;
+      needsRender = updateError("knowledgeGraphError", "") || needsRender;
     } else {
-      state.knowledgeGraphError = graphResult.reason.message;
+      needsRender = updateError(
+        "knowledgeGraphError", graphResult.reason.message,
+      ) || needsRender;
     }
     if (snapshotResult.status === "rejected") throw snapshotResult.reason;
-    state.snapshot = snapshotResult.value;
+    needsRender = updateState(
+      "snapshot", snapshotResult.value,
+    ) || needsRender;
+    needsRender = state.stale || needsRender;
     state.stale = false;
     const conflicts = await detectDraftConflicts(api, state);
+    needsRender = Boolean(conflicts) || needsRender;
     const refreshed = `已刷新 ${new Date().toLocaleTimeString(
       "zh-CN",
       { hour12: false },
@@ -125,12 +165,18 @@ async function refresh() {
       ? `${refreshed}，检测到外部更新，草稿未覆盖`
       : state.drafts.size ? `${refreshed}，已保留未保存草稿` : refreshed;
   } catch (error) {
-    state.stale = Boolean(state.snapshot);
-    state.error = state.stale
+    const stale = Boolean(state.snapshot);
+    needsRender = state.stale !== stale || needsRender;
+    state.stale = stale;
+    const message = state.stale
       ? `刷新失败：${error.message}；显示上次成功数据。`
       : `无法读取知识库：${error.message}`;
+    needsRender = updateError("error", message) || needsRender;
     byId("updated").textContent = state.stale ? "显示旧数据" : "读取失败";
-  } finally { state.loading = false; renderAll(); }
+  } finally {
+    state.loading = false;
+    if (needsRender) renderAll();
+  }
 }
 function deleteDraft(item) {
   state.drafts.delete(item.path);
@@ -140,7 +186,7 @@ function bindControls() {
     const control = event.target.closest("[data-route]");
     if (control) router.go(control.dataset.route);
   });
-  byId("refresh").onclick = refresh;
+  byId("refresh").onclick = () => refresh();
   byId("open-global-library").onclick = showGlobalLibrary;
   byId("new-root-library").onclick = () => {
     if (state.tree) openTreeAction("create", null, state.tree);
@@ -197,4 +243,6 @@ bindKnowledgeGraphWorkbench(api);
 bindControls();
 bindIntake(state, refresh);
 refresh();
-setInterval(refresh, 10_000);
+document.addEventListener("visibilitychange", () => {
+  if (shouldAutoRefresh(document.hidden)) refresh(true);
+});

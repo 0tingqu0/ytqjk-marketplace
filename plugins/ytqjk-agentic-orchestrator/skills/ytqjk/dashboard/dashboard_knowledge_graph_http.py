@@ -9,12 +9,14 @@ from urllib.parse import parse_qs
 from knowledge_graph_service import (
     build_knowledge_graph,
     explore_path,
+    knowledge_graph_revision,
     recommend_knowledge,
     semantic_search,
 )
 
 
 GRAPH_PATH = "/api/knowledge-graph"
+GRAPH_REVISION_PATH = "/api/knowledge-graph-revision"
 POST_PATHS = {
     "/api/knowledge-search",
     "/api/knowledge-recommendations",
@@ -57,9 +59,15 @@ def _fields(payload: dict[str, object], allowed: set[str]) -> None:
 def handle_knowledge_graph_get(
     handler: object, path: str, query: str,
 ) -> bool:
-    if path != GRAPH_PATH:
+    if path not in {GRAPH_PATH, GRAPH_REVISION_PATH}:
         return False
     try:
+        if path == GRAPH_REVISION_PATH:
+            handler.send_json({
+                "ok": True,
+                "revision": knowledge_graph_revision(handler.knowledge_root),
+            })
+            return True
         raw_limit = parse_qs(query).get("limit", ["100"])[0]
         limit = int(raw_limit)
         if not 20 <= limit <= 160:

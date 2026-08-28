@@ -14,6 +14,7 @@ from knowledge_graph_service import (  # noqa: E402
     recommend_knowledge,
     semantic_search,
 )
+from knowledge_graph_extract import extract_knowledge  # noqa: E402
 
 
 def _write_approved(root: Path, name: str, content: str) -> None:
@@ -81,6 +82,24 @@ def test_graph_extracts_entities_relations_and_provenance(
     assert graph["capabilities"]["path_exploration"] is True
 
 
+def test_graph_revision_changes_only_when_sources_change(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+
+    first = build_knowledge_graph(tmp_path, limit=80)
+    second = build_knowledge_graph(tmp_path, limit=80)
+
+    assert first["revision"] == second["revision"]
+    _write_approved(
+        tmp_path,
+        "search.md",
+        "# 语义搜索\n\n[[语义搜索]] 使用 [[全文索引]]。",
+    )
+
+    changed = build_knowledge_graph(tmp_path, limit=80)
+
+    assert changed["revision"] != first["revision"]
+
+
 def test_semantic_search_and_similar_recommendation(tmp_path: Path) -> None:
     _fixture(tmp_path)
 
@@ -136,3 +155,103 @@ def test_queries_are_bounded_and_unknown_nodes_are_explicit(
     path = explore_path(tmp_path, "missing", "also-missing", max_depth=4)
     assert path["found"] is False
     assert path["reason"] == "UNKNOWN_NODE"
+
+
+def test_entity_extraction_rejects_type_fragments_and_generic_terms() -> None:
+    extracted = extract_knowledge(
+        """# 语义知识图谱
+
+[[知识图谱]] 使用 `KnowledgeService` 与 [[向量索引]]。
+`dict[str, Any`、`JSONDecodeError`、服务、模型、模块和数据库。
+前会话外部检索并通过候选接口。
+"""
+    )
+    labels = {str(item["label"]) for item in extracted["entities"]}
+
+    assert {"语义知识图谱", "知识图谱", "KnowledgeService", "向量索引"} <= labels
+    assert not {
+        "dict[str, Any", "JSONDecodeError", "服务", "模型", "模块", "数据库",
+        "前会话外部检索并通过候选接口",
+    } & labels
+
+
+def test_entity_extraction_rejects_low_information_terms_and_numbered_topics(
+) -> None:
+    extracted = extract_knowledge(
+        """# 1. Bootstrap
+
+If
+In
+Node
+END
+textContent
+EXISTS
+TEXT NOT NULL
+ArgumentParser
+It
+This
+Every
+Local
+Software
+SystemExit
+INTEGER NOT NULL
+TEXT PRIMARY KEY
+"""
+    )
+    labels = {str(item["label"]) for item in extracted["entities"]}
+
+    assert "Bootstrap" in labels
+    assert "1. Bootstrap" not in labels
+    assert not {
+        "If", "In", "Node", "END", "textContent", "EXISTS",
+        "TEXT NOT NULL", "ArgumentParser",
+        "It", "This", "Every", "Local", "Software", "SystemExit",
+        "INTEGER NOT NULL", "TEXT PRIMARY KEY",
+    } & labels
+
+
+def test_graph_suppresses_low_confidence_singletons_and_disambiguates_titles(
+    tmp_path: Path,
+) -> None:
+    _write_approved(
+        tmp_path,
+        "first/app.md",
+        "# Shared title\n\nRareFrameworkThing appears once. [[StableConcept]].",
+    )
+    _write_approved(
+        tmp_path,
+        "second/app.md",
+        "# Shared title\n\n[[StableConcept]] supports [[KnowledgeGraph]].",
+    )
+
+    graph = build_knowledge_graph(tmp_path, limit=80)["graph"]
+    labels = {str(node["label"]) for node in graph["nodes"]}
+    shared = [
+        str(node.get("display_label", ""))
+        for node in graph["nodes"]
+        if node.get("type") == "document" and node["label"] == "Shared title"
+    ]
+
+    assert "StableConcept" in labels
+    assert "RareFrameworkThing" not in labels
+    assert len(shared) == 2
+    assert len(set(shared)) == 2
+
+
+def test_shared_concepts_rank_ahead_of_one_off_headings(
+    tmp_path: Path,
+) -> None:
+    for document in range(6):
+        headings = "\n".join(
+            f"## 临时章节 {document}-{section}" for section in range(5)
+        )
+        _write_approved(
+            tmp_path,
+            f"noise-{document}.md",
+            f"# 临时资料 {document}\n\n{headings}\n\n[[共享概念]] 支持知识检索。",
+        )
+
+    graph = build_knowledge_graph(tmp_path, limit=20)["graph"]
+    labels = {str(node["label"]) for node in graph["nodes"]}
+
+    assert "共享概念" in labels

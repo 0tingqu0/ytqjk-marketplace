@@ -106,9 +106,13 @@ def _source_extractions(
             row = entities.setdefault(node_id, {
                 "id": node_id, "label": item["label"],
                 "kind": item["kind"], "mentions": 0,
+                "confidence": item["confidence"],
                 "documents": set(), "evidence": [],
             })
             row["mentions"] = int(row["mentions"]) + 1
+            row["confidence"] = max(
+                float(row["confidence"]), float(item["confidence"]),
+            )
             row["documents"].add(doc_id)
             if len(row["evidence"]) < 3:
                 row["evidence"].append(_evidence(
@@ -160,6 +164,13 @@ def _entity_nodes(
         documents = set(row["documents"]) & selected_docs
         if not documents:
             continue
+        if (
+            row["kind"] == "term"
+            and float(row["confidence"]) < 0.8
+            and int(row["mentions"]) < 2
+            and len(documents) < 2
+        ):
+            continue
         candidates.append({
             **row,
             "documents": sorted(documents),
@@ -168,7 +179,7 @@ def _entity_nodes(
     ranked = sorted(
         candidates,
         key=lambda row: (
-            {"topic": 0, "concept": 1, "term": 2}.get(
+            {"concept": 0, "topic": 1, "term": 2}.get(
                 str(row["kind"]), 3,
             ),
             -int(row["document_count"]),
@@ -265,8 +276,14 @@ def build_graph(
     selected_entities = _entity_nodes(
         entities, selected_doc_ids, bounded - len(selected_documents),
     )
+    title_counts = Counter(str(row["title"]) for row in selected_documents)
     document_nodes = [{
         "id": row["id"], "label": row["title"], "type": "document",
+        "display_label": (
+            str(row["title"])
+            if title_counts[str(row["title"])] == 1
+            else f"{row['title']} · {Path(str(row['path'])).parent.name or row['scope']}"
+        ),
         "kind": "document", "path": row["path"], "scope": row["scope"],
         "project_id": row["project_id"],
         "snippet": str(row["content"])[:240],
@@ -275,6 +292,7 @@ def build_graph(
     entity_nodes = [{
         "id": row["id"], "label": row["label"], "type": "entity",
         "kind": row["kind"], "mentions": row["mentions"],
+        "confidence": round(float(row["confidence"]), 3),
         "document_count": row["document_count"],
         "evidence": row["evidence"],
     } for row in selected_entities]

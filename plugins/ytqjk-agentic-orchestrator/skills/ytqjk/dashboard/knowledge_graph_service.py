@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import math
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
@@ -41,6 +42,14 @@ def _signature(root: Path) -> tuple[tuple[str, int, int], ...]:
     return tuple(rows)
 
 
+def _revision(signature: tuple[tuple[str, int, int], ...]) -> str:
+    digest = hashlib.sha256()
+    for path, modified, size in signature:
+        digest.update(path.encode("utf-8"))
+        digest.update(f"\0{modified}\0{size}\0".encode("ascii"))
+    return digest.hexdigest()
+
+
 @lru_cache(maxsize=8)
 def _cached_sources(
     root_text: str, signature: tuple[tuple[str, int, int], ...],
@@ -65,11 +74,17 @@ def _cached_graph(
 def build_knowledge_graph(root: Path, limit: int = 100) -> dict[str, object]:
     bounded = max(20, min(int(limit), 160))
     resolved = root.resolve()
-    graph = _cached_graph(str(resolved), _signature(resolved), bounded)
+    signature = _signature(resolved)
+    graph = _cached_graph(str(resolved), signature, bounded)
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "revision": _revision(signature),
         "graph": copy.deepcopy(graph),
     }
+
+
+def knowledge_graph_revision(root: Path) -> str:
+    return _revision(_signature(root.resolve()))
 
 
 def _cosine(left: Counter[str], right: Counter[str]) -> float:
@@ -269,6 +284,6 @@ def explore_path(
 
 
 __all__ = [
-    "build_knowledge_graph", "explore_path", "recommend_knowledge",
-    "semantic_search",
+    "build_knowledge_graph", "explore_path", "knowledge_graph_revision",
+    "recommend_knowledge", "semantic_search",
 ]

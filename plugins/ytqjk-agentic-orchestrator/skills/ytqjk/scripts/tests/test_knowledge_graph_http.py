@@ -84,7 +84,13 @@ def test_graph_search_recommendation_and_path_contracts(
         status, body = client.request("GET", "/api/knowledge-graph")
         assert status == 200
         assert body["ok"] is True
+        assert isinstance(body["revision"], str)
         assert body["graph"]["nodes"]
+        status, revision = client.request(
+            "GET", "/api/knowledge-graph-revision",
+        )
+        assert status == 200
+        assert revision == {"ok": True, "revision": body["revision"]}
         nodes = body["graph"]["nodes"]
         source = next(node["id"] for node in nodes if node["label"] == "知识图谱")
         target = next(node["id"] for node in nodes if node["label"] == "语义搜索")

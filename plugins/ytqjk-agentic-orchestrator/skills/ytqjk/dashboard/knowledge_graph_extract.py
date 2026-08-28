@@ -15,10 +15,9 @@ ENGLISH_TERM = re.compile(
     r"(?:[ ._-](?:[A-Z][A-Za-z0-9]+|[0-9]+)){0,3}\b"
 )
 TECH_TERM = re.compile(
-    r"[\u4e00-\u9fffA-Za-z0-9]{0,12}?"
     r"(?:知识图谱|知识库|语义搜索|语义检索|实体关系抽取|关系抽取|"
-    r"向量索引|全文索引|相似知识推荐|知识推荐|路径探索|工作台|"
-    r"接口|服务|模型|算法|模块|数据库)"
+    r"向量索引|全文索引|相似知识推荐|知识推荐|路径探索|"
+    r"本地知识工作台|知识工作台|工作台|知识服务|语义模型|视觉模型)"
 )
 RELATION_WORDS = {
     "使用": ("uses", "使用"),
@@ -48,13 +47,36 @@ GENERIC = {
     "assertnotin", "assertraisesregex", "temporarydirectory", "the", "never",
     "users", "scripts", "license", "e402", "utf-8", "content-type",
     "gib", "mib", "localappdata", "not_configured", "installed",
+    "接口", "服务", "模型", "算法", "模块", "数据库",
 }
+LOW_INFORMATION = {
+    "if", "in", "node", "end", "exists", "claim", "textcontent",
+    "text not null", "argumentparser", "pureposixpath", "scanresult",
+    "scanstate", "zipfile", "uuid", "za", "it", "this", "every",
+    "local", "software", "systemexit", "ids", "join-path",
+    "stopped", "queued", "unknown", "integer not null",
+    "text primary key",
+}
+
+TYPE_FRAGMENT = re.compile(r"[\[\]{},;:=<>]")
+NOISY_CODE = re.compile(
+    r"(?:error|exception|tests?|testcase)$",
+    re.IGNORECASE,
+)
 
 
 def canonical_label(value: str) -> str:
     normalized = unicodedata.normalize("NFKC", value).strip()
     normalized = re.sub(r"^[#*\-\s]+|[，。；：:,.!?！？\s]+$", "", normalized)
     return re.sub(r"\s+", " ", normalized)[:80]
+
+
+def _topic_label(value: str) -> str:
+    label = canonical_label(value)
+    return re.sub(
+        r"^(?:\d+(?:\.\d+)*[.)]?|[IVX]+[.)])\s+", "", label,
+        flags=re.IGNORECASE,
+    )
 
 
 def semantic_tokens(value: str) -> Counter[str]:
@@ -73,25 +95,41 @@ def semantic_tokens(value: str) -> Counter[str]:
     return result
 
 
+def _valid_label(label: str, source: str) -> bool:
+    folded = label.casefold()
+    if not 2 <= len(label) <= 80 or folded in GENERIC | LOW_INFORMATION:
+        return False
+    if TYPE_FRAGMENT.search(label):
+        return False
+    if source in {"code", "english"} and NOISY_CODE.search(label):
+        return False
+    if source == "tech":
+        chinese = re.findall(r"[\u4e00-\u9fff]", label)
+        if len(chinese) > 12:
+            return False
+    return True
+
+
 def _span_rows(line: str) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     patterns = (
-        (WIKI, "concept", 0.98),
-        (CODE, "term", 0.9),
-        (TECH_TERM, "concept", 0.78),
-        (ENGLISH_TERM, "term", 0.72),
+        (WIKI, "concept", 0.98, "wiki"),
+        (CODE, "term", 0.9, "code"),
+        (TECH_TERM, "concept", 0.78, "tech"),
+        (ENGLISH_TERM, "term", 0.72, "english"),
     )
     heading = HEADING.match(line)
-    if heading:
+    topic = _topic_label(heading.group(1)) if heading else ""
+    if heading and _valid_label(topic, "heading"):
         rows.append({
-            "label": canonical_label(heading.group(1)),
+            "label": topic,
             "kind": "topic", "confidence": 0.94,
             "start": heading.start(1), "end": heading.end(1),
         })
-    for pattern, kind, confidence in patterns:
+    for pattern, kind, confidence, source in patterns:
         for match in pattern.finditer(line):
             label = canonical_label(match.group(1) if match.lastindex else match.group(0))
-            if not 2 <= len(label) <= 80 or label.casefold() in GENERIC:
+            if not _valid_label(label, source):
                 continue
             rows.append({
                 "label": label, "kind": kind, "confidence": confidence,
