@@ -59,12 +59,19 @@ global.fetch = async (_url, options = {}) => {
 };
 eval(fs.readFileSync(process.argv[1], "utf8"));
 setImmediate(async () => {
-  await listeners["install-update:click"]();
-  console.log(JSON.stringify({
-    status: elements["update-status"].textContent,
-    version: elements["version-trigger"].textContent,
-    calls,
-  }));
+  try {
+    await listeners["install-update:click"]();
+    const output = JSON.stringify({
+      status: elements["update-status"].textContent,
+      version: elements["version-trigger"].textContent,
+      calls,
+    });
+    // Flush the pipe before exiting so Windows subprocess readers finish.
+    process.stdout.write(`${output}\n`, () => process.exit(0));
+  } catch (error) {
+    const message = error && error.stack ? error.stack : String(error);
+    process.stderr.write(`${message}\n`, () => process.exit(1));
+  }
 });
 """
         completed = subprocess.run(
