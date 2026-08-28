@@ -3,6 +3,8 @@ const INTAKE_KEY = "ytqjk-last-intake-progress";
 
 export const state = {
   snapshot: null,
+  knowledgeGraph: null,
+  knowledgeGraphError: "",
   tree: null,
   treeError: "",
   peer: null,

@@ -141,6 +141,16 @@ async function intakeAction(id, action) {
 
 export const api = {
   snapshot: () => request("/api/snapshot"),
+  knowledgeGraph: () => request("/api/knowledge-graph?limit=120"),
+  semanticSearch: (query, limit = 8) => post(
+    "/api/knowledge-search", { query, limit },
+  ),
+  knowledgeRecommendations: (nodeId, limit = 6) => post(
+    "/api/knowledge-recommendations", { node_id: nodeId, limit },
+  ),
+  knowledgePath: (source, target, maxDepth = 5) => post(
+    "/api/knowledge-path", { source, target, max_depth: maxDepth },
+  ),
   tree: () => request("/api/libraries/tree"),
   treePreview: (action, payload) => request("/api/libraries/preview", {
     method: "POST",
