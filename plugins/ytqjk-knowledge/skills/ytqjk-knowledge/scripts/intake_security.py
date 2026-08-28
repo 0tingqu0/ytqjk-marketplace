@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 
 from .intake_contracts import CONTROLLED_SCANNER_ID, InspectedSource
 from .intake_contracts import ScanResult, ScannerPort, ScanState
+from .intake_paths import is_link_or_junction
 
 
 DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -145,8 +146,7 @@ def _reject_sensitive_root(root: Path) -> None:
 
 def _contained_source(root: Path, source: Path) -> Path:
     candidate = source if source.is_absolute() else root / source
-    is_junction = getattr(candidate, "is_junction", lambda: False)()
-    if candidate.is_symlink() or is_junction:
+    if is_link_or_junction(candidate):
         raise IntakeSecurityError("link or junction input is forbidden")
     try:
         absolute = candidate.absolute()
@@ -172,8 +172,7 @@ def _reject_link_components(root: Path, path: Path) -> None:
     current = root
     for part in relative.parts:
         current /= part
-        is_junction = getattr(current, "is_junction", lambda: False)()
-        if current.is_symlink() or is_junction:
+        if is_link_or_junction(current):
             raise IntakeSecurityError("link or junction input is forbidden")
 
 
