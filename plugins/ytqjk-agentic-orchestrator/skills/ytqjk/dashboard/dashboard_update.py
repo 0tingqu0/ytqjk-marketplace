@@ -162,11 +162,14 @@ def extract_release(
                 raise UpdateError("GitHub 更新包文件过多。")
             for info in members:
                 parts = PurePosixPath(info.filename).parts
+                if parts and ":" in parts[0]:
+                    raise UpdateError("GitHub 更新包顶层目录无效。")
                 mode = info.external_attr >> 16
                 file_type = stat.S_IFMT(mode)
                 unsafe = (
                     not parts or "\\" in info.filename or ".." in parts
                     or PurePosixPath(info.filename).is_absolute()
+                    or any(":" in part for part in parts)
                     or file_type not in (0, stat.S_IFREG, stat.S_IFDIR)
                     or stat.S_ISLNK(mode) or bool(info.flag_bits & 1)
                 )
