@@ -23,8 +23,8 @@ jobs:
       TMP: ${{ github.workspace }}/../.ytqjk-test-tmp
       TMPDIR: ${{ github.workspace }}/../.ytqjk-test-tmp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Prepare test temp directory
@@ -42,8 +42,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       YTQJK_VECTOR_INTEGRATION: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Prepare isolated vector runtime
