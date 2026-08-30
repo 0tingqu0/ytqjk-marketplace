@@ -1,17 +1,17 @@
 $ErrorActionPreference = 'Stop'
-$candidates = @(
-  (Join-Path $env:LOCALAPPDATA 'YTQJK\runtime\python\python.exe'),
-  (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe')
-)
-$python = $candidates | Where-Object { Test-Path -LiteralPath $_ } |
-  Select-Object -First 1
-if (-not $python) {
-  $command = Get-Command python -ErrorAction SilentlyContinue
-  if ($command) { $python = $command.Source }
+$binary = Join-Path $env:PLUGIN_ROOT 'bin\ytqjk.exe'
+if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+  $local = Join-Path $env:LOCALAPPDATA 'YTQJK\runtime\bin\ytqjk.exe'
+  if (Test-Path -LiteralPath $local -PathType Leaf) {
+    $binary = $local
+  } else {
+    $command = Get-Command ytqjk -ErrorAction SilentlyContinue
+    if ($command) { $binary = $command.Source }
+  }
 }
-if (-not $python) {
-  Write-Error 'YTQJK Python runtime is unavailable.'
+if (-not $binary -or -not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+  Write-Error 'YTQJK Go runtime is unavailable.'
   exit 1
 }
-& $python (Join-Path $env:PLUGIN_ROOT 'hooks\session_start.py')
+& $binary hook session-start
 exit $LASTEXITCODE

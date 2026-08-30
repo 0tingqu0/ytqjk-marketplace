@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${PLUGIN_ROOT}/hooks/session_start.py\"",
+            "command": "sh \"${PLUGIN_ROOT}/hooks/session_start.sh\"",
             "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\session_start.ps1\"",
             "statusMessage": "Anchoring YTQJK knowledge session",
             "timeout": 10,

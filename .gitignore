@@ -1,8 +1,8 @@
-**/__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
 /skills/
+/ytqjk
+/ytqjk.exe
+/dist/
+*.test
 
 # Local task plans; keep .cursor/rules trackable.
 /.cursor/tasks/

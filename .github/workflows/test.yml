@@ -1,4 +1,4 @@
-name: Cross-platform tests
+name: Cross-platform Go tests
 
 on:
   push:
@@ -12,47 +12,66 @@ permissions:
 
 jobs:
   test:
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    name: ${{ matrix.os }} / Go ${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.11", "3.12"]
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-      TEMP: ${{ github.workspace }}/../.ytqjk-test-tmp
-      TMP: ${{ github.workspace }}/../.ytqjk-test-tmp
-      TMPDIR: ${{ github.workspace }}/../.ytqjk-test-tmp
+        go: ["1.25.x", "1.27.x"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v6
         with:
-          python-version: ${{ matrix.python }}
-      - name: Prepare test temp directory
-        run: python -c "import os; from pathlib import Path; Path(os.environ['TEMP']).mkdir(parents=True, exist_ok=True)"
-      - name: Install test dependencies
-        run: python -m pip install pytest Pillow==12.3.0 numpy==2.3.5
-      - name: Run the complete repository suite
-        run: python -B -m pytest -q
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: Run complete Go suite
+        run: go test ./...
+      - name: Build CLI
+        run: go build -trimpath ./cmd/ytqjk
+      - name: Verify installer dry run
+        shell: bash
+        if: runner.os != 'Windows'
+        run: sh ./install.sh --mode knowledge-only --target-root "$RUNNER_TEMP/ytqjk-target" --project-bootstrap off --dashboard-service off --json
+      - name: Verify installer dry run on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./install.ps1 --mode knowledge-only --target-root "$env:RUNNER_TEMP\ytqjk-target" --project-bootstrap off --dashboard-service off --json
 
-  vector-linux:
-    name: Ubuntu vector round-trip
+  quality:
+    name: Go quality and migration guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-      YTQJK_VECTOR_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v6
         with:
-          python-version: "3.11"
-      - name: Prepare isolated vector runtime
-        run: python -B plugins/ytqjk-agentic-orchestrator/skills/ytqjk/scripts/bootstrap_runtime.py --knowledge-root "$RUNNER_TEMP/ytqjk"
-      - name: Run vector integration test
+          go-version: "1.27.x"
+          cache: true
+      - name: Require gofmt-clean sources
+        shell: bash
         run: |
-          export YTQJK_MODEL_CACHE="$RUNNER_TEMP/ytqjk/models"
-          "$RUNNER_TEMP/ytqjk/.runtime/bin/python" -B -m unittest \
-          plugins.ytqjk-agentic-orchestrator.skills.ytqjk.scripts.tests.test_vector_store -v
+          set -euo pipefail
+          files="$(gofmt -l cmd internal)"
+          test -z "$files" || { printf 'Unformatted Go files:\n%s\n' "$files"; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      - name: Race test
+        run: go test -race ./...
+      - name: Require Go-only first-party runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f -name '*.py' -not -path './.git/*' | grep -q .; then
+            echo 'Python runtime source remains after the Go migration.' >&2
+            find . -type f -name '*.py' -not -path './.git/*'
+            exit 1
+          fi
+      - name: Cross-compile release targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -trimpath ./cmd/ytqjk
+          done

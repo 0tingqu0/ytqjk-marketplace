@@ -31,55 +31,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## Local document runtime
+## Go SQLite runtime
 
-The optional document-intake runtime installs pinned direct upstream packages
-and downloads pinned official model revisions into an isolated local
-directory. Transitive package versions are recorded and the complete installed
-tree is integrity sealed; they are not represented as a cross-platform lock.
-Package license files shipped in distribution metadata remain in that isolated
-runtime. Those components remain governed by their upstream licenses:
-
-- [Docling](https://github.com/docling-project/docling) is licensed under the
-  MIT License.
-- [RapidOCR](https://github.com/RapidAI/RapidOCR) is licensed under the
-  Apache License 2.0.
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), including the
-  PP-OCRv6 detection and recognition models used here, is licensed under the
-  Apache License 2.0.
-- [PaddlePaddle](https://github.com/PaddlePaddle/Paddle) is licensed under the
-  Apache License 2.0.
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) is licensed under
-  the MIT License. YTQJK installs the CPU package, not `onnxruntime-gpu`.
-- [Transformers](https://github.com/huggingface/transformers) and
-  [huggingface_hub](https://github.com/huggingface/huggingface_hub) are
-  licensed under the Apache License 2.0.
-- [PyTorch](https://github.com/pytorch/pytorch) is a multi-license
-  distribution. Its package metadata lists Apache-2.0, LLVM-exception,
-  BSD-2-Clause, BSD-3-Clause, BSL-1.0, and MIT components. See the upstream
-  `LICENSE` and `NOTICE` files shipped with the installed package.
-- [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) is distributed
-  under BSD-3-Clause and Apache-2.0 terms, with dependency notices.
-- [Pillow](https://github.com/python-pillow/Pillow) is licensed under the
-  MIT-CMU license.
-- [NumPy](https://github.com/numpy/numpy) is licensed under BSD-3-Clause and
-  ships additional notices for bundled binary dependencies.
-- SmolVLM-256M-Instruct is published by Hugging Face under the Apache License
-  2.0. Official model card:
-  <https://hf.co/HuggingFaceTB/SmolVLM-256M-Instruct>
-- DocumentFigureClassifier-v2.5 is published by the Docling project under the
-  MIT License. The former `ds4sd` namespace redirects to the official
-  `docling-project` namespace. Official model card:
-  <https://hf.co/docling-project/DocumentFigureClassifier-v2.5>
-- Docling Layout Heron ONNX is published under Apache-2.0:
-  <https://hf.co/docling-project/docling-layout-heron-onnx>
-- Docling TableFormer assets are published under CDLA-Permissive-2.0 and
-  Apache-2.0:
-  <https://hf.co/docling-project/docling-models>
-- PP-DocLayout, PP-OCRv6, PP-LCNet, SLANeXt, SLANet, and RT-DETR table-cell
-  models are published by PaddlePaddle under Apache-2.0. YTQJK downloads only
-  the fixed revisions declared in `document_runtime_downloads.py`.
-
-YTQJK does not relicense these packages or model weights. Their copyright,
-model-card limitations, notices, and license texts remain with the respective
-upstream authors and distributions.
+YTQJK uses `modernc.org/sqlite` and its declared Go module dependencies to
+provide a pure-Go SQLite driver. The driver source is distributed under its
+upstream three-clause BSD-style license. Embedded SQLite is dedicated to the
+public domain. The module also carries its upstream notices for optional
+components. YTQJK does not relicense those components; the exact dependency
+versions are recorded in `go.mod` and `go.sum`.

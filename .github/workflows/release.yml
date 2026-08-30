@@ -24,9 +24,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@v6
         with:
-          python-version: "3.11"
+          go-version: "1.27.x"
       - name: Validate tag, version, and main history
         id: release
         shell: bash
@@ -39,26 +39,16 @@ jobs:
               exit 1
           fi
           version="${tag#v}"
-          manifest_version="$(
-              python - << 'PY'
-          import json
-          from pathlib import Path
-
-          from install_core import VERSION
-
-          paths = (
-              Path("plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json"),
-              Path("plugins/ytqjk-knowledge/.codex-plugin/plugin.json"),
-          )
-          versions = {VERSION}
-          for path in paths:
-              data = json.loads(path.read_text(encoding="utf-8"))
-              versions.add(str(data.get("version")))
-          if len(versions) != 1:
-              raise SystemExit("release versions are inconsistent")
-          print(versions.pop())
-          PY
-          )"
+          manifest_version="$(go run ./cmd/ytqjk version)"
+          for manifest in \
+              plugins/ytqjk-agentic-orchestrator/.codex-plugin/plugin.json \
+              plugins/ytqjk-knowledge/.codex-plugin/plugin.json; do
+              plugin_version="$(jq -r '.version' "$manifest")"
+              if [[ "$plugin_version" != "$manifest_version" ]]; then
+                  echo "::error::Go and plugin versions are inconsistent"
+                  exit 1
+              fi
+          done
           if [[ "${manifest_version}" != "${version}" ]]; then
               echo "::error::Tag and manifest versions do not match"
               exit 1
@@ -87,6 +77,28 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.x"
+          cache: true
+      - name: Build release binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+              os="${target%/*}"
+              arch="${target#*/}"
+              suffix=""
+              [[ "$os" == windows ]] && suffix=".exe"
+              output="dist/ytqjk-${os}-${arch}${suffix}"
+              GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+                  go build -trimpath -ldflags '-s -w' -o "$output" ./cmd/ytqjk
+          done
+          (cd dist && sha256sum ytqjk-* > SHA256SUMS)
       - name: Create stable release
         shell: bash
         run: |
@@ -115,6 +127,9 @@ jobs:
                   --fail-on-no-commits \
                   --latest
           fi
+
+          gh release upload "${tag}" dist/* \
+              --repo "${GITHUB_REPOSITORY}" --clobber
 
           release_url="$(
               gh release view "${tag}" \

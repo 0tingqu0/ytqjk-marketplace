@@ -5,40 +5,42 @@ description: Start YTQJK orchestration. On bare `$ytqjk`, immediately ask one ob
 
 # YTQJK Agentic Orchestrator
 
-Run a host-tool-driven conversation control plane, not a background daemon. The
-controller coordinates only. Invoke with `$ytqjk` or `/skills`.
+Coordinate visible host tasks; do not simulate roles inline or claim a background
+daemon exists.
 
-## Activation objective gate
+## Objective gate
 
-For a bare activation without an actionable objective, enter `GOAL_INTAKE` and
-respond immediately. Throughout `GOAL_INTAKE`, before explicit objective confirmation, make
-no tool call and stay in the current activation task. Create no
-controller, supervisor, progress, RAG, reviewer, Git, or Worker session or role.
+When `$ytqjk` is invoked without an actionable objective, ask exactly one objective
+question with a recommended answer. Before the objective is clear, do not call tools,
+read files, load another skill, or create tasks. A clear objective in the invocation
+already satisfies this gate.
 
-Ask exactly one objective question per response with a recommendation. Load no other skill.
-A clear actionable objective supplied in the activation request or a later user reply counts as explicit objective confirmation; do not restate it solely to request another confirmation. Continue intake only for material ambiguity. State no work started only while intake remains active.
+Existing-run `status`, `pause`, `resume`, and `stop` requests bypass intake. Send a
+pause or stop once, then perform no further work until resumed.
 
-Existing-run `stop`, `pause`, `resume`, or `status` bypasses this gate. On explicit
-stop or pause, send the stop once, then perform no work until resumed.
+## After confirmation
 
-## Deferred initialization
+Read the complete [orchestration protocol](references/protocol.md). Before the first
+knowledge operation, also read [local knowledge store](references/knowledge-store.md).
 
-After confirmation, first read the complete [protocol](references/protocol.md).
-Reread after compaction/version changes. Before RAG, read
-[knowledge-store](references/knowledge-store.md).
+Use roles only when the objective needs them. Keep controller, implementation,
+independent review, Git integration, progress, and knowledge responsibilities
+separate. Read-only work does not need a Git role. Git mutation requires isolated
+worktrees and an exact write allowlist; non-Git mutation is blocked.
 
-Use bounded reuse and create roles just in time. Reuse only active or absent memory
-anchors, never archived ones. Core host operations are required; pin/archive may
-degrade. Read-only work has no Git role and reviewer waits for a result. Git mutation
-uses worktrees; non-Git mutation blocks.
+The installed Go runtime is the only local executable boundary. Invoke it as
+`ytqjk`. If it is not on `PATH`, resolve the bundled plugin `bin/ytqjk` (or
+`bin/ytqjk.exe`) first, then the platform runtime path under
+`%LOCALAPPDATA%\YTQJK\runtime\bin` or
+`${XDG_DATA_HOME:-$HOME/.local/share}/ytqjk/runtime/bin`. Never look for a
+language interpreter or a script under this skill.
 
-Before the first knowledge query, RAG runs `scripts/rag_cli.py bootstrap
---project-root <work-directory> --vector-mode auto`. Every work directory receives a
-project sub-library. Candidates remain unapproved.
+Before the first project knowledge query, run:
 
-## Session anchors
+```text
+ytqjk rag bootstrap --project-root <work-directory> --vector-mode auto
+```
 
-Reuse matching `[YTQJK][project-id]` conversations when title discovery is supported;
-otherwise reuse current-run IDs only. Anchor each role. Archive via checkpoint,
-prepare, confirmed host archive, then finalization. Without archive support, retain
-the checkpoint and mark `DONE`. Never claim unsupported lifecycle automation.
+Every query must carry the requesting host session ID and expected project ID through
+`ytqjk session query`. Candidate knowledge remains unapproved until an explicit user
+governance action.
