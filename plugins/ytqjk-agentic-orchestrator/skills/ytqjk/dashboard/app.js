@@ -1,14 +1,13 @@
 import { api } from "./js/api.js";
 import { restoreIntakeResults, restoreTheme } from "./js/store.js";
-import { saveTheme, state } from "./js/store.js";
+import { state } from "./js/store.js";
 import { ROUTES, createRouter } from "./js/router.js";
 import { byId } from "./js/ui/dom.js";
-import { bindRail, closeRail } from "./js/ui/rail.js";
+import { closeRail } from "./js/ui/rail.js";
 import { bindLibraryDialog } from "./js/ui/library-dialog.js";
-import { showGlobalLibrary } from "./js/ui/library-dialog.js";
 import { showProjectLibrary } from "./js/ui/library-dialog.js";
 import { bindTreeDialog, openTreeAction } from "./js/ui/tree-dialog.js";
-import { bindCommandPalette } from "./js/command-palette.js";
+import { bindDashboardControls, setTheme } from "./js/dashboard-controls.js";
 import { detectDraftConflicts } from "./js/draft-conflicts.js";
 import { renderOverview } from "./js/views/overview.js";
 import { createDocumentActions } from "./js/views/documents.js";
@@ -24,18 +23,7 @@ import {
   sameData,
   shouldAutoRefresh,
 } from "./js/refresh-policy.js";
-const THEME_LABELS = {
-  system: "系统", light: "浅色", dark: "暗色",
-};
-const NEXT_THEME = {
-  system: "light", light: "dark", dark: "system",
-};
 let router, documentActions;
-function setTheme(theme) {
-  document.body.dataset.theme = theme;
-  byId("theme-toggle").textContent = `主题：${THEME_LABELS[theme]}`;
-  saveTheme(theme);
-}
 function showRoute(route, focus = false) {
   state.route = route;
   const [kicker, title] = ROUTES[route];
@@ -181,48 +169,6 @@ async function refresh(silent = false) {
 function deleteDraft(item) {
   state.drafts.delete(item.path);
 }
-function bindControls() {
-  document.addEventListener("click", (event) => {
-    const control = event.target.closest("[data-route]");
-    if (control) router.go(control.dataset.route);
-  });
-  byId("refresh").onclick = () => refresh();
-  byId("open-global-library").onclick = showGlobalLibrary;
-  byId("new-root-library").onclick = () => {
-    if (state.tree) openTreeAction("create", null, state.tree);
-  };
-  byId("save-candidate").onclick = () => state.selected
-    && documentActions.saveCandidate(
-      state.selected.item,
-      byId("content").value,
-    );
-  byId("approve-candidate").onclick = () => state.selected
-    && documentActions.approveCandidate(state.selected.item);
-  byId("delete-candidate").onclick = () => state.selected
-    && documentActions.deleteCandidate(state.selected.item);
-  byId("document-filter").oninput = (event) => {
-    state.documentFilter = event.target.value;
-    renderAll();
-  };
-  document.querySelectorAll("[data-document-state]").forEach((node) => {
-    node.onclick = () => {
-      state.documentState = node.dataset.documentState;
-      document.querySelectorAll("[data-document-state]")
-        .forEach((buttonNode) => {
-          buttonNode.setAttribute(
-            "aria-pressed",
-            String(buttonNode === node),
-          );
-        });
-      renderAll();
-    };
-  });
-  byId("theme-toggle").onclick = () => {
-    setTheme(NEXT_THEME[document.body.dataset.theme]);
-  };
-  bindRail();
-  bindCommandPalette(router, documentActions.selectDocument);
-}
 state.intakeResults = restoreIntakeResults();
 documentActions = createDocumentActions(api, state, {
   deleteDraft,
@@ -240,7 +186,8 @@ bindTreeDialog((tree) => {
 });
 bindPeerWorkspace(state, renderAll);
 bindKnowledgeGraphWorkbench(api);
-bindControls();
+bindDashboardControls({ documentActions, renderAll, router });
+byId("refresh").onclick = () => refresh();
 bindIntake(state, refresh);
 refresh();
 document.addEventListener("visibilitychange", () => {
