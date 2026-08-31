@@ -16,13 +16,19 @@ import (
 var queryTokenPattern = regexp.MustCompile(`[\p{L}\p{N}_-]+`)
 
 type QueryResult struct {
-	ID      string  `json:"id"`
-	Path    string  `json:"path"`
-	Start   int     `json:"start"`
-	End     int     `json:"end"`
-	Content string  `json:"content"`
-	Score   float64 `json:"score"`
-	Scope   string  `json:"scope"`
+	ID           string  `json:"id"`
+	Path         string  `json:"path"`
+	Start        int     `json:"start"`
+	End          int     `json:"end"`
+	LineStart    int     `json:"line_start,omitempty"`
+	LineEnd      int     `json:"line_end,omitempty"`
+	Content      string  `json:"content"`
+	Score        float64 `json:"score"`
+	LexicalScore float64 `json:"lexical_score"`
+	VectorScore  float64 `json:"vector_score"`
+	Mode         string  `json:"mode"`
+	Scope        string  `json:"scope"`
+	Digest       string  `json:"-"`
 }
 
 type Receipt struct {
@@ -79,16 +85,38 @@ func Query(knowledgeRoot, projectRoot, query, sessionID, expectedProjectID strin
 		return Receipt{}, err
 	}
 	status, scope := "PROJECT_CACHE_HIT", "current-project-cache-only"
+	indexedAt := manifest.IndexedAt
+	var globalManifest Manifest
+	_ = safeio.ReadJSON(filepath.Join(knowledgeRoot, "global-cache", "manifest.json"), &globalManifest)
+	cacheStats := emptyPrefetchStats(projectDirectory)
 	if len(results) == 0 {
-		results, _, err = queryIndex(filepath.Join(knowledgeRoot, "global-cache", "index.json"), filepath.Join(knowledgeRoot, "global-cache", "manifest.json"), query, limit, "global-fallback")
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return Receipt{}, err
+		prefetched, currentStats, prefetchErr := QueryPrefetch(
+			projectDirectory, knowledgeRoot, query, globalManifest.SourceFingerprint, limit,
+		)
+		if prefetchErr == nil {
+			cacheStats = currentStats
 		}
-		if len(results) > 0 {
-			status, scope = "GLOBAL_FALLBACK_HIT", "global-fallback"
+		if len(prefetched) > 0 {
+			results = prefetched
+			status, scope, indexedAt = "PROJECT_CACHE_HIT", "project-prefetch-cache", globalManifest.IndexedAt
 		} else {
-			status, scope = "KNOWLEDGE_MISS", "no-knowledge"
+			results, _, err = queryIndex(filepath.Join(knowledgeRoot, "global-cache", "index.json"), filepath.Join(knowledgeRoot, "global-cache", "manifest.json"), query, limit, "global-fallback")
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return Receipt{}, err
+			}
+			if len(results) > 0 {
+				status, scope, indexedAt = "GLOBAL_FALLBACK_HIT", "global-fallback", globalManifest.IndexedAt
+				if updated, updateErr := UpdatePrefetch(
+					projectDirectory, knowledgeRoot, query, globalManifest.SourceFingerprint, results,
+				); updateErr == nil {
+					cacheStats = updated
+				}
+			} else {
+				status, scope = "KNOWLEDGE_MISS", "no-knowledge"
+			}
 		}
+	} else if _, currentStats, cacheErr := ListPrefetch(projectDirectory, knowledgeRoot, 1); cacheErr == nil {
+		cacheStats = currentStats
 	}
 	stale := true
 	if manifest.IndexedIdentity != nil {
@@ -97,9 +125,9 @@ func Query(knowledgeRoot, projectRoot, query, sessionID, expectedProjectID strin
 	}
 	receipt := Receipt{
 		OK: true, Status: status, Scope: scope, ProjectID: identity.ID, ProjectTracking: "REGISTERED",
-		KnowledgeRoot: knowledgeRoot, IndexedAt: manifest.IndexedAt, Stale: stale,
+		KnowledgeRoot: knowledgeRoot, IndexedAt: indexedAt, Stale: stale,
 		ResultCount: len(results), Results: results, AnchorKey: anchor.SessionKey, AnchorCreated: created,
-		Cache: map[string]any{"state": "READY", "entries": len(results), "generation": manifest.SourceFingerprint},
+		Cache: prefetchStatsMap(cacheStats, globalManifest.SourceFingerprint),
 	}
 	if status == "KNOWLEDGE_MISS" {
 		receipt.NextAction = "SEARCH_EXTERNAL_THEN_SUBMIT_CANDIDATE"
@@ -113,16 +141,50 @@ func queryIndex(indexPath, manifestPath, query string, limit int, scope string) 
 	if err := safeio.ReadJSON(indexPath, &index); err != nil {
 		return nil, Manifest{}, err
 	}
-	var manifest Manifest
-	_ = safeio.ReadJSON(manifestPath, &manifest)
+	if err := validateIndexForQuery(index); err != nil {
+		return nil, Manifest{}, err
+	}
+	manifest, err := readQueryManifest(manifestPath, index.ProjectID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, Manifest{}, err
+	}
 	queryTerms := termFrequency(query)
+	queryVector := vectorize(query)
+	vectors, vectorReady := readVectors(filepath.Dir(indexPath), manifest.SourceFingerprint)
+	mode := "LEXICAL"
+	if vectorReady && len(queryVector) > 0 {
+		mode = "HYBRID"
+	}
 	var results []QueryResult
+	maxLexical := 0.0
 	for _, chunk := range index.Chunks {
-		score := scoreTerms(queryTerms, termFrequency(chunk.Path+" "+chunk.Content))
-		if score <= 0 {
+		lexical := scoreTerms(queryTerms, termFrequency(chunk.Path+" "+chunk.Content))
+		vectorScore := 0.0
+		if vectorReady {
+			vectorScore = cosine(queryVector, vectors[chunk.ID])
+		}
+		if lexical <= 0 && vectorScore <= 0 {
 			continue
 		}
-		results = append(results, QueryResult{ID: chunk.ID, Path: chunk.Path, Start: chunk.Start, End: chunk.End, Content: chunk.Content, Score: score, Scope: scope})
+		if lexical > maxLexical {
+			maxLexical = lexical
+		}
+		results = append(results, QueryResult{
+			ID: chunk.ID, Path: chunk.Path, Start: chunk.Start, End: chunk.End,
+			LineStart: chunk.LineStart, LineEnd: chunk.LineEnd, Content: chunk.Content,
+			LexicalScore: lexical, VectorScore: vectorScore, Mode: mode, Scope: scope, Digest: chunk.Digest,
+		})
+	}
+	for index := range results {
+		lexical := 0.0
+		if maxLexical > 0 {
+			lexical = results[index].LexicalScore / maxLexical
+		}
+		if vectorReady {
+			results[index].Score = math.Round((0.6*lexical+0.4*results[index].VectorScore)*1e6) / 1e6
+		} else {
+			results[index].Score = math.Round(lexical*1e6) / 1e6
+		}
 	}
 	sort.SliceStable(results, func(i, j int) bool {
 		if results[i].Score == results[j].Score {
@@ -134,6 +196,19 @@ func queryIndex(indexPath, manifestPath, query string, limit int, scope string) 
 		results = results[:limit]
 	}
 	return results, manifest, nil
+}
+
+// SearchIndex exposes the governed read-only index query used by the local
+// dashboard and authenticated peer server. Callers remain responsible for
+// choosing an index that is inside an already-authorized scope.
+func SearchIndex(indexPath, query string, limit int, scope string) ([]QueryResult, Manifest, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, Manifest{}, errors.New("query text is required")
+	}
+	if limit < 1 || limit > 20 {
+		return nil, Manifest{}, errors.New("query limit must be 1..20")
+	}
+	return queryIndex(indexPath, filepath.Join(filepath.Dir(indexPath), "manifest.json"), query, limit, scope)
 }
 
 func termFrequency(value string) map[string]int {

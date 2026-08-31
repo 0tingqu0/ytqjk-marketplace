@@ -1,13 +1,18 @@
 package cli
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/dashboard"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/document"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/knowledge"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/platform"
 )
@@ -70,7 +75,7 @@ func (context commandContext) knowledge(arguments []string) error {
 			return err
 		}
 		return context.write(map[string]any{"ok": true, "status": "READY", "project_id": identifier})
-	case "create-candidate", "intake":
+	case "create-candidate":
 		if *contentFile == "" {
 			return errors.New("--content-file is required")
 		}
@@ -78,34 +83,48 @@ func (context commandContext) knowledge(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		identifier := *projectID
-		candidateTitle := *title
-		candidateSource := *source
-		if command == "intake" {
-			identifier, err = service.CreateProject("global", "global-candidates")
-			if err != nil {
-				return err
-			}
-			if candidateTitle == "" {
-				candidateTitle = strings.TrimSpace(strings.Join(flags.Args(), " "))
-			}
-			if candidateTitle == "" {
-				candidateTitle = filepath.Base(*contentFile)
-			}
-			if len(sources) > 0 {
-				candidateSource = strings.Join(sources, ", ")
-			}
-		} else if err := requireNoPositionals(flags.Args()); err != nil {
+		if err := requireNoPositionals(flags.Args()); err != nil {
 			return err
 		}
-		if identifier == "" || candidateTitle == "" {
+		if *projectID == "" || *title == "" {
 			return errors.New("--project-id and --title are required")
 		}
-		document, err := service.CreateCandidate(identifier, candidateTitle, string(content), candidateSource)
+		documentID, err := service.CreateCandidate(*projectID, *title, string(content), *source)
 		if err != nil {
 			return err
 		}
-		return context.write(map[string]any{"ok": true, "status": "CANDIDATE", "project_id": identifier, "document_id": document})
+		return context.write(map[string]any{"ok": true, "status": "CANDIDATE", "project_id": *projectID, "document_id": documentID})
+	case "intake":
+		if *contentFile == "" {
+			return errors.New("--content-file is required")
+		}
+		identifier, err := service.CreateProject("global", "global-candidates")
+		if err != nil {
+			return err
+		}
+		candidateTitle := *title
+		if candidateTitle == "" {
+			candidateTitle = strings.TrimSpace(strings.Join(flags.Args(), " "))
+		}
+		if candidateTitle == "" {
+			candidateTitle = filepath.Base(*contentFile)
+		}
+		candidateSource := *source
+		if len(sources) > 0 {
+			candidateSource = strings.Join(sources, ", ")
+		}
+		documentID, extraction, job, err := runDocumentIntake(*databaseValue, service, identifier, *contentFile, candidateTitle, candidateSource)
+		if err != nil {
+			return err
+		}
+		return context.write(map[string]any{
+			"ok": true, "status": "CANDIDATE", "project_id": identifier, "document_id": documentID,
+			"job": job, "extraction": map[string]any{
+				"engine": extraction.Engine, "format": extraction.Format, "media_kind": extraction.MediaKind,
+				"ocr_state": extraction.OCRState, "chunk_count": len(extraction.Chunks),
+				"warnings": extraction.Warnings, "review_reasons": extraction.ReviewReasons,
+			},
+		})
 	case "edit":
 		if *documentID == "" || *contentFile == "" {
 			return errors.New("--document-id and --content-file are required")
@@ -167,4 +186,88 @@ func (context commandContext) knowledge(arguments []string) error {
 		return context.write(map[string]any{"ok": true, "status": "READY", "result_count": len(results), "results": results})
 	}
 	return fmt.Errorf("unreachable knowledge command: %s", command)
+}
+
+func runDocumentIntake(databasePath string, service *knowledge.Service, projectID, sourcePath, title, source string) (string, document.Result, document.Job, error) {
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", document.Result{}, document.Job{}, err
+	}
+	digest := sha256.Sum256(content)
+	store, err := document.OpenJobStore(databasePath, 30*time.Second, 3)
+	if err != nil {
+		return "", document.Result{}, document.Job{}, err
+	}
+	defer store.Close()
+	ctx := context.Background()
+	payload := map[string]any{
+		"source_name": filepath.Base(sourcePath), "source_sha256": hex.EncodeToString(digest[:]),
+		"project_id": projectID, "title": title, "source": source,
+	}
+	job, err := store.Enqueue(ctx, payload, map[string]any{"extractor": "go-native-v1", "max_bytes": document.MaxSourceBytes})
+	if err != nil {
+		return "", document.Result{}, document.Job{}, err
+	}
+	if job.State == "SUCCEEDED" {
+		identifier, _ := job.Result["document_id"].(string)
+		if identifier == "" {
+			return "", document.Result{}, job, errors.New("completed intake job has no document id")
+		}
+		return identifier, document.Result{
+			Engine: valueString(job.Result["engine"]), Format: valueString(job.Result["format"]),
+			MediaKind: valueString(job.Result["media_kind"]), OCRState: valueString(job.Result["ocr_state"]),
+		}, job, nil
+	}
+	if job.State == "FAILED" {
+		job, err = store.Retry(ctx, job.ID)
+		if err != nil {
+			return "", document.Result{}, job, err
+		}
+	}
+	running, found, err := store.ClaimID(ctx, job.ID)
+	if err != nil || !found {
+		if err == nil {
+			err = errors.New("document intake job is already running")
+		}
+		return "", document.Result{}, job, err
+	}
+	advance := func(stage string) error {
+		var advanceErr error
+		running, advanceErr = store.Advance(ctx, running.ID, running.Attempt, stage, 0)
+		return advanceErr
+	}
+	if err := advance("parse"); err != nil {
+		return "", document.Result{}, running, err
+	}
+	extraction, err := document.ExtractBytes(filepath.Base(sourcePath), content)
+	if err != nil {
+		failed, _ := store.Fail(ctx, running.ID, running.Attempt, "EXTRACTION_FAILED", err)
+		return "", document.Result{}, failed, err
+	}
+	for _, stage := range []string{"extract", "ocr", "chunk", "assess"} {
+		if err := advance(stage); err != nil {
+			return "", extraction, running, err
+		}
+	}
+	identifier, err := service.CreateCandidate(projectID, title, extraction.Text, source)
+	if err != nil {
+		failed, _ := store.Fail(ctx, running.ID, running.Attempt, "PERSIST_FAILED", err)
+		return "", extraction, failed, err
+	}
+	if err := advance("persist"); err != nil {
+		return "", extraction, running, err
+	}
+	finished, err := store.Succeed(ctx, running.ID, running.Attempt, map[string]any{
+		"document_id": identifier, "engine": extraction.Engine, "format": extraction.Format,
+		"media_kind": extraction.MediaKind, "ocr_state": extraction.OCRState, "chunk_count": len(extraction.Chunks),
+	})
+	if err != nil {
+		return "", extraction, running, err
+	}
+	return identifier, extraction, finished, nil
+}
+
+func valueString(value any) string {
+	result, _ := value.(string)
+	return result
 }

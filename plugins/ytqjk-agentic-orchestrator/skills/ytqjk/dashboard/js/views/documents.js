@@ -66,9 +66,10 @@ export function createDocumentActions(api, state, callbacks) {
     );
     if (!confirmed) return;
     try {
+	  const selection = selectionFor(state, item);
       await api.candidate(
         "POST",
-        { path: item.path },
+        { path: item.path, expected_version: selection?.version },
         "/api/candidate/approve",
       );
       deleteDraft(item);
@@ -83,12 +84,16 @@ export function createDocumentActions(api, state, callbacks) {
   async function deleteCandidate(item) {
     const confirmed = await confirmAction(
       "删除候选资料",
-      "将删除该候选资料及其关联原件和知识片段。",
+      "将删除该候选资料；已批准资料不受影响。",
       "删除",
     );
     if (!confirmed) return;
     try {
-      await api.candidate("DELETE", { path: item.path });
+      const selection = selectionFor(state, item);
+      await api.candidate("DELETE", {
+        path: item.path,
+        expected_version: selection?.version,
+      });
       deleteDraft(item);
       state.selected = null;
       state.reviewSelected = null;

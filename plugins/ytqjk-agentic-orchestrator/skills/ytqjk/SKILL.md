@@ -44,3 +44,7 @@ ytqjk rag bootstrap --project-root <work-directory> --vector-mode auto
 Every query must carry the requesting host session ID and expected project ID through
 `ytqjk session query`. Candidate knowledge remains unapproved until an explicit user
 governance action.
+
+For runtime update or rollback requests, use `ytqjk upgrade` as documented in the
+local knowledge store reference. Do not overwrite a running bundled binary or restore
+the SQLite database during a manual rollback.

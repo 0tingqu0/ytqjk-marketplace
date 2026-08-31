@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,25 +13,29 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
+	securitycheck "github.com/0tingqu0/ytqjk-marketplace/internal/security"
 )
 
 const (
-	maxFileBytes  = 2 * 1024 * 1024
+	maxFileBytes  = 16 * 1024 * 1024
 	maxTotalBytes = 128 * 1024 * 1024
 	chunkRunes    = 4000
 	chunkOverlap  = 200
 )
 
 type Chunk struct {
-	ID      string `json:"id"`
-	Path    string `json:"path"`
-	Start   int    `json:"start"`
-	End     int    `json:"end"`
-	Content string `json:"content"`
-	Digest  string `json:"digest"`
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	Start     int    `json:"start"`
+	End       int    `json:"end"`
+	LineStart int    `json:"line_start,omitempty"`
+	LineEnd   int    `json:"line_end,omitempty"`
+	Content   string `json:"content"`
+	Digest    string `json:"digest"`
 }
 
 type Stats struct {
@@ -122,13 +127,13 @@ func Build(knowledgeRoot, projectRoot, vectorMode string) (IndexResult, error) {
 	if err := safeio.WriteJSON(filepath.Join(projectDirectory, "index.json"), index); err != nil {
 		return IndexResult{}, err
 	}
+	vector, err := writeVectors(projectDirectory, chunks, fingerprint, vectorMode)
+	if err != nil {
+		return IndexResult{}, err
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	state := QueryState(identity.Root)
 	state["source_fingerprint"] = fingerprint
-	vector := map[string]any{
-		"enabled": false, "status": "LEXICAL_ONLY", "requested_mode": vectorMode,
-		"reason": "vector backend is not configured in the Go runtime", "error": nil,
-	}
 	manifest := Manifest{
 		SchemaVersion: SchemaVersion, Identity: identity, IndexedIdentity: state,
 		Stats: stats, VectorMode: vectorMode, Vector: vector, SourceFingerprint: fingerprint,
@@ -155,8 +160,8 @@ func Bootstrap(knowledgeRoot, projectRoot, vectorMode string) (BootstrapResult, 
 	return BootstrapResult{ProjectDir: project.ProjectDir, Project: project, Global: global, VectorMode: vectorMode}, nil
 }
 
-// BuildGlobal refreshes the global and personal-experience index without
-// requiring a project worktree.
+// BuildGlobal refreshes the governed global index without requiring a project
+// worktree. Candidate directories are intentionally outside this source set.
 func BuildGlobal(knowledgeRoot, vectorMode string) (IndexResult, error) {
 	if vectorMode == "" {
 		vectorMode = "auto"
@@ -165,20 +170,29 @@ func BuildGlobal(knowledgeRoot, vectorMode string) (IndexResult, error) {
 }
 
 func buildGlobal(knowledgeRoot, vectorMode string) (IndexResult, error) {
+	if vectorMode != "off" && vectorMode != "auto" && vectorMode != "on" {
+		return IndexResult{}, errors.New("unsupported vector mode")
+	}
 	directory := filepath.Join(knowledgeRoot, "global-cache")
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return IndexResult{}, err
 	}
 	var chunks []Chunk
 	stats := Stats{}
-	for _, root := range []string{filepath.Join(knowledgeRoot, "global"), filepath.Join(knowledgeRoot, "personal-experience")} {
-		if info, err := os.Stat(root); err == nil && info.IsDir() {
-			current, currentStats, scanErr := scan(root, filepath.Join(knowledgeRoot, "projects"))
+	for _, relativeRoot := range []string{
+		"global",
+		"verified",
+		filepath.ToSlash(filepath.Join("personal-experience", "approved")),
+		filepath.ToSlash(filepath.Join("error-experience", "approved")),
+	} {
+		root := filepath.Join(knowledgeRoot, filepath.FromSlash(relativeRoot))
+		if info, err := os.Lstat(root); err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			current, currentStats, scanErr := scanFilesystem(root, filepath.Join(knowledgeRoot, "projects"))
 			if scanErr != nil {
 				return IndexResult{}, scanErr
 			}
 			for index := range current {
-				current[index].Path = filepath.ToSlash(filepath.Join(filepath.Base(root), current[index].Path))
+				current[index].Path = filepath.ToSlash(filepath.Join(relativeRoot, current[index].Path))
 			}
 			chunks = append(chunks, current...)
 			stats.Files += currentStats.Files
@@ -191,9 +205,13 @@ func buildGlobal(knowledgeRoot, vectorMode string) (IndexResult, error) {
 	if err := safeio.WriteJSON(filepath.Join(directory, "index.json"), Index{SchemaVersion: SchemaVersion, ProjectID: "global", Chunks: chunks}); err != nil {
 		return IndexResult{}, err
 	}
+	vector, err := writeVectors(directory, chunks, fingerprint, vectorMode)
+	if err != nil {
+		return IndexResult{}, err
+	}
 	manifest := Manifest{
 		SchemaVersion: SchemaVersion, Identity: ProjectIdentity{ID: "global", Name: "global", Root: knowledgeRoot},
-		Stats: stats, VectorMode: vectorMode, Vector: map[string]any{"enabled": false, "status": "LEXICAL_ONLY", "requested_mode": vectorMode},
+		Stats: stats, VectorMode: vectorMode, Vector: vector,
 		SourceFingerprint: fingerprint, IndexedAt: time.Now().UTC().Format(time.RFC3339Nano), UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := safeio.WriteJSON(filepath.Join(directory, "manifest.json"), manifest); err != nil {
@@ -207,6 +225,18 @@ func scan(root, excludedRoot string) ([]Chunk, Stats, error) {
 	if err != nil {
 		return nil, Stats{}, err
 	}
+	return scanPaths(root, excludedRoot, paths)
+}
+
+func scanFilesystem(root, excludedRoot string) ([]Chunk, Stats, error) {
+	paths, err := filesystemSourcePaths(root)
+	if err != nil {
+		return nil, Stats{}, err
+	}
+	return scanPaths(root, excludedRoot, paths)
+}
+
+func scanPaths(root, excludedRoot string, paths []string) ([]Chunk, Stats, error) {
 	var chunks []Chunk
 	stats := Stats{}
 	for _, relative := range paths {
@@ -226,13 +256,13 @@ func scan(root, excludedRoot string) ([]Chunk, Stats, error) {
 			stats.Skipped++
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := readStableIndexFile(path, info)
 		if err != nil || bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data) {
 			stats.Skipped++
 			continue
 		}
 		content := string(data)
-		if strings.TrimSpace(content) == "" {
+		if strings.TrimSpace(content) == "" || securitycheck.ContainsHighConfidenceSecret(content) {
 			stats.Skipped++
 			continue
 		}
@@ -262,6 +292,10 @@ func sourcePaths(root string) ([]string, error) {
 		sort.Strings(result)
 		return result, nil
 	}
+	return filesystemSourcePaths(root)
+}
+
+func filesystemSourcePaths(root string) ([]string, error) {
 	var result []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -290,20 +324,65 @@ func sourcePaths(root string) ([]string, error) {
 	return result, err
 }
 
+func readStableIndexFile(path string, before os.FileInfo) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return nil, errors.New("source changed before read")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, int64(maxFileBytes)+1))
+	if err != nil || len(data) > maxFileBytes {
+		return nil, errors.New("source read failed")
+	}
+	afterOpen, openErr := file.Stat()
+	afterPath, pathErr := os.Lstat(path)
+	if openErr != nil || pathErr != nil || !afterPath.Mode().IsRegular() || afterPath.Mode()&os.ModeSymlink != 0 ||
+		!os.SameFile(before, afterOpen) || !os.SameFile(before, afterPath) || int64(len(data)) != before.Size() ||
+		afterOpen.Size() != before.Size() || afterPath.Size() != before.Size() ||
+		!afterOpen.ModTime().Equal(before.ModTime()) || !afterPath.ModTime().Equal(before.ModTime()) {
+		return nil, errors.New("source changed during read")
+	}
+	return data, nil
+}
+
 func chunkText(path, text string) []Chunk {
 	runes := []rune(text)
+	lineAt := make([]int, len(runes)+1)
+	line := 1
+	for index, character := range runes {
+		lineAt[index] = line
+		if character == '\n' {
+			line++
+		}
+	}
+	lineAt[len(runes)] = line
 	var result []Chunk
 	for start := 0; start < len(runes); {
 		end := start + chunkRunes
 		if end > len(runes) {
 			end = len(runes)
 		}
-		content := strings.TrimSpace(string(runes[start:end]))
-		if content != "" {
+		contentStart, contentEnd := start, end
+		for contentStart < contentEnd && unicode.IsSpace(runes[contentStart]) {
+			contentStart++
+		}
+		for contentEnd > contentStart && unicode.IsSpace(runes[contentEnd-1]) {
+			contentEnd--
+		}
+		if contentStart < contentEnd {
+			content := string(runes[contentStart:contentEnd])
 			digest := sha256.Sum256([]byte(content))
 			digestText := hex.EncodeToString(digest[:])
 			idDigest := sha256.Sum256([]byte(path + ":" + strconv.Itoa(start) + ":" + digestText))
-			result = append(result, Chunk{ID: hex.EncodeToString(idDigest[:]), Path: filepath.ToSlash(path), Start: start, End: end, Content: content, Digest: digestText})
+			result = append(result, Chunk{
+				ID: hex.EncodeToString(idDigest[:]), Path: filepath.ToSlash(path),
+				Start: start, End: end, LineStart: lineAt[contentStart], LineEnd: lineAt[contentEnd-1],
+				Content: content, Digest: digestText,
+			})
 		}
 		if end == len(runes) {
 			break
@@ -323,14 +402,5 @@ func chunksFingerprint(chunks []Chunk) string {
 }
 
 func sensitive(relative string) bool {
-	value := strings.ToLower(filepath.ToSlash(relative))
-	parts := strings.FieldsFunc(value, func(r rune) bool { return r == '/' || r == '\\' || r == '.' || r == '-' || r == '_' })
-	for _, part := range parts {
-		switch part {
-		case "git", ".git", "node_modules", "vendor", "dist", "build", "cache", "archive", "archives", "token", "tokens", "secret", "secrets", "credential", "credentials", "auth", "session", "sessions", "__pycache__", "venv", ".venv":
-			return true
-		}
-	}
-	base := strings.ToLower(filepath.Base(value))
-	return base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key")
+	return securitycheck.IsSensitivePath(relative)
 }

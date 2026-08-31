@@ -28,6 +28,24 @@ func TestAtomicJSONAndContainment(t *testing.T) {
 	}
 }
 
+func TestAtomicWriteReplacesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.txt")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := AtomicWrite(path, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "new" {
+		t.Fatalf("content = %q, %v", content, err)
+	}
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".ytqjk-*.tmp"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("temporary files = %#v, %v", matches, err)
+	}
+}
+
 func TestContainedRejectsSymlinkAncestor(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

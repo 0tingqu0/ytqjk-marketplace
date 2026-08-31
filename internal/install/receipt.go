@@ -21,7 +21,7 @@ func VectorResult(mode string, size, chunks int, failed bool) string {
 	if mode == "off" {
 		return "off"
 	}
-	return "lexical-only"
+	return "go-hybrid"
 }
 
 func Health(probe bool) map[string]string {
@@ -40,6 +40,7 @@ func Health(probe bool) map[string]string {
 	for _, name := range []string{"core_task_api", "plugin_discovery", "skill_discovery", "knowledge_service", "loopback_workbench", "vector"} {
 		checks[name] = "UNKNOWN"
 	}
+	checks["vector"] = "BUILTIN_GO"
 	return checks
 }
 
