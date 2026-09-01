@@ -2,8 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/0tingqu0/ytqjk-marketplace/internal/knowledge"
 )
 
 func TestTopLevelHelpDoesNotInvokeInstaller(t *testing.T) {
@@ -20,5 +23,15 @@ func TestTopLevelHelpDoesNotInvokeInstaller(t *testing.T) {
 				t.Fatalf("help was routed through installer: %q", output.String())
 			}
 		})
+	}
+}
+
+func TestUpgradeSchemaVersionIsMachineReadable(t *testing.T) {
+	var output bytes.Buffer
+	if exitCode := Main([]string{"upgrade", "schema-version"}, strings.NewReader(""), &output, &output); exitCode != 0 {
+		t.Fatalf("schema-version exit code = %d, output = %q", exitCode, output.String())
+	}
+	if strings.TrimSpace(output.String()) != strconv.Itoa(knowledge.LatestSchema) {
+		t.Fatalf("schema-version output = %q", output.String())
 	}
 }

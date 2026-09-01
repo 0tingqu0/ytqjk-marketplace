@@ -51,6 +51,8 @@ func Main(arguments []string, input io.Reader, output, errorOutput io.Writer) in
 		err = context.orchestration(arguments[1:])
 	case "handoff":
 		err = context.handoff(arguments[1:])
+	case "upgrade":
+		err = context.upgrade(arguments[1:])
 	case "hook":
 		err = context.hook(arguments[1:])
 	case "version", "--version", "-version":
@@ -139,5 +141,6 @@ Usage:
   ytqjk dashboard <serve|start|stop|status|restart> [options]
   ytqjk orchestration <start-run|show-run|transition|grant|attest|verify> [options]
   ytqjk handoff <export|apply> [options]
+  ytqjk upgrade <check|apply|status|rollback|schema-version> [options]
   ytqjk version
 `

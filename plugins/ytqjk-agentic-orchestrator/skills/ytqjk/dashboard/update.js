@@ -12,7 +12,7 @@
   }
 
   async function recoverCompletedUpdate(expectedVersion) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
         const response = await fetch("/api/update", { cache: "no-store" });
@@ -96,7 +96,13 @@
     button.disabled = true;
     status.textContent = "更新中，请勿关闭";
     try {
-      const result = await postUpdate();
+      let result = await postUpdate();
+      if (result.status === "UPDATING") {
+        result = await recoverCompletedUpdate(latestVersion);
+        if (!result) {
+          throw new Error("升级未在预期时间内完成，请检查升级状态或执行回滚");
+        }
+      }
       latestVersion = String(result.latest_version || latestVersion);
       status.textContent = result.status === "UPDATED"
         ? `已更新至 v${latestVersion}，重启 Codex 生效`

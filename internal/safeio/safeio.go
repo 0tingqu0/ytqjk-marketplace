@@ -46,15 +46,8 @@ func AtomicWrite(path string, data []byte, mode fs.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		// Windows cannot replace an existing file with Rename. Keep the
-		// fallback tightly scoped to the destination path.
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Rename(temporaryPath, path); err != nil {
-			return err
-		}
+	if err := replaceFile(temporaryPath, path); err != nil {
+		return err
 	}
 	ok = true
 	return nil
