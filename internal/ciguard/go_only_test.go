@@ -99,6 +99,9 @@ func TestPolicyClassification(t *testing.T) {
 		{"frozen rollback source count", ".github/workflows/release.yml", `| awk '/\.py$/ { count++ } END { print count + 0 }'`, false},
 		{"release Python command", ".github/workflows/release.yml", "run: python3 ./rollback.py", true},
 		{"unapproved rollback asset", ".github/workflows/release.yml", "custom-python-rollback.zip", true},
+		{"legacy cache data reference", "internal/install/plugins_legacy.go", `package install; const cacheExtension = ".pyc"`, false},
+		{"legacy cache reference elsewhere", "internal/install/plugins.go", `package install; const cacheExtension = ".pyc"`, true},
+		{"legacy process remains forbidden", "internal/install/plugins_legacy.go", `package install; import "os/exec"; var command = exec.Command("python3", "job.py")`, true},
 		{"documentation", "README.md", "python3 ./legacy.py", false},
 	}
 	for _, testCase := range sourceCases {
@@ -253,7 +256,8 @@ func goSourceViolations(path string, content []byte) []string {
 		if unquoteErr != nil {
 			return true
 		}
-		if fileReference.MatchString(value) || usesProcessPackage && activeReference.MatchString(value) {
+		if fileReference.MatchString(value) && !approvedLegacyDataReference(path, value) ||
+			usesProcessPackage && activeReference.MatchString(value) {
 			position := fileSet.Position(literal.Pos())
 			violations = append(violations,
 				fmt.Sprintf("%s:%d: forbidden source reference", path, position.Line))
@@ -270,4 +274,8 @@ func goSourceViolations(path string, content []byte) []string {
 		}
 	}
 	return violations
+}
+
+func approvedLegacyDataReference(path, value string) bool {
+	return filepath.ToSlash(path) == "internal/install/plugins_legacy.go" && value == ".pyc"
 }
