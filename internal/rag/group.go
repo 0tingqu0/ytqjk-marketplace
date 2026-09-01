@@ -71,6 +71,12 @@ type scannedGroupDocument struct {
 	Bytes int
 }
 
+// ValidateGroupSelection applies the same document membership contract used by BuildGroup.
+func ValidateGroupSelection(documentIDs []string) error {
+	_, err := validateGroupSelection(documentIDs)
+	return err
+}
+
 // BuildGroup materializes a governed, immutable-generation index for one
 // group node. Only verified and explicitly approved local sources are read.
 func BuildGroup(knowledgeRoot, nodeID string, documentIDs []string) (GroupReceipt, error) {
@@ -135,14 +141,15 @@ func BuildGroup(knowledgeRoot, nodeID string, documentIDs []string) (GroupReceip
 	if err != nil || groupMembershipDigest(latestChunks, publicGroupDocuments(latestDocuments)) != generation {
 		return GroupReceipt{}, groupFailure("SOURCE_CHANGED_DURING_BUILD")
 	}
-	if err := switchGroupIndex(active, stage, staging, nodeID); err != nil {
+	commitStatus, err := switchGroupIndex(active, stage, staging, nodeID)
+	if err != nil {
 		return GroupReceipt{}, err
 	}
-	status := ReadGroupStatus(knowledgeRoot, nodeID)
-	if status.Status != "READY" {
-		return GroupReceipt{}, groupFailure("ACTIVE_INDEX_READBACK_FAILED")
+	committed := GroupStatus{
+		Status: "READY", Generation: manifest.Generation,
+		Documents: len(manifest.Documents), Chunks: manifest.Stats.Chunks, IndexedAt: manifest.IndexedAt,
 	}
-	return groupReceipt("REBUILT", nodeID, status), nil
+	return groupReceipt(commitStatus, nodeID, committed), nil
 }
 
 // ReadGroupStatus validates the active artifacts and checks that their source
@@ -284,38 +291,55 @@ func groupLocations(knowledgeRoot, nodeID string, create bool) (string, string, 
 	return active, staging, nil
 }
 
-func switchGroupIndex(active, stage, staging, nodeID string) error {
+func switchGroupIndex(active, stage, staging, nodeID string) (string, error) {
 	token, err := safeio.RandomHex(16)
 	if err != nil {
-		return groupFailure("GROUP_INDEX_BUILD_FAILED")
+		return "", groupFailure("GROUP_INDEX_BUILD_FAILED")
 	}
 	backup := filepath.Join(staging, "backup-"+nodeID+"-"+token)
 	hadActive := false
 	if _, err := os.Lstat(active); err == nil {
 		hadActive = true
 		if err := os.Rename(active, backup); err != nil {
-			return groupFailure("GROUP_INDEX_SWITCH_FAILED")
+			return "", groupFailure("GROUP_INDEX_SWITCH_FAILED")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return groupFailure("GROUP_INDEX_SWITCH_FAILED")
+		return "", groupFailure("GROUP_INDEX_SWITCH_FAILED")
 	}
 	if err := os.Rename(stage, active); err != nil {
-		if hadActive {
-			_ = os.Rename(backup, active)
+		if hadActive && restoreGroupIndex(active, backup, nodeID) != nil {
+			return "", groupFailure("GROUP_INDEX_ROLLBACK_FAILED")
 		}
-		return groupFailure("GROUP_INDEX_SWITCH_FAILED")
+		return "", groupFailure("GROUP_INDEX_SWITCH_FAILED")
 	}
 	if _, _, err := readGroupIndex(active, nodeID); err != nil {
-		_ = removeGroupDirectory(filepath.Dir(active), active)
-		if hadActive {
-			_ = os.Rename(backup, active)
+		if rollbackGroupIndex(active, backup, nodeID, hadActive) != nil {
+			return "", groupFailure("GROUP_INDEX_ROLLBACK_FAILED")
 		}
-		return groupFailure("ACTIVE_INDEX_READBACK_FAILED")
+		return "", groupFailure("ACTIVE_INDEX_READBACK_FAILED")
 	}
-	if hadActive {
-		_ = removeGroupDirectory(staging, backup)
+	if hadActive && removeGroupDirectory(staging, backup) != nil {
+		return "REBUILT_CLEANUP_PENDING", nil
 	}
-	return nil
+	return "REBUILT", nil
+}
+
+func rollbackGroupIndex(active, backup, nodeID string, hadActive bool) error {
+	if err := removeGroupDirectory(filepath.Dir(active), active); err != nil {
+		return err
+	}
+	if !hadActive {
+		return nil
+	}
+	return restoreGroupIndex(active, backup, nodeID)
+}
+
+func restoreGroupIndex(active, backup, nodeID string) error {
+	if err := os.Rename(backup, active); err != nil {
+		return err
+	}
+	_, _, err := readGroupIndex(active, nodeID)
+	return err
 }
 
 func removeGroupDirectory(parent, target string) error {

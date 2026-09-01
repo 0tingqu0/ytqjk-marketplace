@@ -63,6 +63,17 @@ func RuntimeRoot() (string, error) {
 	return filepath.Join(home, ".local", "share", "ytqjk", "runtime"), nil
 }
 
+// MaintenanceControlRoot returns the stable per-user control plane shared by
+// the runtime, Codex, and knowledge roots. Explicit install targets do not
+// change this coordination root.
+func MaintenanceControlRoot() (string, error) {
+	runtimeRoot, err := RuntimeRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(runtimeRoot), nil
+}
+
 func BinPath() (string, error) {
 	root, err := RuntimeRoot()
 	if err != nil {

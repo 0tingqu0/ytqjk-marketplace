@@ -1,0 +1,45 @@
+{
+  "contract": "library.v1.errors",
+  "cases": [
+    {
+      "name": "missing_capacity_bytes",
+      "expected_status": 400,
+      "expected_code": "INVALID_REQUEST_FIELDS"
+    },
+    {
+      "name": "extra_request_field",
+      "expected_status": 400,
+      "expected_code": "INVALID_REQUEST_FIELDS"
+    },
+    {
+      "name": "capacity_not_integer",
+      "expected_status": 400,
+      "expected_code": "INVALID_CAPACITY_BYTES"
+    },
+    {
+      "name": "capacity_out_of_range",
+      "expected_status": 400,
+      "expected_code": "INVALID_CAPACITY_BYTES"
+    },
+    {
+      "name": "group_metadata_not_empty",
+      "expected_status": 400,
+      "expected_code": "GROUP_METADATA_FORBIDDEN"
+    },
+    {
+      "name": "mounted_metadata_shape_changed",
+      "expected_status": 400,
+      "expected_code": "INVALID_MOUNT_METADATA"
+    }
+  ],
+  "legacy_python_difference": {
+    "canonical_request_with_capacity_bytes": {
+      "expected_status": 400,
+      "expected_code": "INVALID_REQUEST_FIELDS"
+    },
+    "legacy_request_without_capacity_bytes": {
+      "expected_status": 200,
+      "expected_code": null
+    }
+  }
+}

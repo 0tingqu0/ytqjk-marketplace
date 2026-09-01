@@ -65,8 +65,12 @@ func (s *Server) enqueueIntake(writer http.ResponseWriter, request *http.Request
 	}
 	stagingRelative := filepath.ToSlash(filepath.Join("service", "intake", "uploads", sourceSHA+"-"+hex.EncodeToString(nameDigest[:6])+extension))
 	stagingPath, err := safeDocumentPath(s.KnowledgeRoot, stagingRelative)
-	if err != nil || safeio.AtomicWrite(stagingPath, content, 0o600) != nil {
+	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "INTAKE_STAGE_FAILED", "资料暂存失败")
+		return http.StatusInternalServerError
+	}
+	if err := safeio.AtomicWrite(stagingPath, content, 0o600); err != nil {
+		writeError(writer, http.StatusInternalServerError, intakeStageFailureCode(err), "资料暂存结果需要人工核验")
 		return http.StatusInternalServerError
 	}
 	job, err := s.intakeStore.Enqueue(request.Context(), map[string]any{
@@ -101,6 +105,13 @@ func (s *Server) intakeJobStatus(writer http.ResponseWriter, request *http.Reque
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "INTAKE_STATUS_FAILED", "入库任务状态读取失败")
 		return http.StatusInternalServerError
+	}
+	if job.State == "SUCCEEDED" && s.intakeJobActive(job.ID) {
+		job.State = "RUNNING"
+		job.Progress = 99
+		job.Result = nil
+		writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "job": publicIntakeJob(job)})
+		return http.StatusOK
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "job": publicIntakeJob(job)})
 	return http.StatusOK
@@ -150,7 +161,9 @@ func (s *Server) intakeJobAction(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusAccepted, map[string]any{"ok": true, "job": publicIntakeJob(job)})
 		return http.StatusAccepted
 	}
-	s.removeIntakeSource(job)
+	if err := s.removeIntakeSource(job); err != nil {
+		s.logger.Printf("cancelled intake source cleanup failed: id=%s", job.ID)
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{"ok": true, "job": publicIntakeJob(job)})
 	return http.StatusOK
 }
@@ -178,9 +191,16 @@ func publicIntakeJob(job document.Job) map[string]any {
 
 func intakeFailureRetryable(category string) bool {
 	switch category {
-	case "SECURITY", "UNSAFE_SOURCE", "UNSUPPORTED_FORMAT", "INVALID_DOCUMENT":
+	case "SECURITY", "UNSAFE_SOURCE", "UNSUPPORTED_FORMAT", "INVALID_DOCUMENT", "PERSIST_DURABILITY_UNKNOWN":
 		return false
 	default:
 		return true
 	}
+}
+
+func intakeStageFailureCode(err error) string {
+	if safeio.WasCommitted(err) {
+		return "INTAKE_STAGE_DURABILITY_UNKNOWN"
+	}
+	return "INTAKE_STAGE_FAILED"
 }

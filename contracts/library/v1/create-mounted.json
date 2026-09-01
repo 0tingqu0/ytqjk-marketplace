@@ -1,0 +1,14 @@
+{
+  "contract": "library.v1.create",
+  "request": {
+    "node_id": "mounted-reference",
+    "title": "Mounted Reference",
+    "type": "mounted",
+    "parent_id": "team-library",
+    "capacity_bytes": 67108864,
+    "metadata": {
+      "mount_id": "reference-connector",
+      "capability": "READ_ONLY"
+    }
+  }
+}

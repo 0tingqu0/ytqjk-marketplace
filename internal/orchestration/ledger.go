@@ -2,24 +2,23 @@ package orchestration
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
-const DefaultLeaseSeconds = 30 * 60
+const (
+	DefaultLeaseSeconds     = 30 * 60
+	mutationInFlightMessage = "run has mutation in flight"
+)
 
 var hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -54,14 +53,15 @@ type Ledger struct {
 }
 
 type Run struct {
-	RunID         string `json:"run_id"`
-	SessionKey    string `json:"session_key"`
-	ProjectID     string `json:"project_id"`
-	ObjectiveHash string `json:"objective_hash"`
-	DatabaseID    string `json:"database_id"`
-	Version       int    `json:"version"`
-	State         string `json:"state"`
-	CreatedAt     int64  `json:"created_at"`
+	RunID             string `json:"run_id"`
+	SessionKey        string `json:"session_key"`
+	ProjectID         string `json:"project_id"`
+	ObjectiveHash     string `json:"objective_hash"`
+	DatabaseID        string `json:"database_id"`
+	Version           int    `json:"version"`
+	State             string `json:"state"`
+	CreatedAt         int64  `json:"created_at"`
+	InFlightMutations int    `json:"in_flight_mutations"`
 }
 
 type Grant struct {
@@ -80,6 +80,8 @@ type Attestation struct {
 	ProjectID     string   `json:"project_id"`
 	ObjectiveHash string   `json:"objective_hash"`
 	Role          string   `json:"role"`
+	Capability    string   `json:"capability,omitempty"`
+	Operation     string   `json:"operation,omitempty"`
 	ReadScope     []string `json:"read_scope"`
 	WriteScope    []string `json:"write_scope"`
 	Mutation      bool     `json:"mutation"`
@@ -114,12 +116,12 @@ func Open(databasePath, keyPath string) (*Ledger, string, error) {
 	ledger := &Ledger{database: database, key: key, keyPath: keyPath}
 	databaseID := ""
 	if err := database.QueryRow("SELECT value FROM metadata WHERE key='database_id'").Scan(&databaseID); errors.Is(err, sql.ErrNoRows) {
-		value := make([]byte, 16)
-		if _, err := rand.Read(value); err != nil {
+		value, randomErr := randomHex(16)
+		if randomErr != nil {
 			database.Close()
-			return nil, "", err
+			return nil, "", randomErr
 		}
-		databaseID = hex.EncodeToString(value)
+		databaseID = value
 		if _, err := database.Exec("INSERT INTO metadata(key,value) VALUES ('database_id',?)", databaseID); err != nil {
 			database.Close()
 			return nil, "", err
@@ -171,9 +173,14 @@ func (l *Ledger) StartRun(projectID, objectiveHash, sessionKey, currentSessionKe
 
 func (l *Ledger) Run(runID string) (Run, error) {
 	var run Run
-	err := l.database.QueryRow(`SELECT r.run_id,r.session_key,r.project_id,r.objective_hash,r.database_id,e.version,e.state,r.created_at
+	err := l.database.QueryRow(`SELECT r.run_id,r.session_key,r.project_id,r.objective_hash,r.database_id,
+e.version,e.state,r.created_at,(SELECT COUNT(*) FROM audit_events started
+WHERE started.run_id=r.run_id AND started.kind='mutation_started' AND NOT EXISTS (
+SELECT 1 FROM audit_events terminal WHERE terminal.lease_id=started.lease_id
+AND terminal.kind IN ('mutation_completed','mutation_failed')))
 FROM runs r JOIN run_events e ON e.run_id=r.run_id WHERE r.run_id=? ORDER BY e.version DESC LIMIT 1`, runID).
-		Scan(&run.RunID, &run.SessionKey, &run.ProjectID, &run.ObjectiveHash, &run.DatabaseID, &run.Version, &run.State, &run.CreatedAt)
+		Scan(&run.RunID, &run.SessionKey, &run.ProjectID, &run.ObjectiveHash, &run.DatabaseID,
+			&run.Version, &run.State, &run.CreatedAt, &run.InFlightMutations)
 	return run, err
 }
 
@@ -210,6 +217,16 @@ SELECT e.lease_id,e.run_id,e.session_key,e.role,e.version+1,'REVOKED',e.expires_
 FROM lease_events e WHERE e.run_id=? AND e.state='ACTIVE'
 AND e.version=(SELECT MAX(latest.version) FROM lease_events latest WHERE latest.lease_id=e.lease_id)`, now, runID); err != nil {
 			return Run{}, err
+		}
+		var inFlight int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM audit_events started
+WHERE started.run_id=? AND started.kind='mutation_started' AND NOT EXISTS (
+SELECT 1 FROM audit_events terminal WHERE terminal.lease_id=started.lease_id
+AND terminal.kind IN ('mutation_completed','mutation_failed'))`, runID).Scan(&inFlight); err != nil {
+			return Run{}, err
+		}
+		if inFlight != 0 {
+			return Run{}, errors.New(mutationInFlightMessage)
 		}
 	}
 	result, err := tx.Exec(`INSERT INTO run_events(run_id,version,state,created_at)
@@ -294,299 +311,6 @@ VALUES (?,?,?,?,?,?,?,?)`, grant.RunID, grant.SessionKey, grant.Role, string(rea
 		return err
 	}
 	return tx.Commit()
-}
-
-func (l *Ledger) Attest(runID, currentSessionKey, role string, reads, writes []string, mutation bool, stagedHash string, leaseSeconds int) (Attestation, error) {
-	run, err := l.Run(runID)
-	if err != nil {
-		return Attestation{}, err
-	}
-	if run.State != "RUNNING" || !hmac.Equal([]byte(run.SessionKey), []byte(currentSessionKey)) {
-		return Attestation{}, errors.New("run identity mismatch")
-	}
-	if leaseSeconds < 1 || leaseSeconds > DefaultLeaseSeconds {
-		return Attestation{}, errors.New("invalid lease")
-	}
-	if mutation && !hashPattern.MatchString(stagedHash) {
-		return Attestation{}, errors.New("mutation attestation requires a staged hash")
-	}
-	if !mutation && stagedHash != "" {
-		return Attestation{}, errors.New("read-only attestation cannot bind a staged hash")
-	}
-	reads, err = canonicalScope(reads)
-	if err != nil {
-		return Attestation{}, err
-	}
-	writes, err = canonicalScope(writes)
-	if err != nil {
-		return Attestation{}, err
-	}
-	var rawReads, rawWrites, rawCapabilities string
-	var grantedMutation bool
-	if err := l.database.QueryRow("SELECT read_scope,write_scope,mutation,capabilities FROM role_ledger WHERE run_id=? AND role=?", runID, role).Scan(&rawReads, &rawWrites, &grantedMutation, &rawCapabilities); err != nil {
-		return Attestation{}, errors.New("role ledger does not allow attestation")
-	}
-	var grantReads, grantWrites, grantCapabilities []string
-	if json.Unmarshal([]byte(rawReads), &grantReads) != nil || json.Unmarshal([]byte(rawWrites), &grantWrites) != nil ||
-		json.Unmarshal([]byte(rawCapabilities), &grantCapabilities) != nil ||
-		directorGrantInvalid(role, grantReads, grantWrites, grantedMutation, grantCapabilities) ||
-		grantedMutation != mutation || !subset(reads, grantReads) || !subset(writes, grantWrites) {
-		return Attestation{}, errors.New("scope exceeds role ledger")
-	}
-	leaseID, err := randomHex(16)
-	if err != nil {
-		return Attestation{}, err
-	}
-	token := Attestation{
-		RunID: runID, SessionKey: run.SessionKey, ProjectID: run.ProjectID, ObjectiveHash: run.ObjectiveHash,
-		Role: role, ReadScope: reads, WriteScope: writes, Mutation: mutation, StagedHash: stagedHash,
-		DatabaseID: run.DatabaseID, LeaseID: leaseID, ExpiresAt: time.Now().Unix() + int64(leaseSeconds),
-	}
-	token.Signature = l.sign(token)
-	claims, _ := json.Marshal(tokenClaims(token))
-	binding := sha256.Sum256(claims)
-	tx, err := l.database.Begin()
-	if err != nil {
-		return Attestation{}, err
-	}
-	defer tx.Rollback()
-	now := time.Now().Unix()
-	if _, err = tx.Exec(`INSERT INTO lease_events(lease_id,run_id,session_key,role,version,state,expires_at,binding_hash,created_at)
-VALUES (?,?,?,?,0,'ACTIVE',?,?,?)`, leaseID, runID, run.SessionKey, role, token.ExpiresAt, hex.EncodeToString(binding[:]), now); err != nil {
-		return Attestation{}, err
-	}
-	if err := appendAudit(tx, "lease_issued", runID, run.SessionKey, leaseID, map[string]any{"role": role, "mutation": mutation}, now); err != nil {
-		return Attestation{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Attestation{}, err
-	}
-	return token, nil
-}
-
-func (l *Ledger) Verify(token Attestation, currentSessionKey string) error {
-	if token.ExpiresAt <= time.Now().Unix() || !hmac.Equal([]byte(token.SessionKey), []byte(currentSessionKey)) {
-		return errors.New("attestation is expired or session-bound")
-	}
-	expected := l.sign(token)
-	if !hmac.Equal([]byte(expected), []byte(token.Signature)) {
-		return errors.New("attestation signature is invalid")
-	}
-	var databaseID string
-	if err := l.database.QueryRow("SELECT value FROM metadata WHERE key='database_id'").Scan(&databaseID); err != nil || databaseID != token.DatabaseID {
-		return errors.New("attestation database binding is invalid")
-	}
-	run, err := l.Run(token.RunID)
-	if err != nil || run.State != "RUNNING" || run.ProjectID != token.ProjectID || run.ObjectiveHash != token.ObjectiveHash || run.SessionKey != token.SessionKey || run.DatabaseID != token.DatabaseID {
-		return errors.New("attestation run binding is invalid")
-	}
-	claims, _ := json.Marshal(tokenClaims(token))
-	binding := sha256.Sum256(claims)
-	var state, runID, sessionKey, role, bindingHash string
-	var expiresAt int64
-	err = l.database.QueryRow(`SELECT state,run_id,session_key,role,expires_at,binding_hash FROM lease_events
-WHERE lease_id=? ORDER BY version DESC LIMIT 1`, token.LeaseID).Scan(&state, &runID, &sessionKey, &role, &expiresAt, &bindingHash)
-	if err != nil || state != "ACTIVE" || runID != token.RunID || sessionKey != token.SessionKey || role != token.Role || expiresAt != token.ExpiresAt || bindingHash != hex.EncodeToString(binding[:]) {
-		return errors.New("attestation lease is not active")
-	}
-	return nil
-}
-
-func (l *Ledger) sign(token Attestation) string {
-	claims, _ := json.Marshal(tokenClaims(token))
-	runBinding, _ := json.Marshal(map[string]any{
-		"database_id": token.DatabaseID, "objective_hash": token.ObjectiveHash,
-		"project_id": token.ProjectID, "run_id": token.RunID, "session_key": token.SessionKey,
-	})
-	runDigest := hmac.New(sha256.New, l.key)
-	_, _ = runDigest.Write(runBinding)
-	leaseDigest := hmac.New(sha256.New, runDigest.Sum(nil))
-	_, _ = leaseDigest.Write([]byte(token.LeaseID))
-	signature := hmac.New(sha256.New, leaseDigest.Sum(nil))
-	_, _ = signature.Write(claims)
-	return hex.EncodeToString(signature.Sum(nil))
-}
-
-func tokenClaims(token Attestation) map[string]any {
-	return map[string]any{
-		"database_id": token.DatabaseID, "expires_at": token.ExpiresAt, "lease_id": token.LeaseID,
-		"mutation": token.Mutation, "objective_hash": token.ObjectiveHash, "project_id": token.ProjectID,
-		"read_scope": token.ReadScope, "role": token.Role, "run_id": token.RunID, "session_key": token.SessionKey,
-		"staged_hash": token.StagedHash, "write_scope": token.WriteScope,
-	}
-}
-
-func loadOrCreateKey(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	created := false
-	if errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			return nil, err
-		}
-		data := make([]byte, 32)
-		if _, err := rand.Read(data); err != nil {
-			return nil, err
-		}
-		file, createErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if errors.Is(createErr, os.ErrExist) {
-			return loadOrCreateKey(path)
-		}
-		if createErr != nil {
-			return nil, createErr
-		}
-		ok := false
-		defer func() {
-			_ = file.Close()
-			if !ok {
-				_ = os.Remove(path)
-			}
-		}()
-		if _, err := file.Write(data); err != nil {
-			return nil, err
-		}
-		if err := file.Sync(); err != nil {
-			return nil, err
-		}
-		if err := file.Close(); err != nil {
-			return nil, err
-		}
-		ok = true
-		created = true
-		info, err = os.Lstat(path)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("identity key is not a regular file")
-	}
-	if err := secureKeyPermissions(path, created); err != nil {
-		if created {
-			_ = os.Remove(path)
-		}
-		return nil, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) != 32 {
-		return nil, errors.New("identity key is invalid")
-	}
-	return data, nil
-}
-
-func canonicalScope(values []string) ([]string, error) {
-	seen := map[string]bool{}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = filepath.ToSlash(value)
-		cleaned := filepath.ToSlash(filepath.Clean(value))
-		lower := strings.ToLower(cleaned)
-		if value == "" || value != cleaned || filepath.IsAbs(value) || strings.Contains(value, "\\") || strings.Contains(value, ":") || value == ".." || strings.HasPrefix(value, "../") || sensitiveScope(lower) {
-			return nil, errors.New("scope contains sensitive or unsafe path")
-		}
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-func canonicalCapabilities(values []string) ([]string, error) {
-	seen := map[string]bool{}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "run:lifecycle" {
-			return nil, errors.New("capability is invalid")
-		}
-		if !seen[value] {
-			seen[value] = true
-			result = append(result, value)
-		}
-	}
-	sort.Strings(result)
-	return result, nil
-}
-
-func directorGrantInvalid(role string, reads, writes []string, mutation bool, capabilities []string) bool {
-	if role != "director" && role != "controller" {
-		return false
-	}
-	if len(reads) != 0 || len(writes) != 0 || mutation {
-		return true
-	}
-	for _, capability := range capabilities {
-		if capability != "run:lifecycle" {
-			return true
-		}
-	}
-	return false
-}
-
-func sensitiveScope(value string) bool {
-	parts := strings.Split(value, "/")
-	for _, part := range parts {
-		if sensitiveScopeDirectories[part] {
-			return true
-		}
-	}
-	base := parts[len(parts)-1]
-	if sensitiveScopeNames[base] || sensitiveConfigPattern.MatchString(base) || strings.HasPrefix(base, ".env") {
-		return true
-	}
-	for _, ending := range sensitiveScopeEndings {
-		if strings.HasSuffix(base, ending) {
-			return true
-		}
-	}
-	return false
-}
-
-func validRole(value string) bool {
-	for _, role := range []string{"director", "controller", "worker", "reviewer", "git"} {
-		if value == role {
-			return true
-		}
-	}
-	return false
-}
-
-func subset(values, allowed []string) bool {
-	set := map[string]bool{}
-	for _, value := range allowed {
-		set[value] = true
-	}
-	for _, value := range values {
-		if !set[value] {
-			return false
-		}
-	}
-	return true
-}
-
-func appendAudit(tx *sql.Tx, kind, runID, sessionKey, leaseID string, detail map[string]any, timestamp int64) error {
-	encoded, _ := json.Marshal(detail)
-	_, err := tx.Exec("INSERT INTO audit_events(created_at,kind,run_id,session_key,lease_id,detail) VALUES (?,?,?,?,?,?)", timestamp, kind, runID, sessionKey, nullable(leaseID), string(encoded))
-	return err
-}
-
-func nullable(value string) any {
-	if value == "" {
-		return nil
-	}
-	return value
-}
-
-func randomHex(size int) (string, error) {
-	value := make([]byte, size)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(value), nil
 }
 
 var orchestrationSchema = []string{

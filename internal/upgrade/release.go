@@ -26,7 +26,10 @@ const (
 	maxBinaryBytes   = 96 * 1024 * 1024
 )
 
-var semverPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var (
+	semverPattern    = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	assetNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+)
 
 type Error struct {
 	Code  string
@@ -45,11 +48,10 @@ type Asset struct {
 }
 
 type Release struct {
-	Version    string           `json:"version"`
-	Tag        string           `json:"tag"`
-	ArchiveURL string           `json:"-"`
-	PageURL    string           `json:"page_url"`
-	Assets     map[string]Asset `json:"-"`
+	Version string           `json:"version"`
+	Tag     string           `json:"tag"`
+	PageURL string           `json:"page_url"`
+	Assets  map[string]Asset `json:"-"`
 }
 
 type CheckResult struct {
@@ -167,7 +169,6 @@ func parseRelease(body []byte) (Release, error) {
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
 		Tag        string `json:"tag_name"`
-		ArchiveURL string `json:"zipball_url"`
 		PageURL    string `json:"html_url"`
 		Assets     []struct {
 			Name string `json:"name"`
@@ -189,22 +190,15 @@ func parseRelease(body []byte) (Release, error) {
 	if _, err := parseVersion(version); err != nil {
 		return Release{}, failure("RELEASE_VERSION_INVALID", err)
 	}
-	archive, err := url.Parse(payload.ArchiveURL)
-	if err != nil || archive.Scheme != "https" || archive.Hostname() != "api.github.com" ||
-		!strings.HasPrefix(archive.EscapedPath(), "/repos/"+repository+"/zipball/") {
-		return Release{}, failure("RELEASE_ARCHIVE_URL_INVALID", err)
-	}
 	expectedPage := "https://github.com/" + repository + "/releases/tag/" + payload.Tag
 	if payload.PageURL != expectedPage {
 		return Release{}, failure("RELEASE_PAGE_URL_INVALID", nil)
 	}
-	release := Release{
-		Version: version, Tag: payload.Tag, ArchiveURL: payload.ArchiveURL,
-		PageURL: payload.PageURL, Assets: map[string]Asset{},
-	}
+	release := Release{Version: version, Tag: payload.Tag, PageURL: payload.PageURL, Assets: map[string]Asset{}}
 	expectedPrefix := expectedPage[:strings.LastIndex(expectedPage, "/tag/")] + "/download/" + payload.Tag + "/"
 	for _, candidate := range payload.Assets {
-		if candidate.Name == "" || candidate.Size < 0 || candidate.Size > maxBinaryBytes || release.Assets[candidate.Name].Name != "" {
+		if !assetNamePattern.MatchString(candidate.Name) || candidate.Size < 1 || candidate.Size > maxBinaryBytes ||
+			release.Assets[candidate.Name].Name != "" {
 			return Release{}, failure("RELEASE_ASSET_INVALID", nil)
 		}
 		if !strings.HasPrefix(candidate.URL, expectedPrefix) {
@@ -216,17 +210,32 @@ func parseRelease(body []byte) (Release, error) {
 }
 
 func BinaryAssetName() (string, error) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
-		return "", failure("PLATFORM_NOT_SUPPORTED", nil)
-	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64" {
+	return binaryAssetName(runtime.GOOS, runtime.GOARCH)
+}
+
+func binaryAssetName(goos, goarch string) (string, error) {
+	if goarch != "amd64" || goos != "linux" && goos != "windows" {
 		return "", failure("PLATFORM_NOT_SUPPORTED", nil)
 	}
 	suffix := ""
-	if runtime.GOOS == "windows" {
+	if goos == "windows" {
 		suffix = ".exe"
 	}
-	return "ytqjk-" + runtime.GOOS + "-" + runtime.GOARCH + suffix, nil
+	return "ytqjk-" + goos + "-" + goarch + suffix, nil
+}
+
+func ArchiveAssetName() (string, error) {
+	return archiveAssetName(runtime.GOOS, runtime.GOARCH)
+}
+
+func archiveAssetName(goos, goarch string) (string, error) {
+	if goarch != "amd64" || goos != "linux" && goos != "windows" {
+		return "", failure("PLATFORM_NOT_SUPPORTED", nil)
+	}
+	if goos == "windows" {
+		return "ytqjk-windows-amd64.zip", nil
+	}
+	return "ytqjk-linux-amd64.tar.gz", nil
 }
 
 func IsNewer(candidate, current string) (bool, error) {
@@ -267,7 +276,7 @@ func trustedDownloadURL(value *url.URL) bool {
 		return false
 	}
 	switch strings.ToLower(value.Hostname()) {
-	case "api.github.com", "github.com", "codeload.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+	case "api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
 		return true
 	default:
 		return false

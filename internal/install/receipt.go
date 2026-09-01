@@ -85,8 +85,9 @@ func SummaryText(value map[string]any) string {
 	dryRun, _ := value["dry_run"].(bool)
 	applyStatus := nestedStatus(value["apply"])
 	statuses := []string{
-		nestedStatus(value["knowledge_bootstrap"]), nestedStatus(value["knowledge_import"]),
-		nestedStatus(value["codex_guidance"]), nestedStatus(value["dashboard_service"]),
+		nestedStatus(value["project_bootstrap"]), nestedStatus(value["codex_import"]),
+		nestedStatus(value["guidance"]), nestedStatus(value["dashboard_service"]),
+		nestedStatus(value["runtime"]), nestedStatus(value["maintenance"]),
 	}
 	expected := "APPLIED"
 	if operation == "uninstall" {
@@ -97,6 +98,15 @@ func SummaryText(value map[string]any) string {
 		if status == "FAILED" {
 			failed = true
 		}
+	}
+	if !dryRun && statuses[5] != "SUCCEEDED" {
+		failed = true
+	}
+	if !dryRun && operation == "install" && statuses[4] != "ACTIVE" {
+		failed = true
+	}
+	if !dryRun && operation == "uninstall" && statuses[4] != "REMOVED" && statuses[4] != "ABSENT" {
+		failed = true
 	}
 	warned := statuses[1] == "SUCCEEDED_WITH_WARNINGS"
 	headline := "安装完成"
@@ -131,17 +141,24 @@ func SummaryText(value map[string]any) string {
 	} else {
 		lines = append(lines, "- 插件与技能：失败")
 	}
-	appendStatusLine(&lines, value["knowledge_bootstrap"], map[string]string{
+	appendStatusLine(&lines, value["project_bootstrap"], map[string]string{
 		"SUCCEEDED": "- 知识库：就绪", "FAILED": "- 知识库：初始化失败", "NOT_CONFIGURED": "- 知识库：未配置项目索引",
 	})
-	appendStatusLine(&lines, value["knowledge_import"], map[string]string{
+	appendStatusLine(&lines, value["codex_import"], map[string]string{
 		"SUCCEEDED": "- 资料导入：成功", "SUCCEEDED_WITH_WARNINGS": "- 资料导入：成功（有警告）", "FAILED": "- 资料导入：失败",
 	})
-	appendStatusLine(&lines, value["codex_guidance"], map[string]string{
+	appendStatusLine(&lines, value["guidance"], map[string]string{
 		"INSTALLED": "- 新会话接入：已配置", "REMOVED": "- 新会话接入：已移除", "FAILED": "- 新会话接入：配置失败",
 	})
 	appendStatusLine(&lines, value["dashboard_service"], map[string]string{
 		"RUNNING": "- 后台网页：运行中（http://127.0.0.1:8765）", "STOPPED": "- 后台网页：已停止", "FAILED": "- 后台网页：启动失败",
+	})
+	appendStatusLine(&lines, value["runtime"], map[string]string{
+		"ACTIVE": "- Go runtime：已激活", "REMOVED": "- Go runtime：已卸载",
+		"ABSENT": "- Go runtime：无需卸载", "FAILED": "- Go runtime：失败",
+	})
+	appendStatusLine(&lines, value["maintenance"], map[string]string{
+		"SUCCEEDED": "- 维护窗口：已安全关闭", "FAILED": "- 维护窗口：状态未知或失败",
 	})
 	if operation == "uninstall" {
 		lines = append(lines, "- 知识库数据：保留")

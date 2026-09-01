@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -17,10 +18,11 @@ import (
 	"time"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/knowledge"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/maintenance"
 )
 
 type Workbench struct {
-	service   *knowledge.Service
+	admit     WorkbenchAdmission
 	project   string
 	assets    string
 	csrf      string
@@ -29,20 +31,34 @@ type Workbench struct {
 	createdMu sync.Mutex
 }
 
-func RunWorkbench(database, projectID, assets string, port int, output io.Writer) error {
+// WorkbenchAdmission owns one short-lived knowledge service from open through
+// close. Implementations must not return until the final maintenance fence has
+// been checked.
+type WorkbenchAdmission func(context.Context, func(*knowledge.Service) error) error
+
+func RunWorkbench(
+	projectID, assets string,
+	port int,
+	output io.Writer,
+	admit WorkbenchAdmission,
+) error {
 	if port < 0 || port > 65535 {
 		return errors.New("only ports 0..65535 are permitted")
 	}
-	service, err := knowledge.Open(database)
-	if err != nil {
+	if admit == nil {
+		return errors.New("workbench admission is required")
+	}
+	if err := admit(context.Background(), func(*knowledge.Service) error { return nil }); err != nil {
 		return err
 	}
-	defer service.Close()
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return err
 	}
-	workbench := &Workbench{service: service, project: projectID, assets: assets, csrf: base64.RawURLEncoding.EncodeToString(tokenBytes), created: map[string]bool{}}
+	workbench := &Workbench{
+		admit: admit, project: projectID, assets: assets,
+		csrf: base64.RawURLEncoding.EncodeToString(tokenBytes), created: map[string]bool{},
+	}
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return err
@@ -64,7 +80,9 @@ func (w *Workbench) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	if request.Method == http.MethodGet {
 		switch request.URL.Path {
 		case "/api/state":
-			w.state(writer)
+			w.withService(writer, request, func(response http.ResponseWriter, service *knowledge.Service) {
+				w.state(response, service)
+			})
 			return
 		case "/":
 			w.asset(writer, "index.html", "text/html; charset=utf-8")
@@ -95,32 +113,45 @@ func (w *Workbench) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	}
 	switch request.URL.Path {
 	case "/api/candidates":
-		documentID, err := w.service.CreateCandidate(w.project, requiredText(payload, "title"), requiredText(payload, "content"), requiredText(payload, "source"))
-		if err != nil {
-			workbenchError(writer, http.StatusBadRequest, "INVALID_REQUEST")
-			return
-		}
-		w.createdMu.Lock()
-		w.created[documentID] = true
-		w.createdMu.Unlock()
-		workbenchJSON(writer, http.StatusOK, map[string]any{"status": "CANDIDATE_CREATED", "document_id": documentID})
+		w.withService(writer, request, func(response http.ResponseWriter, service *knowledge.Service) {
+			documentID, err := service.CreateCandidate(
+				w.project, requiredText(payload, "title"),
+				requiredText(payload, "content"), requiredText(payload, "source"),
+			)
+			if err != nil {
+				workbenchError(response, http.StatusBadRequest, "INVALID_REQUEST")
+				return
+			}
+			w.createdMu.Lock()
+			w.created[documentID] = true
+			w.createdMu.Unlock()
+			workbenchJSON(response, http.StatusOK, map[string]any{
+				"status": "CANDIDATE_CREATED", "document_id": documentID,
+			})
+		})
 	case "/api/candidates/edit":
-		documentID := requiredText(payload, "document_id")
-		if !w.owned(documentID) || w.service.EditCandidate(documentID, requiredText(payload, "content"), requiredText(payload, "source")) != nil {
-			workbenchError(writer, http.StatusBadRequest, "INVALID_REQUEST")
-			return
-		}
-		workbenchJSON(writer, http.StatusOK, map[string]any{"status": "CANDIDATE_UPDATED"})
+		w.withService(writer, request, func(response http.ResponseWriter, service *knowledge.Service) {
+			documentID := requiredText(payload, "document_id")
+			if !w.owned(documentID) || service.EditCandidate(
+				documentID, requiredText(payload, "content"), requiredText(payload, "source"),
+			) != nil {
+				workbenchError(response, http.StatusBadRequest, "INVALID_REQUEST")
+				return
+			}
+			workbenchJSON(response, http.StatusOK, map[string]any{"status": "CANDIDATE_UPDATED"})
+		})
 	case "/api/candidates/delete":
-		documentID := requiredText(payload, "document_id")
-		if !w.owned(documentID) || w.service.SoftDeleteCandidate(documentID) != nil {
-			workbenchError(writer, http.StatusBadRequest, "INVALID_REQUEST")
-			return
-		}
-		w.createdMu.Lock()
-		delete(w.created, documentID)
-		w.createdMu.Unlock()
-		workbenchJSON(writer, http.StatusOK, map[string]any{"status": "CANDIDATE_DELETED"})
+		w.withService(writer, request, func(response http.ResponseWriter, service *knowledge.Service) {
+			documentID := requiredText(payload, "document_id")
+			if !w.owned(documentID) || service.SoftDeleteCandidate(documentID) != nil {
+				workbenchError(response, http.StatusBadRequest, "INVALID_REQUEST")
+				return
+			}
+			w.createdMu.Lock()
+			delete(w.created, documentID)
+			w.createdMu.Unlock()
+			workbenchJSON(response, http.StatusOK, map[string]any{"status": "CANDIDATE_DELETED"})
+		})
 	case "/api/candidates/approve":
 		workbenchJSON(writer, http.StatusConflict, map[string]any{"status": "NOT_CONFIGURED", "promotion": "FAIL_CLOSED"})
 	default:
@@ -128,20 +159,41 @@ func (w *Workbench) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	}
 }
 
-func (w *Workbench) state(writer http.ResponseWriter) {
-	project, err := w.service.Project(w.project)
+func (w *Workbench) withService(
+	writer http.ResponseWriter,
+	request *http.Request,
+	action func(http.ResponseWriter, *knowledge.Service),
+) {
+	if w.admit == nil {
+		workbenchError(writer, http.StatusServiceUnavailable, maintenance.CodeInvalid)
+		return
+	}
+	response := newDeferredHTTPResponse()
+	err := w.admit(request.Context(), func(service *knowledge.Service) error {
+		action(response, service)
+		return nil
+	})
+	if err != nil {
+		writeMaintenanceUnavailable(writer, err)
+		return
+	}
+	_ = response.flush(writer)
+}
+
+func (w *Workbench) state(writer http.ResponseWriter, service *knowledge.Service) {
+	project, err := service.Project(w.project)
 	if err != nil {
 		workbenchError(writer, http.StatusNotFound, "PROJECT_NOT_FOUND")
 		return
 	}
-	active, _ := w.service.ActiveSnapshot(w.project)
+	active, _ := service.ActiveSnapshot(w.project)
 	snapshot := map[string]any{"state": "NOT_CONFIGURED", "generation": nil}
 	snapshotDocuments := []map[string]any{}
 	versions := []knowledge.Version{}
 	if active != nil {
 		snapshot = map[string]any{"id": active.Snapshot.ID, "project_id": active.Snapshot.ProjectID, "generation": active.Snapshot.Generation, "state": active.Snapshot.State, "created_at": active.Snapshot.CreatedAt}
 		for _, member := range active.Versions {
-			items, readErr := w.service.DocumentVersions(member.DocumentID)
+			items, readErr := service.DocumentVersions(member.DocumentID)
 			if readErr != nil {
 				workbenchError(writer, http.StatusInternalServerError, "STATE_READ_FAILED")
 				return
@@ -164,7 +216,7 @@ func (w *Workbench) state(writer http.ResponseWriter) {
 	}
 	sort.Strings(identifiers)
 	for _, identifier := range identifiers {
-		items, _ := w.service.DocumentVersions(identifier)
+		items, _ := service.DocumentVersions(identifier)
 		if len(items) > 0 && items[len(items)-1].State == "candidate" {
 			pending = append(pending, map[string]any{"id": identifier, "versions": []knowledge.Version{items[len(items)-1]}})
 		}

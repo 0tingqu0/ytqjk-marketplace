@@ -1,6 +1,5 @@
 import { api } from "../api.js";
 import { byId, button, clear, formatBytes, text } from "../ui/dom.js";
-import { confirmAction } from "../ui/confirm.js";
 
 const TYPE_LABELS = {
   global: "全局库",
@@ -9,53 +8,15 @@ const TYPE_LABELS = {
   project: "项目库",
 };
 
-function projectFacts(project) {
-  if (!project) return text("span", "无本地项目统计", "muted");
-  return text(
-    "span",
-    `${project.cache.entries} 缓存分块 · ${formatBytes(project.cache.used_bytes)}`,
-    "muted",
-  );
-}
-
-function libraryFacts(node, projects) {
-  if (node.type !== "group") {
-    return projectFacts(projects.get(node.id));
-  }
-  const index = node.index || { status: "NOT_CONFIGURED" };
-  if (index.status !== "READY") {
-    return text("span", `索引：${index.status}`, "muted");
-  }
-  return text(
-    "span",
-    `索引：READY · ${index.documents} 文件 · ${index.chunks} 分块`,
-    "muted",
-  );
-}
-
-async function rebuild(node, tree, handlers, control) {
-  const approved = await confirmAction(
-    "重建分组索引",
-    "只会读取当前总库内已批准或已验证的资料。",
-    "重建",
-  );
-  if (!approved) return;
-  control.disabled = true;
-  try {
-    const body = await api.treePreview("rebuild_index", {
-      node_id: node.id,
-      document_ids: [],
-    });
-    const result = await api.treeCommit("rebuild_index", {
-      digest: body.preview.digest,
-      expected_revision: body.preview.expected_revision,
-    });
-    handlers.onRebuilt(result);
-  } catch (error) {
-    handlers.onError(error);
-  } finally {
-    control.disabled = false;
-  }
+function libraryFacts(node) {
+	const stats = node.stats;
+	return text(
+		"span",
+		`资料索引 ${stats.indexed_documents}/${stats.total_documents} 文件 · `
+		+ `${stats.indexed_chunks}/${stats.total_chunks} 分块；`
+		+ `占用 ${formatBytes(stats.used_bytes)}/${formatBytes(node.capacity_bytes)}`,
+		"muted",
+	);
 }
 
 function action(label, name, node, tree, openAction) {
@@ -74,24 +35,15 @@ function renderNode(node, children, projects, tree, handlers, depth) {
     text("b", node.title),
     text("small", `${TYPE_LABELS[node.type] || node.type} · ${node.id}`),
   );
-  summary.append(identity, libraryFacts(node, projects));
+	summary.append(identity, libraryFacts(node));
   item.append(summary);
 
   const controls = text("div", "", "tree-node-actions");
-  if (node.type === "project" && projects.has(node.id)) {
-    const open = button("打开索引", "secondary tree-action");
-    open.onclick = () => handlers.openProject(projects.get(node.id));
-    controls.append(open);
-  }
-  if (node.type === "group") {
-    const rebuildButton = button(
-      "重建索引", "secondary tree-action",
-    );
-    rebuildButton.onclick = () => rebuild(
-      node, tree, handlers, rebuildButton,
-    );
-    controls.append(rebuildButton);
-  }
+	if (node.type === "project" && projects.has(node.id)) {
+		const open = button("打开索引", "secondary tree-action");
+		open.onclick = () => handlers.openProject(projects.get(node.id), node);
+		controls.append(open);
+	}
   controls.append(
     action("新建子库", "create", node, tree, handlers.openAction),
   );
@@ -137,7 +89,7 @@ function renderFallback(snapshot, target) {
     card.append(
       text("h3", project.name),
       text("p", project.id, "muted"),
-      projectFacts(project),
+		text("span", "知识库树统计暂不可用", "muted"),
     );
     return card;
   }));

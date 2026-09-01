@@ -1,6 +1,7 @@
 package cli
 
 import (
+	stdcontext "context"
 	"errors"
 	"os"
 	"strings"
@@ -32,67 +33,76 @@ func (context commandContext) session(arguments []string) error {
 	if *sessionID == "" {
 		return errors.New("--session-id is required when CODEX_THREAD_ID is unavailable")
 	}
-	if command == "query" {
-		if *projectRoot == "" {
-			return errors.New("--project-root is required")
-		}
-		query := strings.TrimSpace(strings.Join(flags.Args(), " "))
-		if query == "" {
-			return errors.New("query text is required after flags")
-		}
-		receipt, err := rag.Query(knowledgeRoot, *projectRoot, query, *sessionID, *expectedProject, *limit)
-		if err != nil {
-			return err
-		}
-		return context.write(receipt)
+	if command == "query" && *projectRoot == "" {
+		return errors.New("--project-root is required")
 	}
-	if command == "prepare-archive" {
-		anchor, err := rag.PrepareArchive(knowledgeRoot, *sessionID)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "ARCHIVE_PREPARED", "anchor": anchor})
+	query := strings.TrimSpace(strings.Join(flags.Args(), " "))
+	if command == "query" && query == "" {
+		return errors.New("query text is required after flags")
 	}
-	if command == "finalize-archive" {
-		anchor, err := rag.FinalizeArchive(knowledgeRoot, *sessionID)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "ARCHIVED", "anchor": anchor})
-	}
-	resolvedProject, err := resolveProject(knowledgeRoot, *projectRoot, *projectID)
-	if err != nil {
-		return err
-	}
-	switch command {
-	case "anchor":
-		anchor, created, err := rag.EnsureAnchor(knowledgeRoot, *sessionID, resolvedProject)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "ACTIVE", "created": created, "anchor": anchor})
-	case "inspect":
-		state, err := rag.InspectAnchor(knowledgeRoot, *sessionID, resolvedProject)
-		if err != nil {
-			return err
-		}
-		state["ok"] = true
-		return context.write(state)
-	case "checkpoint":
+	var memory []byte
+	if command == "checkpoint" {
 		if *memoryFile == "" {
 			return errors.New("--memory-file is required")
 		}
-		memory, err := os.ReadFile(*memoryFile)
+		memory, err = os.ReadFile(*memoryFile)
 		if err != nil {
 			return err
 		}
-		anchor, err := rag.Checkpoint(knowledgeRoot, *sessionID, resolvedProject, string(memory))
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "CHECKPOINTED", "anchor": anchor})
 	}
-	return errors.New("unreachable session command")
+	response, err := withSharedKnowledge(stdcontext.Background(), knowledgeRoot, func(stdcontext.Context) (any, error) {
+		if command == "query" {
+			receipt, err := rag.Query(knowledgeRoot, *projectRoot, query, *sessionID, *expectedProject, *limit)
+			if err != nil {
+				return nil, err
+			}
+			return receipt, nil
+		}
+		if command == "prepare-archive" {
+			anchor, err := rag.PrepareArchive(knowledgeRoot, *sessionID)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "ARCHIVE_PREPARED", "anchor": anchor}, nil
+		}
+		if command == "finalize-archive" {
+			anchor, err := rag.FinalizeArchive(knowledgeRoot, *sessionID)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "ARCHIVED", "anchor": anchor}, nil
+		}
+		resolvedProject, err := resolveProject(knowledgeRoot, *projectRoot, *projectID)
+		if err != nil {
+			return nil, err
+		}
+		switch command {
+		case "anchor":
+			anchor, created, err := rag.EnsureAnchor(knowledgeRoot, *sessionID, resolvedProject)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "ACTIVE", "created": created, "anchor": anchor}, nil
+		case "inspect":
+			state, err := rag.InspectAnchor(knowledgeRoot, *sessionID, resolvedProject)
+			if err != nil {
+				return nil, err
+			}
+			state["ok"] = true
+			return state, nil
+		case "checkpoint":
+			anchor, err := rag.Checkpoint(knowledgeRoot, *sessionID, resolvedProject, string(memory))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "CHECKPOINTED", "anchor": anchor}, nil
+		}
+		return nil, errors.New("unreachable session command")
+	})
+	if err != nil {
+		return err
+	}
+	return context.write(response)
 }
 
 func resolveProject(knowledgeRoot, projectRoot, projectID string) (string, error) {

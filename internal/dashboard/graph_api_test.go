@@ -16,7 +16,7 @@ import (
 
 func TestKnowledgeGraphHTTPContract(t *testing.T) {
 	root := writeGraphTestFixture(t)
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 
 	response := dashboardRequest(t, server, http.MethodGet, "/api/knowledge-graph?limit=120", nil)
 	if response.Code != http.StatusOK {
@@ -58,7 +58,7 @@ func TestKnowledgeGraphHTTPContract(t *testing.T) {
 
 func TestKnowledgeSearchRecommendationAndPathContracts(t *testing.T) {
 	root := writeGraphTestFixture(t)
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 
 	search := dashboardRequest(t, server, http.MethodPost, "/api/knowledge-search", []byte(`{"query":"SnapshotEngine","limit":8}`))
 	if search.Code != http.StatusOK {
@@ -122,7 +122,7 @@ func TestKnowledgeSearchRecommendationAndPathContracts(t *testing.T) {
 }
 
 func TestKnowledgeGraphRequestValidation(t *testing.T) {
-	server := dashboardTestServer(writeGraphTestFixture(t))
+	server := dashboardTestServer(t, writeGraphTestFixture(t))
 	tests := []struct {
 		method string
 		path   string
@@ -145,7 +145,7 @@ func TestKnowledgeGraphRequestValidation(t *testing.T) {
 
 func TestLibraryHTTPContracts(t *testing.T) {
 	root := writeGraphTestFixture(t)
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 
 	global := dashboardRequest(t, server, http.MethodGet, "/api/global-library", nil)
 	if global.Code != http.StatusOK {
@@ -187,14 +187,14 @@ func TestLibraryHTTPContracts(t *testing.T) {
 	}
 
 	missingRoot := t.TempDir()
-	missing := dashboardRequest(t, dashboardTestServer(missingRoot), http.MethodGet, "/api/project-library?id=missing", nil)
+	missing := dashboardRequest(t, dashboardTestServer(t, missingRoot), http.MethodGet, "/api/project-library?id=missing", nil)
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing project status = %d, body = %s", missing.Code, missing.Body.String())
 	}
 }
 
 func TestKnowledgeGraphCacheIsConcurrent(t *testing.T) {
-	server := dashboardTestServer(writeGraphTestFixture(t))
+	server := dashboardTestServer(t, writeGraphTestFixture(t))
 	const workers = 24
 	start := make(chan struct{})
 	errors := make(chan string, workers)

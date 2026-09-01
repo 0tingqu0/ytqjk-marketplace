@@ -15,36 +15,43 @@ const (
 )
 
 type Plan struct {
-	Schema            string    `json:"schema"`
-	ID                string    `json:"id"`
-	PreparedAt        time.Time `json:"prepared_at"`
-	FromVersion       string    `json:"from_version"`
-	ToVersion         string    `json:"to_version"`
-	DatabaseSchema    int       `json:"database_schema"`
-	PreviousMaxSchema int       `json:"previous_max_schema"`
-	TargetMaxSchema   int       `json:"target_max_schema"`
-	RuntimeRoot       string    `json:"runtime_root"`
-	CodexRoot         string    `json:"codex_root"`
-	KnowledgeRoot     string    `json:"knowledge_root"`
-	StageRoot         string    `json:"stage_root"`
-	SourceRoot        string    `json:"source_root"`
-	BinaryPath        string    `json:"binary_path"`
-	BinarySHA256      string    `json:"binary_sha256"`
-	Port              int       `json:"port"`
-	RestartDashboard  bool      `json:"restart_dashboard"`
-	ReleaseURL        string    `json:"release_url"`
+	Schema                 string    `json:"schema"`
+	ID                     string    `json:"id"`
+	PreparedAt             time.Time `json:"prepared_at"`
+	FromVersion            string    `json:"from_version"`
+	ToVersion              string    `json:"to_version"`
+	DatabaseSchema         int       `json:"database_schema"`
+	PreviousMaxSchema      int       `json:"previous_max_schema"`
+	TargetMaxSchema        int       `json:"target_max_schema"`
+	RuntimeRoot            string    `json:"runtime_root"`
+	CodexRoot              string    `json:"codex_root"`
+	KnowledgeRoot          string    `json:"knowledge_root"`
+	StageRoot              string    `json:"stage_root"`
+	SourceRoot             string    `json:"source_root"`
+	SourceTreeSHA256       string    `json:"source_tree_sha256"`
+	BinaryPath             string    `json:"binary_path"`
+	BinarySHA256           string    `json:"binary_sha256"`
+	ArchiveSHA256          string    `json:"archive_sha256"`
+	ReleaseManifestSHA256  string    `json:"release_manifest_sha256"`
+	SigningKeySHA256       string    `json:"signing_key_sha256"`
+	SnapshotID             string    `json:"snapshot_id,omitempty"`
+	SnapshotManifestSHA256 string    `json:"snapshot_manifest_sha256,omitempty"`
+	Port                   int       `json:"port"`
+	RestartDashboard       bool      `json:"restart_dashboard"`
+	ReleaseURL             string    `json:"release_url"`
 }
 
 type State struct {
-	Schema          string    `json:"schema"`
-	Status          string    `json:"status"`
-	OperationID     string    `json:"operation_id,omitempty"`
-	CurrentVersion  string    `json:"current_version,omitempty"`
-	PreviousVersion string    `json:"previous_version,omitempty"`
-	TargetVersion   string    `json:"target_version,omitempty"`
-	SnapshotID      string    `json:"snapshot_id,omitempty"`
-	ErrorCode       string    `json:"error_code,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Schema                 string    `json:"schema"`
+	Status                 string    `json:"status"`
+	OperationID            string    `json:"operation_id,omitempty"`
+	CurrentVersion         string    `json:"current_version,omitempty"`
+	PreviousVersion        string    `json:"previous_version,omitempty"`
+	TargetVersion          string    `json:"target_version,omitempty"`
+	SnapshotID             string    `json:"snapshot_id,omitempty"`
+	SnapshotManifestSHA256 string    `json:"snapshot_manifest_sha256,omitempty"`
+	ErrorCode              string    `json:"error_code,omitempty"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 func Status(runtimeRoot, currentVersion string) State {
@@ -62,6 +69,27 @@ func writeState(runtimeRoot string, state State) error {
 	state.Schema = stateSchema
 	state.UpdatedAt = time.Now().UTC()
 	return safeio.WriteJSON(statePath(runtimeRoot), state)
+}
+
+func stateWriteFailure(err error) error {
+	if safeio.WasCommitted(err) {
+		return failure("UPGRADE_STATE_DURABILITY_UNKNOWN", err)
+	}
+	return failure("UPGRADE_STATE_WRITE_FAILED", err)
+}
+
+func writeFailureState(runtimeRoot string, state State, cause error) error {
+	if err := writeState(runtimeRoot, state); err != nil {
+		return errors.Join(stateWriteFailure(err), cause)
+	}
+	return cause
+}
+
+func planWriteFailure(err error) error {
+	if safeio.WasCommitted(err) {
+		return failure("UPGRADE_PLAN_DURABILITY_UNKNOWN", err)
+	}
+	return failure("UPGRADE_PLAN_WRITE_FAILED", err)
 }
 
 func statePath(runtimeRoot string) string {
@@ -84,7 +112,11 @@ func readPlan(path string) (Plan, error) {
 }
 
 func validatePlan(plan Plan, path string) error {
-	if plan.Schema != planSchema || !hexDigestPattern.MatchString(plan.ID) || !hexDigestPattern.MatchString(plan.BinarySHA256) {
+	if plan.Schema != planSchema || !hexDigestPattern.MatchString(plan.ID) ||
+		!hexDigestPattern.MatchString(plan.SourceTreeSHA256) || !hexDigestPattern.MatchString(plan.BinarySHA256) ||
+		!hexDigestPattern.MatchString(plan.ArchiveSHA256) ||
+		!hexDigestPattern.MatchString(plan.ReleaseManifestSHA256) ||
+		!hexDigestPattern.MatchString(plan.SigningKeySHA256) {
 		return failure("UPGRADE_PLAN_INVALID", nil)
 	}
 	if _, err := parseVersion(plan.FromVersion); err != nil {
@@ -96,10 +128,18 @@ func validatePlan(plan Plan, path string) error {
 	if plan.DatabaseSchema < 0 || plan.PreviousMaxSchema < plan.DatabaseSchema || plan.TargetMaxSchema < plan.DatabaseSchema || plan.Port < 1 || plan.Port > 65535 {
 		return failure("UPGRADE_SCHEMA_INCOMPATIBLE", nil)
 	}
+	if (plan.SnapshotID == "") != (plan.SnapshotManifestSHA256 == "") ||
+		plan.SnapshotID != "" && (!hexDigestPattern.MatchString(plan.SnapshotID) ||
+			!hexDigestPattern.MatchString(plan.SnapshotManifestSHA256)) {
+		return failure("UPGRADE_PLAN_INVALID", nil)
+	}
 	for _, root := range []string{plan.RuntimeRoot, plan.CodexRoot, plan.KnowledgeRoot, plan.StageRoot, plan.SourceRoot} {
 		if !filepath.IsAbs(root) || filepath.Clean(root) != root {
 			return failure("UPGRADE_PLAN_INVALID", nil)
 		}
+	}
+	if _, err := restorePlanRoots(plan); err != nil {
+		return failure("UPGRADE_PLAN_INVALID", err)
 	}
 	upgradeRoot := filepath.Join(plan.RuntimeRoot, "upgrade")
 	if _, err := safeio.Contained(upgradeRoot, plan.StageRoot); err != nil {
@@ -108,7 +148,7 @@ func validatePlan(plan Plan, path string) error {
 	if _, err := safeio.Contained(plan.StageRoot, plan.SourceRoot); err != nil {
 		return failure("UPGRADE_PLAN_INVALID", err)
 	}
-	if _, err := safeio.Contained(plan.StageRoot, plan.BinaryPath); err != nil {
+	if _, err := safeio.Contained(plan.SourceRoot, plan.BinaryPath); err != nil {
 		return failure("UPGRADE_PLAN_INVALID", err)
 	}
 	expectedPath, err := safeio.Contained(plan.StageRoot, path)

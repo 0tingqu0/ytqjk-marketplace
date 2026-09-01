@@ -52,23 +52,10 @@ function renderAll() {
     approve: documentActions.approveCandidate,
     remove: documentActions.deleteCandidate,
   });
-  renderLibraries(snapshot, state.tree, state.treeError, {
-    openProject: showProjectLibrary,
-    openAction: openTreeAction,
-    onRebuilt: (result) => {
-      state.tree = result.tree;
-      const receipt = result.materialization;
-      byId("updated").textContent = [
-        `分组索引${receipt.status === "REUSED" ? "无需更新" : "已重建"}`,
-        `${receipt.documents} 文件`,
-        `${receipt.chunks} 分块`,
-      ].join(" · ");
-      renderAll();
-    },
-    onError: (error) => {
-      byId("updated").textContent = `分组索引失败：${error.message}`;
-    },
-  });
+	renderLibraries(snapshot, state.tree, state.treeError, {
+		openProject: showProjectLibrary,
+		openAction: openTreeAction,
+	});
   renderPeerWorkspace(state);
   renderSessions(snapshot);
   byId("rail-candidate-count").textContent = snapshot

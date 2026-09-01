@@ -52,7 +52,7 @@ func (s *Server) updateStatus(writer http.ResponseWriter, request *http.Request)
 		writeJSON(writer, http.StatusBadGateway, map[string]any{
 			"ok": false, "error": "无法读取 GitHub 最新稳定版本。", "error_code": "UPDATE_CHECK_FAILED",
 			"current_version": buildinfo.Version, "token": token, "state": state.Status,
-			"rollback_available": state.Status == "ACTIVE" && state.SnapshotID != "",
+			"rollback_available": upgrade.CanRollback(state, buildinfo.Version),
 		})
 		return http.StatusBadGateway
 	}
@@ -60,7 +60,7 @@ func (s *Server) updateStatus(writer http.ResponseWriter, request *http.Request)
 		"ok": true, "current_version": check.CurrentVersion, "latest_version": check.LatestVersion,
 		"update_available": check.UpdateAvailable, "release_url": check.ReleaseURL, "token": token,
 		"state": state.Status, "upgrade_mode": "transactional-snapshot",
-		"rollback_available": state.Status == "ACTIVE" && state.SnapshotID != "",
+		"rollback_available": upgrade.CanRollback(state, buildinfo.Version),
 	})
 	return http.StatusOK
 }

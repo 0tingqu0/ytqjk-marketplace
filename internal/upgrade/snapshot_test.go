@@ -115,23 +115,33 @@ func TestManualRollbackKeepsRolledBackGenerationAsPrevious(t *testing.T) {
 	rollback := RollbackPlan{
 		Schema: rollbackPlanSchema, ID: operationID, PreparedAt: time.Now().UTC(),
 		CurrentVersion: "0.7.0", TargetVersion: "0.6.10", TargetSnapshotID: target.ID,
-		RuntimeRoot: base.RuntimeRoot, CodexRoot: base.CodexRoot, KnowledgeRoot: base.KnowledgeRoot,
-		StageRoot: stage, BinaryPath: helper, BinarySHA256: helperHash, Port: 8765,
+		TargetSnapshotManifestSHA256: target.ManifestSHA256,
+		RuntimeRoot:                  base.RuntimeRoot, CodexRoot: base.CodexRoot, KnowledgeRoot: base.KnowledgeRoot,
+		StageRoot: stage, BinaryPath: helper, BinarySHA256: helperHash, Port: unusedPort(t),
 	}
 	if err := safeio.WriteJSON(rollbackPlanPath(rollback), rollback); err != nil {
+		t.Fatal(err)
+	}
+	if err := acquireOperation(base.RuntimeRoot, operationID, phaseRollbackPending); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeState(base.RuntimeRoot, State{
 		Status: "ROLLBACK_PENDING", OperationID: operationID, CurrentVersion: "0.7.0",
 		PreviousVersion: "0.6.10", TargetVersion: "0.6.10", SnapshotID: target.ID,
+		SnapshotManifestSHA256: target.ManifestSHA256,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Rollback(context.Background(), rollbackPlanPath(rollback))
+	planDigest, err := safeio.FileSHA256(rollbackPlanPath(rollback))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.CurrentVersion != "0.6.10" || result.PreviousVersion != "0.7.0" || result.SnapshotID == target.ID {
+	result, err := Rollback(context.Background(), rollbackPlanPath(rollback), planDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CurrentVersion != "0.6.10" || result.PreviousVersion != "0.7.0" || result.SnapshotID == target.ID ||
+		!hexDigestPattern.MatchString(result.SnapshotManifestSHA256) {
 		t.Fatalf("result = %#v", result)
 	}
 	assertFixture(t, binary, "generation-a")

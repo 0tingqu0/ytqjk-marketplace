@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing SemVer tag to publish as a verified draft
+        required: true
+        type: string
+      expected_commit:
+        description: Exact 40-character commit peeled from the approved tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,25 +29,50 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.27.x"
+          go-version: "1.27.0"
       - name: Validate tag, version, and main history
         id: release
         shell: bash
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
 
-          tag="${GITHUB_REF_NAME}"
+          tag="${REQUESTED_TAG}"
           if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
               echo "::error::Release tag must use pure SemVer: vX.Y.Z"
               exit 1
           fi
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+              if [[ "${DISPATCH_REF}" != "refs/heads/main" ]]; then
+                  echo "::error::Manual releases must use the protected main workflow"
+                  exit 1
+              fi
+              if [[ ! "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]]; then
+                  echo "::error::Expected commit must be an exact lowercase commit ID"
+                  exit 1
+              fi
+          fi
+          git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
+          release_commit="$(git rev-parse "refs/tags/${tag}^{commit}")"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] && \
+              [[ "${release_commit}" != "${EXPECTED_COMMIT}" ]]; then
+              echo "::error::Release tag does not point to the approved commit"
+              exit 1
+          fi
+          git checkout --detach "${release_commit}"
           version="${tag#v}"
           manifest_version="$(go run ./cmd/ytqjk version)"
           for manifest in \
@@ -56,80 +91,816 @@ jobs:
 
           git fetch --no-tags origin main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor \
-              "${GITHUB_SHA}" refs/remotes/origin/main; then
+              "${release_commit}" refs/remotes/origin/main; then
               echo "::error::Release commit is not contained in main"
               exit 1
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "commit=${release_commit}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
 
   tests:
     name: Run complete test suite
     needs: contract
     uses: ./.github/workflows/test.yml
+    with:
+      checkout_ref: ${{ needs.contract.outputs.commit }}
 
-  publish:
-    name: Publish GitHub Release
+  build:
+    name: Build immutable release handoff
     needs: [contract, tests]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v6
+          ref: ${{ needs.contract.outputs.commit }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.27.x"
+          go-version: "1.27.0"
           cache: true
-      - name: Build release binaries
+      - name: Build unsigned release assets
         shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
-              os="${target%/*}"
-              arch="${target#*/}"
-              suffix=""
-              [[ "$os" == windows ]] && suffix=".exe"
-              output="dist/ytqjk-${os}-${arch}${suffix}"
-              GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-                  go build -trimpath -ldflags '-s -w' -o "$output" ./cmd/ytqjk
-          done
-          (cd dist && sha256sum ytqjk-* > SHA256SUMS)
-      - name: Create stable release
-        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.contract.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.contract.outputs.commit }}
+          RELEASE_PUBLIC_KEY_DER_B64: ${{ vars.YTQJK_RELEASE_ED25519_PUBLIC_KEY_DER_B64 }}
+          RELEASE_PUBLIC_KEY_SHA256: ${{ vars.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+          PYTHON_ROLLBACK_TAG: v0.6.10
+          PYTHON_ROLLBACK_COMMIT: 6f3feac1740e24c47b07da2d048185658efb6d09
         run: |
           set -euo pipefail
 
-          tag="${GITHUB_REF_NAME}"
+          checkout_commit="$(git rev-parse HEAD)"
+          if [[ "${checkout_commit}" != "${RELEASE_COMMIT}" ]]; then
+              echo "::error::Release checkout does not match the validated tag commit"
+              exit 1
+          fi
+          if [[ -z "${RELEASE_PUBLIC_KEY_DER_B64}" ]] || \
+              [[ ! "${RELEASE_PUBLIC_KEY_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Approved updater trust-root variables are missing or invalid"
+              exit 1
+          fi
+          trust_der="${RUNNER_TEMP}/ytqjk-release-public.der"
+          if ! printf '%s' "${RELEASE_PUBLIC_KEY_DER_B64}" \
+              | base64 --decode > "${trust_der}"; then
+              echo "::error::Updater trust-root public key is not valid base64"
+              exit 1
+          fi
+          if [[ "$(base64 -w0 < "${trust_der}")" != "${RELEASE_PUBLIC_KEY_DER_B64}" ]] || \
+              ! openssl pkey -pubin -inform DER -in "${trust_der}" -text -noout \
+                  | grep -Fiq 'ED25519'; then
+              echo "::error::Updater trust root is not canonical Ed25519 public-key DER"
+              exit 1
+          fi
+          actual_trust_sha256="$(sha256sum "${trust_der}" | awk '{print $1}')"
+          if [[ "${actual_trust_sha256}" != "${RELEASE_PUBLIC_KEY_SHA256}" ]]; then
+              echo "::error::Updater trust-root digest does not match the approved value"
+              exit 1
+          fi
+          dist="${GITHUB_WORKSPACE}/unsigned-handoff/dist"
+          if [[ -e "${dist}" ]]; then
+              echo "::error::Release output directory already exists"
+              exit 1
+          fi
+          mkdir -p "${dist}"
+
+          linux_bundle="${RUNNER_TEMP}/ytqjk-linux-amd64"
+          windows_bundle="${RUNNER_TEMP}/ytqjk-windows-amd64"
+          mkdir -p \
+              "${linux_bundle}/bin" "${linux_bundle}/plugins" \
+              "${windows_bundle}/bin" "${windows_bundle}/plugins"
+
+          release_ldflags="-s -w"
+          release_ldflags+=" -X github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo.ReleaseEd25519PublicKeyDERBase64=${RELEASE_PUBLIC_KEY_DER_B64}"
+          release_ldflags+=" -X github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo.ReleaseEd25519PublicKeySHA256=${RELEASE_PUBLIC_KEY_SHA256}"
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+              go build -trimpath -ldflags "${release_ldflags}" \
+              -o "${linux_bundle}/bin/ytqjk" ./cmd/ytqjk
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+              go build -trimpath -ldflags "${release_ldflags}" \
+              -o "${windows_bundle}/bin/ytqjk.exe" ./cmd/ytqjk
+
+          for bundle in "${linux_bundle}" "${windows_bundle}"; do
+              cp -R plugins/ytqjk-agentic-orchestrator "${bundle}/plugins/"
+              cp -R plugins/ytqjk-knowledge "${bundle}/plugins/"
+          done
+          cp install.sh "${linux_bundle}/install.sh"
+          cp install.ps1 install.cmd "${windows_bundle}/"
+          chmod 755 "${linux_bundle}/bin/ytqjk" "${linux_bundle}/install.sh"
+
+          linux_sha="$(sha256sum "${linux_bundle}/bin/ytqjk" | awk '{print $1}')"
+          printf '%s\n' \
+              "{\"schema\":\"ytqjk-release-bundle/v1\",\"version\":\"${RELEASE_VERSION}\",\"os\":\"linux\",\"arch\":\"amd64\",\"binary_sha256\":\"${linux_sha}\"}" \
+              > "${linux_bundle}/release-manifest.json"
+          windows_sha="$(sha256sum "${windows_bundle}/bin/ytqjk.exe" | awk '{print $1}')"
+          printf '%s\n' \
+              "{\"schema\":\"ytqjk-release-bundle/v1\",\"version\":\"${RELEASE_VERSION}\",\"os\":\"windows\",\"arch\":\"amd64\",\"binary_sha256\":\"${windows_sha}\"}" \
+              > "${windows_bundle}/release-manifest.json"
+
+          cp "${linux_bundle}/bin/ytqjk" "${dist}/ytqjk-linux-amd64"
+          cp "${windows_bundle}/bin/ytqjk.exe" "${dist}/ytqjk-windows-amd64.exe"
+          source_date_epoch="$(git show -s --format=%ct "${RELEASE_COMMIT}")"
+          tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 \
+              --numeric-owner -cf - -C "${linux_bundle}" . \
+              | gzip -n > "${dist}/ytqjk-linux-amd64.tar.gz"
+          find "${windows_bundle}" -exec touch -h -d "@${source_date_epoch}" {} +
+          (
+              cd "${windows_bundle}"
+              find . -type f -print \
+                  | LC_ALL=C sort \
+                  | zip -X -q "${dist}/ytqjk-windows-amd64.zip" -@
+          )
+
+          rollback_commit="$(git rev-parse "${PYTHON_ROLLBACK_TAG}^{commit}")"
+          if [[ "${rollback_commit}" != "${PYTHON_ROLLBACK_COMMIT}" ]]; then
+              echo "::error::Frozen Python rollback tag moved"
+              exit 1
+          fi
+          python_count="$(
+              git ls-tree -r --name-only "${PYTHON_ROLLBACK_TAG}" \
+                  | awk '/\.py$/ { count++ } END { print count + 0 }'
+          )"
+          if [[ "${python_count}" -eq 0 ]]; then
+              echo "::error::Frozen Python rollback source is empty"
+              exit 1
+          fi
+          git archive \
+              --format=zip \
+              --prefix="ytqjk-python-rollback-v0.6.10/" \
+              --output="${dist}/ytqjk-python-rollback.zip" \
+              "${PYTHON_ROLLBACK_TAG}"
+
+          module_path="$(go list -m -f '{{.Path}}')"
+          go_version="$(go env GOVERSION)"
+          components_json="$(
+              go list -m -json all | jq -sc '
+                def effective:
+                  if .Replace then
+                    {path:.Replace.Path,version:(.Replace.Version // .Version // "local")}
+                  else
+                    {path:.Path,version:(.Version // "unknown")}
+                  end;
+                map(select(.Main != true) | effective)
+                | unique_by([.path,.version])
+                | map({type:"library",name:.path,version:.version,
+                    "bom-ref":("go-module:" + .path + "@" + .version)})
+                | sort_by(."bom-ref")'
+          )"
+          write_sbom() {
+              local output="$1"
+              jq -cnS \
+                  --arg module "${module_path}" \
+                  --arg version "${RELEASE_VERSION}" \
+                  --arg commit "${RELEASE_COMMIT}" \
+                  --arg go_version "${go_version}" \
+                  --argjson components "${components_json}" \
+                  '{bomFormat:"CycloneDX",specVersion:"1.5",version:1,
+                    metadata:{component:{type:"application",name:$module,version:$version,
+                      "bom-ref":("go-module:" + $module + "@" + $version)},
+                      properties:[{name:"ytqjk.release.commit",value:$commit},
+                        {name:"ytqjk.go.toolchain",value:$go_version}]},
+                    components:$components}' > "${output}"
+          }
+          write_sbom "${dist}/SBOM.cdx.json"
+          sbom_check="${RUNNER_TEMP}/SBOM.cdx.check.json"
+          write_sbom "${sbom_check}"
+          if ! cmp "${dist}/SBOM.cdx.json" "${sbom_check}"; then
+              echo "::error::CycloneDX generation is not deterministic"
+              exit 1
+          fi
+          jq -e \
+              '.bomFormat == "CycloneDX" and .specVersion == "1.5" and
+                .version == 1 and .metadata.component.type == "application" and
+                (.components | type == "array")' \
+              "${dist}/SBOM.cdx.json" > /dev/null
+
+          expected_assets="${RUNNER_TEMP}/unsigned-assets.txt"
+          actual_assets="${RUNNER_TEMP}/actual-unsigned-assets.txt"
+          printf '%s\n' \
+              SBOM.cdx.json \
+              ytqjk-linux-amd64 \
+              ytqjk-linux-amd64.tar.gz \
+              ytqjk-python-rollback.zip \
+              ytqjk-windows-amd64.exe \
+              ytqjk-windows-amd64.zip \
+              | LC_ALL=C sort > "${expected_assets}"
+          find "${dist}" -maxdepth 1 -type f -printf '%f\n' \
+              | LC_ALL=C sort > "${actual_assets}"
+          diff -u "${expected_assets}" "${actual_assets}"
+      - name: Upload unsigned build handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ytqjk-release-unsigned-${{ needs.contract.outputs.commit }}
+          path: unsigned-handoff
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign reviewed release handoff
+    needs: [contract, build]
+    runs-on: ubuntu-latest
+    environment: ytqjk-release-signing
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24.x"
+      - name: Download unsigned build handoff
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: ytqjk-release-unsigned-${{ needs.contract.outputs.commit }}
+          path: unsigned-handoff
+      - name: Canonicalize and sign release manifest
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.contract.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.contract.outputs.commit }}
+          ED25519_PRIVATE_KEY_B64: ${{ secrets.YTQJK_RELEASE_ED25519_PRIVATE_KEY_B64 }}
+          ED25519_KEY_ID: ${{ secrets.YTQJK_RELEASE_ED25519_KEY_ID }}
+          ED25519_PUBLIC_SHA256: ${{ secrets.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+          RELEASE_PUBLIC_KEY_SHA256: ${{ vars.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+          PYTHON_ROLLBACK_TAG: v0.6.10
+          PYTHON_ROLLBACK_COMMIT: 6f3feac1740e24c47b07da2d048185658efb6d09
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${ED25519_PRIVATE_KEY_B64}" ]] || \
+              [[ ! "${ED25519_KEY_ID}" =~ ^[A-Za-z0-9._:-]{1,128}$ ]] || \
+              [[ ! "${ED25519_PUBLIC_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
+              [[ ! "${RELEASE_PUBLIC_KEY_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Approved Ed25519 signing secrets are missing or invalid"
+              exit 1
+          fi
+          unsigned="${GITHUB_WORKSPACE}/unsigned-handoff/dist"
+          signed="${GITHUB_WORKSPACE}/signed-handoff"
+          dist="${signed}/dist"
+          mkdir -p "${dist}"
+          cp -R "${unsigned}/." "${dist}/"
+
+          expected_unsigned="${RUNNER_TEMP}/expected-unsigned-assets.txt"
+          actual_unsigned="${RUNNER_TEMP}/actual-unsigned-assets.txt"
+          printf '%s\n' \
+              SBOM.cdx.json \
+              ytqjk-linux-amd64 \
+              ytqjk-linux-amd64.tar.gz \
+              ytqjk-python-rollback.zip \
+              ytqjk-windows-amd64.exe \
+              ytqjk-windows-amd64.zip \
+              | LC_ALL=C sort > "${expected_unsigned}"
+          find "${dist}" -maxdepth 1 -type f -printf '%f\n' \
+              | LC_ALL=C sort > "${actual_unsigned}"
+          diff -u "${expected_unsigned}" "${actual_unsigned}"
+
+          umask 077
+          key_file="${RUNNER_TEMP}/ytqjk-release-ed25519.pem"
+          public_file="${signed}/release-public.pem"
+          public_der="${RUNNER_TEMP}/ytqjk-release-ed25519-public.der"
+          key_info="${RUNNER_TEMP}/ytqjk-release-ed25519-public.txt"
+          signature_binary="${RUNNER_TEMP}/ytqjk-release-manifest.sig"
+          cleanup_signing_key() {
+              rm -f "${key_file}" "${public_der}" "${key_info}" "${signature_binary}"
+          }
+          trap cleanup_signing_key EXIT HUP INT TERM
+
+          if ! printf '%s' "${ED25519_PRIVATE_KEY_B64}" \
+              | base64 --decode > "${key_file}"; then
+              echo "::error::Ed25519 private key secret is not valid base64"
+              exit 1
+          fi
+          if ! openssl pkey -in "${key_file}" -pubout -out "${public_file}"; then
+              echo "::error::Ed25519 private key PEM is invalid or encrypted"
+              exit 1
+          fi
+          openssl pkey -pubin -in "${public_file}" -text -noout > "${key_info}"
+          if ! grep -Fiq 'ED25519' "${key_info}"; then
+              echo "::error::Release signing key is not Ed25519"
+              exit 1
+          fi
+          openssl pkey -pubin -in "${public_file}" -outform DER -out "${public_der}"
+          public_sha256="$(sha256sum "${public_der}" | awk '{print $1}')"
+          if ! node -e '
+            const { timingSafeEqual } = require("node:crypto");
+            const actual = Buffer.from(process.argv[1], "hex");
+            const expected = Buffer.from(process.argv[2], "hex");
+            if (actual.length !== 32 || expected.length !== 32 ||
+                !timingSafeEqual(actual, expected)) process.exit(1);
+          ' "${public_sha256}" "${ED25519_PUBLIC_SHA256}" || \
+              [[ "${public_sha256}" != "${RELEASE_PUBLIC_KEY_SHA256}" ]]; then
+              echo "::error::Derived Ed25519 public key does not match the approved digest"
+              exit 1
+          fi
+
+          payload_assets=(
+              SBOM.cdx.json
+              ytqjk-linux-amd64
+              ytqjk-linux-amd64.tar.gz
+              ytqjk-python-rollback.zip
+              ytqjk-windows-amd64.exe
+              ytqjk-windows-amd64.zip
+          )
+          payload_json="$(
+              for asset in "${payload_assets[@]}"; do
+                  digest="$(sha256sum "${dist}/${asset}" | awk '{print $1}')"
+                  size="$(stat -c '%s' "${dist}/${asset}")"
+                  jq -cn \
+                      --arg name "${asset}" \
+                      --arg sha256 "${digest}" \
+                      --argjson size "${size}" \
+                      '{name:$name,sha256:$sha256,size:$size}'
+              done | jq -sc 'sort_by(.name)'
+          )"
+          manifest_source="${RUNNER_TEMP}/release-manifest.source.json"
+          jq -n \
+              --arg version "${RELEASE_VERSION}" \
+              --arg tag "${{ needs.contract.outputs.tag }}" \
+              --arg commit "${RELEASE_COMMIT}" \
+              --arg rollback_tag "${PYTHON_ROLLBACK_TAG}" \
+              --arg rollback_commit "${PYTHON_ROLLBACK_COMMIT}" \
+              --arg key_id "${ED25519_KEY_ID}" \
+              --arg public_sha256 "${public_sha256}" \
+              --argjson payload_assets "${payload_json}" \
+              '{schema:"ytqjk-release/v1",version:$version,tag:$tag,commit:$commit,
+                payload_assets:$payload_assets,
+                rollback:{asset:"ytqjk-python-rollback.zip",tag:$rollback_tag,commit:$rollback_commit},
+                sbom:{asset:"SBOM.cdx.json",format:"CycloneDX",spec_version:"1.5"},
+                signature:{asset:"signatures.json",algorithm:"Ed25519",key_id:$key_id,
+                  public_key_sha256:$public_sha256,signed_asset:"release-manifest.json"},
+                stable_publication:{status:"REAL_ACCEPTANCE_REQUIRED",
+                  required_checks:["clean_install","old_to_go","go_to_python",
+                    "python_to_same_go","zero_data_loss","jit_authorization"]}}' \
+              > "${manifest_source}"
+
+          canonicalizer="${RUNNER_TEMP}/rfc8785.mjs"
+          tee "${canonicalizer}" > /dev/null << 'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          function assertWellFormed(value) {
+            for (let index = 0; index < value.length; index += 1) {
+              const unit = value.charCodeAt(index);
+              if (unit >= 0xd800 && unit <= 0xdbff) {
+                const next = value.charCodeAt(index + 1);
+                if (!(next >= 0xdc00 && next <= 0xdfff)) {
+                  throw new Error('JCS input contains an unpaired high surrogate');
+                }
+                index += 1;
+              } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+                throw new Error('JCS input contains an unpaired low surrogate');
+              }
+            }
+          }
+
+          function canonicalize(value) {
+            if (value === null || typeof value === 'boolean') return JSON.stringify(value);
+            if (typeof value === 'number') {
+              if (!Number.isFinite(value)) throw new Error('JCS input contains a non-finite number');
+              return JSON.stringify(value);
+            }
+            if (typeof value === 'string') {
+              assertWellFormed(value);
+              return JSON.stringify(value);
+            }
+            if (Array.isArray(value)) {
+              return `[${value.map(canonicalize).join(',')}]`;
+            }
+            if (typeof value === 'object') {
+              return `{${Object.keys(value).sort().map((key) => {
+                assertWellFormed(key);
+                return `${JSON.stringify(key)}:${canonicalize(value[key])}`;
+              }).join(',')}}`;
+            }
+            throw new Error('JCS input contains an unsupported value');
+          }
+
+          const source = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          writeFileSync(process.argv[3], canonicalize(source), { encoding: 'utf8' });
+          NODE
+          node "${canonicalizer}" "${manifest_source}" "${dist}/release-manifest.json"
+          canonical_check="${RUNNER_TEMP}/release-manifest.canonical-check.json"
+          node "${canonicalizer}" "${dist}/release-manifest.json" "${canonical_check}"
+          if ! cmp "${dist}/release-manifest.json" "${canonical_check}"; then
+              echo "::error::Release manifest is not stable RFC8785/JCS bytes"
+              exit 1
+          fi
+          final_byte="$(tail -c 1 "${dist}/release-manifest.json" | od -An -tx1 | tr -d ' \n')"
+          if [[ -z "${final_byte}" ]] || [[ "${final_byte}" == "0a" ]] || \
+              [[ "${final_byte}" == "0d" ]]; then
+              echo "::error::Canonical release manifest must not have a trailing newline"
+              exit 1
+          fi
+
+          payload_sha256="$(sha256sum "${dist}/release-manifest.json" | awk '{print $1}')"
+          if ! openssl pkeyutl \
+              -sign -rawin \
+              -inkey "${key_file}" \
+              -in "${dist}/release-manifest.json" \
+              -out "${signature_binary}"; then
+              echo "::error::Ed25519 release manifest signing failed"
+              exit 1
+          fi
+          if ! openssl pkeyutl \
+              -verify -rawin -pubin \
+              -inkey "${public_file}" \
+              -in "${dist}/release-manifest.json" \
+              -sigfile "${signature_binary}"; then
+              echo "::error::Ed25519 release manifest verification failed"
+              exit 1
+          fi
+          if [[ "$(stat -c '%s' "${signature_binary}")" -ne 64 ]]; then
+              echo "::error::Ed25519 signature length is invalid"
+              exit 1
+          fi
+          signature_base64="$(base64 -w 0 "${signature_binary}")"
+          signature_source="${RUNNER_TEMP}/signatures.source.json"
+          jq -n \
+              --arg key_id "${ED25519_KEY_ID}" \
+              --arg public_sha256 "${public_sha256}" \
+              --arg payload_sha256 "${payload_sha256}" \
+              --arg signature_base64 "${signature_base64}" \
+              '{schema:"ytqjk-release-signatures/v1",algorithm:"Ed25519",key_id:$key_id,
+                public_key_sha256:$public_sha256,payload:"release-manifest.json",
+                payload_sha256:$payload_sha256,signature_base64:$signature_base64}' \
+              > "${signature_source}"
+          node "${canonicalizer}" "${signature_source}" "${dist}/signatures.json"
+
+          checksum_assets=(
+              SBOM.cdx.json
+              release-manifest.json
+              signatures.json
+              ytqjk-linux-amd64
+              ytqjk-linux-amd64.tar.gz
+              ytqjk-python-rollback.zip
+              ytqjk-windows-amd64.exe
+              ytqjk-windows-amd64.zip
+          )
+          (
+              cd "${dist}"
+              sha256sum "${checksum_assets[@]}" > SHA256SUMS
+              sha256sum -c SHA256SUMS
+          )
+          expected_signed="${RUNNER_TEMP}/expected-signed-assets.txt"
+          actual_signed="${RUNNER_TEMP}/actual-signed-assets.txt"
+          printf '%s\n' \
+              SBOM.cdx.json \
+              SHA256SUMS \
+              release-manifest.json \
+              signatures.json \
+              ytqjk-linux-amd64 \
+              ytqjk-linux-amd64.tar.gz \
+              ytqjk-python-rollback.zip \
+              ytqjk-windows-amd64.exe \
+              ytqjk-windows-amd64.zip \
+              | LC_ALL=C sort > "${expected_signed}"
+          find "${dist}" -maxdepth 1 -type f -printf '%f\n' \
+              | LC_ALL=C sort > "${actual_signed}"
+          diff -u "${expected_signed}" "${actual_signed}"
+      - name: Upload signed release handoff
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ytqjk-release-signed-${{ needs.contract.outputs.commit }}
+          path: signed-handoff
+          if-no-files-found: error
+          retention-days: 1
+
+  upload:
+    name: Create verified draft release
+    if: github.event_name == 'workflow_dispatch'
+    needs: [contract, tests, sign]
+    runs-on: ubuntu-latest
+    environment: ytqjk-release-publish
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24.x"
+      - name: Download signed release handoff
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: ytqjk-release-signed-${{ needs.contract.outputs.commit }}
+          path: signed-handoff
+      - name: Verify signed handoff and public-key pin
+        shell: bash
+        env:
+          ED25519_KEY_ID: ${{ secrets.YTQJK_RELEASE_ED25519_KEY_ID }}
+          ED25519_PUBLIC_SHA256: ${{ secrets.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+          RELEASE_PUBLIC_KEY_SHA256: ${{ vars.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${ED25519_KEY_ID}" =~ ^[A-Za-z0-9._:-]{1,128}$ ]] || \
+              [[ ! "${ED25519_PUBLIC_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
+              [[ ! "${RELEASE_PUBLIC_KEY_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Approved Ed25519 verification secrets are missing or invalid"
+              exit 1
+          fi
+          dist="${GITHUB_WORKSPACE}/signed-handoff/dist"
+          public_file="${GITHUB_WORKSPACE}/signed-handoff/release-public.pem"
+          expected_assets="${RUNNER_TEMP}/expected-release-assets.txt"
+          actual_assets="${RUNNER_TEMP}/actual-release-assets.txt"
+          printf '%s\n' \
+              SBOM.cdx.json \
+              SHA256SUMS \
+              release-manifest.json \
+              signatures.json \
+              ytqjk-linux-amd64 \
+              ytqjk-linux-amd64.tar.gz \
+              ytqjk-python-rollback.zip \
+              ytqjk-windows-amd64.exe \
+              ytqjk-windows-amd64.zip \
+              | LC_ALL=C sort > "${expected_assets}"
+          find "${dist}" -maxdepth 1 -type f -printf '%f\n' \
+              | LC_ALL=C sort > "${actual_assets}"
+          diff -u "${expected_assets}" "${actual_assets}"
+          test -f "${public_file}"
+
+          canonicalizer="${RUNNER_TEMP}/verify-rfc8785.mjs"
+          tee "${canonicalizer}" > /dev/null << 'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          function assertWellFormed(value) {
+            for (let index = 0; index < value.length; index += 1) {
+              const unit = value.charCodeAt(index);
+              if (unit >= 0xd800 && unit <= 0xdbff) {
+                const next = value.charCodeAt(index + 1);
+                if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error('unpaired surrogate');
+                index += 1;
+              } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+                throw new Error('unpaired surrogate');
+              }
+            }
+          }
+
+          function canonicalize(value) {
+            if (value === null || typeof value === 'boolean') return JSON.stringify(value);
+            if (typeof value === 'number') {
+              if (!Number.isFinite(value)) throw new Error('non-finite number');
+              return JSON.stringify(value);
+            }
+            if (typeof value === 'string') {
+              assertWellFormed(value);
+              return JSON.stringify(value);
+            }
+            if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+            if (typeof value === 'object') {
+              return `{${Object.keys(value).sort().map((key) => {
+                assertWellFormed(key);
+                return `${JSON.stringify(key)}:${canonicalize(value[key])}`;
+              }).join(',')}}`;
+            }
+            throw new Error('unsupported value');
+          }
+
+          const source = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          writeFileSync(process.argv[3], canonicalize(source), { encoding: 'utf8' });
+          NODE
+          canonical_check="${RUNNER_TEMP}/release-manifest.upload-check.json"
+          node "${canonicalizer}" "${dist}/release-manifest.json" "${canonical_check}"
+          cmp "${dist}/release-manifest.json" "${canonical_check}"
+          final_byte="$(tail -c 1 "${dist}/release-manifest.json" | od -An -tx1 | tr -d ' \n')"
+          if [[ -z "${final_byte}" ]] || [[ "${final_byte}" == "0a" ]] || \
+              [[ "${final_byte}" == "0d" ]]; then
+              echo "::error::Canonical release manifest must not have a trailing newline"
+              exit 1
+          fi
+
+          public_der="${RUNNER_TEMP}/verified-release-public.der"
+          signature_binary="${RUNNER_TEMP}/verified-release-manifest.sig"
+          openssl pkey -pubin -in "${public_file}" -outform DER -out "${public_der}"
+          public_sha256="$(sha256sum "${public_der}" | awk '{print $1}')"
+          if ! node -e '
+            const { timingSafeEqual } = require("node:crypto");
+            const actual = Buffer.from(process.argv[1], "hex");
+            const expected = Buffer.from(process.argv[2], "hex");
+            if (actual.length !== 32 || expected.length !== 32 ||
+                !timingSafeEqual(actual, expected)) process.exit(1);
+          ' "${public_sha256}" "${ED25519_PUBLIC_SHA256}" || \
+              [[ "${public_sha256}" != "${RELEASE_PUBLIC_KEY_SHA256}" ]]; then
+              echo "::error::Handoff public key does not match the approved digest"
+              exit 1
+          fi
+          payload_sha256="$(sha256sum "${dist}/release-manifest.json" | awk '{print $1}')"
+          jq -e \
+              --arg version "${{ needs.contract.outputs.version }}" \
+              --arg tag "${{ needs.contract.outputs.tag }}" \
+              --arg commit "${{ needs.contract.outputs.commit }}" \
+              --arg key_id "${ED25519_KEY_ID}" \
+              --arg public_sha256 "${public_sha256}" \
+              '.schema == "ytqjk-release/v1" and .version == $version and
+                .tag == $tag and .commit == $commit and
+                .rollback == {asset:"ytqjk-python-rollback.zip",tag:"v0.6.10",
+                  commit:"6f3feac1740e24c47b07da2d048185658efb6d09"} and
+                .sbom == {asset:"SBOM.cdx.json",format:"CycloneDX",spec_version:"1.5"} and
+                .signature == {asset:"signatures.json",algorithm:"Ed25519",key_id:$key_id,
+                  public_key_sha256:$public_sha256,signed_asset:"release-manifest.json"} and
+                .stable_publication.status == "REAL_ACCEPTANCE_REQUIRED" and
+                (.payload_assets | length == 6)' \
+              "${dist}/release-manifest.json" > /dev/null
+          jq -e \
+              --arg key_id "${ED25519_KEY_ID}" \
+              --arg public_sha256 "${public_sha256}" \
+              --arg payload_sha256 "${payload_sha256}" \
+              '.schema == "ytqjk-release-signatures/v1" and .algorithm == "Ed25519" and
+                .key_id == $key_id and .public_key_sha256 == $public_sha256 and
+                .payload == "release-manifest.json" and .payload_sha256 == $payload_sha256 and
+                (.signature_base64 | type == "string" and length > 0)' \
+              "${dist}/signatures.json" > /dev/null
+          jq -r '.signature_base64' "${dist}/signatures.json" \
+              | base64 --decode > "${signature_binary}"
+          if [[ "$(stat -c '%s' "${signature_binary}")" -ne 64 ]]; then
+              echo "::error::Ed25519 signature length is invalid"
+              exit 1
+          fi
+          openssl pkeyutl \
+              -verify -rawin -pubin \
+              -inkey "${public_file}" \
+              -in "${dist}/release-manifest.json" \
+              -sigfile "${signature_binary}"
+          (
+              cd "${dist}"
+              sha256sum -c SHA256SUMS
+          )
+          for asset in $(jq -r '.payload_assets[].name' "${dist}/release-manifest.json"); do
+              expected_sha="$(
+                  jq -r --arg asset "${asset}" \
+                      '.payload_assets[] | select(.name == $asset) | .sha256' \
+                      "${dist}/release-manifest.json"
+              )"
+              expected_size="$(
+                  jq -r --arg asset "${asset}" \
+                      '.payload_assets[] | select(.name == $asset) | .size' \
+                      "${dist}/release-manifest.json"
+              )"
+              test "$(sha256sum "${dist}/${asset}" | awk '{print $1}')" = "${expected_sha}"
+              test "$(stat -c '%s' "${dist}/${asset}")" = "${expected_size}"
+          done
+      - name: Create or reuse draft and verify exact remote assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ED25519_KEY_ID: ${{ secrets.YTQJK_RELEASE_ED25519_KEY_ID }}
+          ED25519_PUBLIC_SHA256: ${{ secrets.YTQJK_RELEASE_ED25519_PUBLIC_SHA256 }}
+          RELEASE_COMMIT: ${{ needs.contract.outputs.commit }}
+          RELEASE_TAG: ${{ needs.contract.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          tag="${RELEASE_TAG}"
           version="${{ needs.contract.outputs.version }}"
-          if release_state="$(
-              gh release view "${tag}" \
-                  --repo "${GITHUB_REPOSITORY}" \
-                  --json isDraft,isPrerelease \
-                  --jq '[.isDraft, .isPrerelease] | @tsv' \
-                  2> /dev/null
-          )"; then
-              if [[ "${release_state}" != $'false\tfalse' ]]; then
-                  echo "::error::Existing release is not stable"
+          dist="${GITHUB_WORKSPACE}/signed-handoff/dist"
+          public_file="${GITHUB_WORKSPACE}/signed-handoff/release-public.pem"
+          release_json="${RUNNER_TEMP}/release.json"
+          release_error="${RUNNER_TEMP}/release.error"
+          release_api="repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"
+          resolve_remote_tag_commit() {
+              local object_json object_sha object_type depth
+              object_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}")"
+              object_sha="$(jq -er '.object.sha' <<< "${object_json}")"
+              object_type="$(jq -er '.object.type' <<< "${object_json}")"
+              depth=0
+              while [[ "${object_type}" == "tag" ]]; do
+                  depth=$((depth + 1))
+                  if [[ "${depth}" -gt 8 ]]; then
+                      echo "::error::Release tag annotation chain is unexpectedly deep" >&2
+                      return 1
+                  fi
+                  object_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}")"
+                  object_sha="$(jq -er '.object.sha' <<< "${object_json}")"
+                  object_type="$(jq -er '.object.type' <<< "${object_json}")"
+              done
+              if [[ "${object_type}" != "commit" ]] || \
+                  [[ ! "${object_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+                  echo "::error::Release tag does not peel to a commit" >&2
+                  return 1
+              fi
+              printf '%s\n' "${object_sha}"
+          }
+          assert_remote_tag_commit() {
+              local actual_commit
+              actual_commit="$(resolve_remote_tag_commit)"
+              if [[ "${actual_commit}" != "${RELEASE_COMMIT}" ]]; then
+                  echo "::error::Remote release tag moved away from the reviewed commit" >&2
+                  return 1
+              fi
+          }
+
+          assert_remote_tag_commit
+          if gh api "${release_api}" > "${release_json}" 2> "${release_error}"; then
+              if [[ "$(jq -r '.draft' "${release_json}")" != true ]] || \
+                  [[ "$(jq -r '.prerelease' "${release_json}")" != false ]]; then
+                  echo "::error::Existing release is not an unpublished draft"
                   exit 1
               fi
           else
+              if ! grep -Fq '(HTTP 404)' "${release_error}"; then
+                  cat "${release_error}" >&2
+                  exit 1
+              fi
               gh release create "${tag}" \
                   --repo "${GITHUB_REPOSITORY}" \
                   --verify-tag \
-                  --target "${GITHUB_SHA}" \
+                  --target "${{ needs.contract.outputs.commit }}" \
                   --title "YTQJK v${version}" \
                   --generate-notes \
                   --fail-on-no-commits \
-                  --latest
+                  --draft
           fi
 
-          gh release upload "${tag}" dist/* \
-              --repo "${GITHUB_REPOSITORY}" --clobber
+          assets=(
+              SBOM.cdx.json
+              SHA256SUMS
+              release-manifest.json
+              signatures.json
+              ytqjk-linux-amd64
+              ytqjk-linux-amd64.tar.gz
+              ytqjk-python-rollback.zip
+              ytqjk-windows-amd64.exe
+              ytqjk-windows-amd64.zip
+          )
+          upload_paths=()
+          for asset in "${assets[@]}"; do
+              upload_paths+=("${dist}/${asset}")
+          done
+          expected_assets="${RUNNER_TEMP}/expected-assets.txt"
+          actual_assets="${RUNNER_TEMP}/actual-assets.txt"
+          printf '%s\n' "${assets[@]}" | LC_ALL=C sort > "${expected_assets}"
+          gh api "${release_api}" > "${release_json}"
+          existing_asset_count="$(jq '.assets | length' "${release_json}")"
+          if [[ "${existing_asset_count}" -eq 0 ]]; then
+              gh release upload "${tag}" "${upload_paths[@]}" \
+                  --repo "${GITHUB_REPOSITORY}"
+          else
+              jq -r '.assets[].name' "${release_json}" \
+                  | LC_ALL=C sort > "${actual_assets}"
+              if ! diff -u "${expected_assets}" "${actual_assets}"; then
+                  echo "::error::Existing draft has a partial or unexpected asset set"
+                  exit 1
+              fi
+          fi
+          gh api "${release_api}" --jq '.assets[].name' \
+              | LC_ALL=C sort > "${actual_assets}"
+          if ! diff -u "${expected_assets}" "${actual_assets}"; then
+              echo "::error::Draft release asset set is not exact"
+              exit 1
+          fi
+
+          verify_root="${RUNNER_TEMP}/verified-release-assets"
+          mkdir "${verify_root}"
+          while IFS=$'\t' read -r asset_id asset_name; do
+              gh api \
+                  -H 'Accept: application/octet-stream' \
+                  "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+                  > "${verify_root}/${asset_name}"
+          done < <(gh api "${release_api}" --jq '.assets[] | [.id,.name] | @tsv')
+          for asset in "${assets[@]}"; do
+              cmp "${dist}/${asset}" "${verify_root}/${asset}"
+          done
+
+          public_der="${RUNNER_TEMP}/remote-release-public.der"
+          signature_binary="${RUNNER_TEMP}/remote-release-manifest.sig"
+          openssl pkey -pubin -in "${public_file}" -outform DER -out "${public_der}"
+          public_sha256="$(sha256sum "${public_der}" | awk '{print $1}')"
+          node -e '
+            const { timingSafeEqual } = require("node:crypto");
+            const actual = Buffer.from(process.argv[1], "hex");
+            const expected = Buffer.from(process.argv[2], "hex");
+            if (actual.length !== 32 || expected.length !== 32 ||
+                !timingSafeEqual(actual, expected)) process.exit(1);
+          ' "${public_sha256}" "${ED25519_PUBLIC_SHA256}"
+          payload_sha256="$(sha256sum "${verify_root}/release-manifest.json" | awk '{print $1}')"
+          jq -e \
+              --arg key_id "${ED25519_KEY_ID}" \
+              --arg public_sha256 "${public_sha256}" \
+              --arg payload_sha256 "${payload_sha256}" \
+              '.key_id == $key_id and .public_key_sha256 == $public_sha256 and
+                .payload_sha256 == $payload_sha256' \
+              "${verify_root}/signatures.json" > /dev/null
+          jq -r '.signature_base64' "${verify_root}/signatures.json" \
+              | base64 --decode > "${signature_binary}"
+          openssl pkeyutl \
+              -verify -rawin -pubin \
+              -inkey "${public_file}" \
+              -in "${verify_root}/release-manifest.json" \
+              -sigfile "${signature_binary}"
+          (
+              cd "${verify_root}"
+              sha256sum -c SHA256SUMS
+          )
+
+          assert_remote_tag_commit
+          gh api "${release_api}" > "${release_json}"
+          if [[ "$(jq -r '.draft' "${release_json}")" != true ]] || \
+              [[ "$(jq -r '.prerelease' "${release_json}")" != false ]]; then
+              echo "::error::Verified release is no longer an unpublished draft"
+              exit 1
+          fi
 
           release_url="$(
               gh release view "${tag}" \
@@ -137,4 +908,5 @@ jobs:
                   --json url \
                   --jq .url
           )"
-          echo "Published ${release_url}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "Verified draft ${release_url}" >> "${GITHUB_STEP_SUMMARY}"
+          echo "REAL_ACCEPTANCE_REQUIRED: clean install, old-to-Go, Go-to-Python, Python-to-same-Go, zero-loss receipts, and JIT authorization remain mandatory." >> "${GITHUB_STEP_SUMMARY}"

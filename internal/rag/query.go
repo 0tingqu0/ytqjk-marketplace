@@ -158,6 +158,9 @@ func queryIndex(indexPath, manifestPath, query string, limit int, scope string) 
 	var results []QueryResult
 	maxLexical := 0.0
 	for _, chunk := range index.Chunks {
+		if candidatePath(chunk.Path) {
+			continue
+		}
 		lexical := scoreTerms(queryTerms, termFrequency(chunk.Path+" "+chunk.Content))
 		vectorScore := 0.0
 		if vectorReady {

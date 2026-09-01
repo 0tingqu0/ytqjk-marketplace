@@ -6,27 +6,70 @@ on:
       - "**"
   pull_request:
   workflow_call:
+    inputs:
+      checkout_ref:
+        description: Exact validated commit to test when called by release.yml
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: ${{ matrix.os }} / Go ${{ matrix.go }}
+    name: ${{ matrix.platform }} / Go ${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        go: ["1.25.x", "1.27.x"]
+        include:
+          - platform: Linux amd64 / WSL2
+            os: ubuntu-latest
+            go: "1.25.x"
+            goos: linux
+            goarch: amd64
+          - platform: Linux amd64 / WSL2
+            os: ubuntu-latest
+            go: "1.27.0"
+            goos: linux
+            goarch: amd64
+          - platform: Windows amd64
+            os: windows-latest
+            go: "1.25.x"
+            goos: windows
+            goarch: amd64
+          - platform: Windows amd64
+            os: windows-latest
+            go: "1.27.0"
+            goos: windows
+            goarch: amd64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+          persist-credentials: false
+      - name: Verify caller-selected checkout
+        if: inputs.checkout_ref != ''
+        shell: pwsh
+        env:
+          EXPECTED_CHECKOUT: ${{ inputs.checkout_ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_CHECKOUT) {
+            throw 'Reusable test checkout does not match the validated release commit.'
+          }
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: ${{ matrix.go }}
           cache: true
-      - name: Run complete Go suite
+      - name: Enforce tracked Go-only runtime
+        run: go test -count=1 ./internal/ciguard
+      - name: Run complete Go suite and migration guard
         run: go test ./...
       - name: Build CLI
         run: go build -trimpath ./cmd/ytqjk
@@ -34,21 +77,348 @@ jobs:
         shell: bash
         if: runner.os != 'Windows'
         run: sh ./install.sh --mode knowledge-only --target-root "$RUNNER_TEMP/ytqjk-target" --project-bootstrap off --dashboard-service off --json
+      - name: Verify self-contained Linux release bundle
+        shell: bash
+        if: matrix.goos == 'linux' && matrix.go == '1.27.0'
+        run: |
+          set -euo pipefail
+
+          bundle="$RUNNER_TEMP/ytqjk-bundle"
+          archive="$RUNNER_TEMP/ytqjk-linux-amd64.tar.gz"
+          extracted="$RUNNER_TEMP/ytqjk-extracted"
+          mkdir -p "$bundle/bin" "$bundle/plugins" "$extracted"
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags '-s -w' -o "$bundle/bin/ytqjk" ./cmd/ytqjk
+          cp -R plugins/ytqjk-agentic-orchestrator "$bundle/plugins/"
+          cp -R plugins/ytqjk-knowledge "$bundle/plugins/"
+          cp install.sh "$bundle/install.sh"
+          chmod 755 "$bundle/bin/ytqjk" "$bundle/install.sh"
+          version="$(go run ./cmd/ytqjk version)"
+          binary_sha="$(sha256sum "$bundle/bin/ytqjk" | awk '{print $1}')"
+          printf '%s\n' \
+            "{\"schema\":\"ytqjk-release-bundle/v1\",\"version\":\"${version}\",\"os\":\"linux\",\"arch\":\"amd64\",\"binary_sha256\":\"${binary_sha}\"}" \
+            > "$bundle/release-manifest.json"
+          tar -czf "$archive" -C "$bundle" .
+          tar -xzf "$archive" -C "$extracted"
+
+          stub="$RUNNER_TEMP/no-go"
+          sentinel="$RUNNER_TEMP/go-was-invoked"
+          mkdir -p "$stub"
+          printf '%s\n' '#!/usr/bin/env sh' 'touch "$YTQJK_GO_SENTINEL"' 'exit 97' > "$stub/go"
+          chmod 755 "$stub/go"
+          export PATH="$stub:/usr/bin:/bin"
+          export YTQJK_GO_SENTINEL="$sentinel"
+          export XDG_DATA_HOME="$RUNNER_TEMP/ytqjk-data"
+          first="$RUNNER_TEMP/ytqjk-first.json"
+          second="$RUNNER_TEMP/ytqjk-second.json"
+          common_args=(
+            --mode knowledge-only
+            --target-root "$RUNNER_TEMP/ytqjk-target-bundle"
+            --codex-root "$RUNNER_TEMP/ytqjk-codex"
+            --knowledge-root "$RUNNER_TEMP/ytqjk-knowledge"
+            --codex-import off
+            --project-bootstrap off
+            --dashboard-service off
+            --apply --yes --json
+          )
+          tampered="$RUNNER_TEMP/ytqjk-linux-tampered"
+          tamper_sentinel="$RUNNER_TEMP/tampered-linux-binary-executed"
+          tamper_proof="$RUNNER_TEMP/tampered-linux-binary-proof"
+          cp -R "$extracted" "$tampered"
+          printf '%s\n' \
+            '#!/usr/bin/env sh' \
+            ': > "$YTQJK_TAMPER_SENTINEL"' \
+            'printf "%s\\n" "0.7.0"' \
+            > "$tampered/bin/ytqjk"
+          chmod 755 "$tampered/bin/ytqjk"
+          YTQJK_TAMPER_SENTINEL="$tamper_proof" "$tampered/bin/ytqjk" version >/dev/null
+          test -f "$tamper_proof"
+          rm -f "$tamper_proof"
+          set +e
+          YTQJK_TAMPER_SENTINEL="$tamper_sentinel" \
+            sh "$tampered/install.sh" "${common_args[@]}" \
+            > "$RUNNER_TEMP/tampered-linux.out" \
+            2> "$RUNNER_TEMP/tampered-linux.err"
+          tamper_status=$?
+          set -e
+          test "$tamper_status" -ne 0
+          grep -Fx 'YTQJK: release bundle verification failed.' \
+            "$RUNNER_TEMP/tampered-linux.err"
+          test ! -e "$tamper_sentinel"
+          sh "$extracted/install.sh" "${common_args[@]}" > "$first"
+          sh "$extracted/install.sh" "${common_args[@]}" > "$second"
+          jq -e '.apply.status == "APPLIED" and .apply.changed == true' "$first"
+          jq -e '.apply.status == "APPLIED" and .apply.changed == false' "$second"
+          cmp "$extracted/bin/ytqjk" "$XDG_DATA_HOME/ytqjk/runtime/bin/ytqjk"
+          active_manifest="$XDG_DATA_HOME/ytqjk/runtime/active.json"
+          jq -e \
+            '.schema == "ytqjk-runtime-active/v1" and .version == "0.7.0" and
+             (.generation | test("^[0-9a-f]{64}$")) and
+             (.binary_sha256 | test("^[0-9a-f]{64}$"))' \
+            "$active_manifest"
+          generation="$(jq -r '.generation' "$active_manifest")"
+          generation_binary="$XDG_DATA_HOME/ytqjk/runtime/generations/$generation/bin/ytqjk"
+          cmp "$extracted/bin/ytqjk" "$generation_binary"
+          test "$(sha256sum "$generation_binary" | awk '{print $1}')" = \
+            "$(jq -r '.binary_sha256' "$active_manifest")"
+          test ! -e "$sentinel"
       - name: Verify installer dry run on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./install.ps1 --mode knowledge-only --target-root "$env:RUNNER_TEMP\ytqjk-target" --project-bootstrap off --dashboard-service off --json
+      - name: Build self-contained Windows release bundle
+        if: matrix.goos == 'windows' && matrix.go == '1.27.0'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Join-Path $env:RUNNER_TEMP 'ytqjk-windows-bundle'
+          $archive = Join-Path $env:RUNNER_TEMP 'ytqjk-windows-amd64.zip'
+          $extracted = Join-Path $env:RUNNER_TEMP 'ytqjk-windows-extracted'
+          $stub = Join-Path $env:RUNNER_TEMP 'ytqjk-no-go'
+          New-Item -ItemType Directory -Path (Join-Path $bundle 'bin'), (Join-Path $bundle 'plugins'), $extracted, $stub | Out-Null
+          go build -trimpath -ldflags '-s -w' -o (Join-Path $bundle 'bin\ytqjk.exe') ./cmd/ytqjk
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Windows bundle build failed.'
+          }
+          Copy-Item -LiteralPath 'plugins\ytqjk-agentic-orchestrator' -Destination (Join-Path $bundle 'plugins') -Recurse
+          Copy-Item -LiteralPath 'plugins\ytqjk-knowledge' -Destination (Join-Path $bundle 'plugins') -Recurse
+          Copy-Item -LiteralPath 'install.ps1', 'install.cmd' -Destination $bundle
+          $bundleBinary = Join-Path $bundle 'bin\ytqjk.exe'
+          $version = (& $bundleBinary version).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Windows bundle version probe failed.'
+          }
+          $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $bundleBinary).Hash.ToLowerInvariant()
+          $manifest = "{`"schema`":`"ytqjk-release-bundle/v1`",`"version`":`"$version`",`"os`":`"windows`",`"arch`":`"amd64`",`"binary_sha256`":`"$digest`"}`n"
+          [IO.File]::WriteAllText(
+            (Join-Path $bundle 'release-manifest.json'),
+            $manifest,
+            [Text.UTF8Encoding]::new($false)
+          )
+          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $extracted
+          $required = @(
+            'bin\ytqjk.exe',
+            'plugins\ytqjk-agentic-orchestrator\.codex-plugin\plugin.json',
+            'plugins\ytqjk-knowledge\.codex-plugin\plugin.json',
+            'install.ps1',
+            'install.cmd',
+            'release-manifest.json'
+          )
+          foreach ($relative in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $extracted $relative))) {
+              throw "Windows bundle is missing $relative."
+            }
+          }
+          $tampered = Join-Path $env:RUNNER_TEMP 'ytqjk-windows-tampered'
+          New-Item -ItemType Directory -Path $tampered | Out-Null
+          Copy-Item -Path (Join-Path $extracted '*') -Destination $tampered -Recurse
+          $sentinelSource = Join-Path $env:RUNNER_TEMP 'ytqjk-tamper-sentinel.go'
+          $sentinelProgram = @'
+          package main
+
+          import (
+            "fmt"
+            "os"
+          )
+
+          func main() {
+            if path := os.Getenv("YTQJK_TAMPER_SENTINEL"); path != "" {
+              if err := os.WriteFile(path, []byte("executed\n"), 0o600); err != nil {
+                panic(err)
+              }
+            }
+            fmt.Println("0.7.0")
+          }
+          '@
+          [IO.File]::WriteAllText(
+            $sentinelSource,
+            $sentinelProgram,
+            [Text.UTF8Encoding]::new($false)
+          )
+          go build -trimpath -ldflags '-s -w' -o (Join-Path $tampered 'bin\ytqjk.exe') $sentinelSource
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Tampered Windows sentinel build failed.'
+          }
+          $stubCommand = "@echo off`r`ntype nul > `"%YTQJK_GO_SENTINEL%`"`r`nexit /b 97`r`n"
+          $codexStubCommand = '@echo off' + "`r`n" +
+            'echo [{"name":"ytqjk"},{"name":"ytqjk-agentic-orchestrator"},{"name":"ytqjk-knowledge"}]' +
+            "`r`n"
+          Set-Content -LiteralPath (Join-Path $stub 'go.cmd') -Value $stubCommand -Encoding Ascii -NoNewline
+          Set-Content -LiteralPath (Join-Path $stub 'codex.cmd') -Value $codexStubCommand -Encoding Ascii -NoNewline
+          "YTQJK_WINDOWS_BUNDLE=$extracted" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
+          "YTQJK_TAMPERED_WINDOWS_BUNDLE=$tampered" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
+          "YTQJK_GO_SENTINEL=$(Join-Path $env:RUNNER_TEMP 'go-was-invoked')" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
+          "LOCALAPPDATA=$(Join-Path $env:RUNNER_TEMP 'ytqjk-localappdata')" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
+          $stub | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding UTF8
+      - name: Reject a tampered Windows binary before execution
+        if: matrix.goos == 'windows' && matrix.go == '1.27.0'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sentinel = Join-Path $env:RUNNER_TEMP 'tampered-binary-executed'
+          $proof = Join-Path $env:RUNNER_TEMP 'tampered-binary-proof'
+          $tamperedBinary = Join-Path $env:YTQJK_TAMPERED_WINDOWS_BUNDLE 'bin\ytqjk.exe'
+          $env:YTQJK_TAMPER_SENTINEL = $proof
+          & $tamperedBinary version | Out-Null
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $proof -PathType Leaf)) {
+            throw 'The tampered sentinel executable is not a valid execution probe.'
+          }
+          Remove-Item -LiteralPath $proof -Force
+
+          $env:YTQJK_TAMPER_SENTINEL = $sentinel
+          $rejected = $false
+          try {
+            & "$env:YTQJK_TAMPERED_WINDOWS_BUNDLE\install.ps1" `
+              --mode knowledge-only `
+              --target-root "$env:RUNNER_TEMP\ytqjk-tampered-target" `
+              --codex-root "$env:RUNNER_TEMP\ytqjk-tampered-codex" `
+              --knowledge-root "$env:RUNNER_TEMP\ytqjk-tampered-knowledge" `
+              --codex-import off `
+              --project-bootstrap off `
+              --dashboard-service off `
+              --apply --yes --json
+          } catch {
+            if ($_.Exception.Message -ne 'YTQJK release bundle verification failed.') {
+              throw
+            }
+            $rejected = $true
+          }
+          if (-not $rejected) {
+            throw 'The tampered Windows bundle was not rejected.'
+          }
+          if (Test-Path -LiteralPath $sentinel) {
+            throw 'The installer executed a bundle binary before validating its SHA-256.'
+          }
+          if (Test-Path -LiteralPath $env:YTQJK_GO_SENTINEL) {
+            throw 'The tampered Windows bundle invoked Go.'
+          }
+      - name: Install self-contained Windows release bundle
+        if: matrix.goos == 'windows' && matrix.go == '1.27.0'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arguments = @(
+            '--mode', 'codex-only',
+            '--target-root', "$env:RUNNER_TEMP\ytqjk-target-bundle",
+            '--codex-root', "$env:RUNNER_TEMP\ytqjk-codex",
+            '--knowledge-root', "$env:RUNNER_TEMP\ytqjk-knowledge",
+            '--codex-import', 'off',
+            '--project-bootstrap', 'off',
+            '--dashboard-service', 'off',
+            '--apply', '--yes', '--json'
+          )
+          $firstText = (& "$env:YTQJK_WINDOWS_BUNDLE\install.ps1" @arguments | Out-String)
+          if ($LASTEXITCODE -ne 0) {
+            throw 'First Windows bundle installation failed.'
+          }
+          $secondText = (& "$env:YTQJK_WINDOWS_BUNDLE\install.ps1" @arguments | Out-String)
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Second Windows bundle installation failed.'
+          }
+          $first = $firstText | ConvertFrom-Json
+          $second = $secondText | ConvertFrom-Json
+          if ($first.apply.status -ne 'APPLIED' -or -not $first.apply.changed) {
+            throw 'First Windows bundle installation did not report changed=true.'
+          }
+          if ($second.apply.status -ne 'APPLIED' -or $second.apply.changed) {
+            throw 'Second Windows bundle installation did not report changed=false.'
+          }
+          if ($second.apply.codex_plugins.changed) {
+            throw 'Second Windows bundle installation rematerialized unchanged plugins.'
+          }
+      - name: Verify self-contained Windows release bundle
+        if: matrix.goos == 'windows' && matrix.go == '1.27.0'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path -LiteralPath $env:YTQJK_GO_SENTINEL) {
+            throw 'The Windows release bundle invoked Go.'
+          }
+          $expected = Get-FileHash -Algorithm SHA256 -LiteralPath "$env:YTQJK_WINDOWS_BUNDLE\bin\ytqjk.exe"
+          $installed = Get-FileHash -Algorithm SHA256 -LiteralPath "$env:LOCALAPPDATA\YTQJK\runtime\bin\ytqjk.exe"
+          if ($expected.Hash -ne $installed.Hash) {
+            throw 'Installed Windows runtime differs from the release bundle.'
+          }
+          $runtimeRoot = Join-Path $env:LOCALAPPDATA 'YTQJK\runtime'
+          $activeManifestPath = Join-Path $runtimeRoot 'active.json'
+          $active = Get-Content -LiteralPath $activeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($active.schema -ne 'ytqjk-runtime-active/v1' -or
+            $active.version -ne '0.7.0' -or
+            $active.generation -notmatch '^[0-9a-f]{64}$' -or
+            $active.binary_sha256 -notmatch '^[0-9a-f]{64}$') {
+            throw 'Installed Windows runtime manifest is invalid.'
+          }
+          $generationBinary = Join-Path $runtimeRoot "generations\$($active.generation)\bin\ytqjk.exe"
+          $generationDigest = Get-FileHash -Algorithm SHA256 -LiteralPath $generationBinary
+          if ($expected.Hash -ne $generationDigest.Hash -or
+            $active.binary_sha256 -ne $generationDigest.Hash.ToLowerInvariant()) {
+            throw 'Installed Windows runtime generation differs from its manifest.'
+          }
+          $codexRoot = Join-Path $env:RUNNER_TEMP 'ytqjk-codex'
+          $pluginNames = @('ytqjk-agentic-orchestrator', 'ytqjk-knowledge')
+          foreach ($pluginName in $pluginNames) {
+            $sourceRoot = Join-Path $env:YTQJK_WINDOWS_BUNDLE "plugins\$pluginName"
+            $installedRoot = Join-Path $codexRoot "plugins\$pluginName"
+            if (-not (Test-Path -LiteralPath $installedRoot -PathType Container)) {
+              throw "Installed plugin is missing: $pluginName."
+            }
+            $sourceFiles = @(
+              Get-ChildItem -LiteralPath $sourceRoot -Recurse -File |
+                ForEach-Object { [IO.Path]::GetRelativePath($sourceRoot, $_.FullName) } |
+                Sort-Object
+            )
+            $expectedFiles = @($sourceFiles + 'bin\ytqjk.exe' | Sort-Object)
+            $installedFiles = @(
+              Get-ChildItem -LiteralPath $installedRoot -Recurse -File |
+                ForEach-Object { [IO.Path]::GetRelativePath($installedRoot, $_.FullName) } |
+                Sort-Object
+            )
+            if (@(Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $installedFiles).Count -ne 0) {
+              throw "Installed plugin tree differs from the release bundle: $pluginName."
+            }
+            foreach ($relative in $sourceFiles) {
+              $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $sourceRoot $relative)).Hash
+              $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installedRoot $relative)).Hash
+              if ($sourceHash -ne $installedHash) {
+                throw "Installed plugin content differs from the release bundle: $pluginName/$relative."
+              }
+            }
+            $pluginBinary = Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $installedRoot 'bin\ytqjk.exe')
+            if ($pluginBinary.Hash -ne $expected.Hash) {
+              throw "Installed plugin runtime differs from the release bundle: $pluginName."
+            }
+          }
 
   quality:
     name: Go quality and migration guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          go-version: "1.27.x"
+          ref: ${{ inputs.checkout_ref || github.sha }}
+          persist-credentials: false
+      - name: Verify caller-selected checkout
+        if: inputs.checkout_ref != ''
+        shell: pwsh
+        env:
+          EXPECTED_CHECKOUT: ${{ inputs.checkout_ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_CHECKOUT) {
+            throw 'Reusable test checkout does not match the validated release commit.'
+          }
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24.x"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: "1.27.0"
           cache: true
+      - name: Verify dashboard Library v1 contract
+        run: node plugins/ytqjk-agentic-orchestrator/skills/ytqjk/dashboard/js/tests/library-contract.test.mjs
       - name: Require gofmt-clean sources
         shell: bash
         run: |
@@ -59,19 +429,11 @@ jobs:
         run: go vet ./...
       - name: Race test
         run: go test -race ./...
-      - name: Require Go-only first-party runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          if find . -type f -name '*.py' -not -path './.git/*' | grep -q .; then
-            echo 'Python runtime source remains after the Go migration.' >&2
-            find . -type f -name '*.py' -not -path './.git/*'
-            exit 1
-          fi
       - name: Cross-compile release targets
         shell: bash
         run: |
           set -euo pipefail
-          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
-            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -trimpath ./cmd/ytqjk
+          for target in linux/amd64 windows/amd64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 \
+              go build -trimpath ./cmd/ytqjk
           done

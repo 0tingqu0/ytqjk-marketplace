@@ -1,6 +1,7 @@
 package cli
 
 import (
+	stdcontext "context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -38,18 +39,24 @@ func (context commandContext) hook(arguments []string) error {
 	if err != nil {
 		return context.write(map[string]any{"systemMessage": "YTQJK session anchoring failed: knowledge root unavailable"})
 	}
-	identity, err := rag.TrackProject(knowledgeRoot, event.CWD)
+	err = context.withSharedKnowledgeOutput(stdcontext.Background(), knowledgeRoot, func(_ stdcontext.Context, admittedCommand commandContext) error {
+		identity, err := rag.TrackProject(knowledgeRoot, event.CWD)
+		if err != nil {
+			return admittedCommand.write(map[string]any{"systemMessage": "YTQJK session anchoring failed: project tracking unavailable"})
+		}
+		anchor, created, err := rag.EnsureAnchor(knowledgeRoot, event.SessionID, identity.ID)
+		if err != nil {
+			return admittedCommand.write(map[string]any{"systemMessage": "YTQJK session anchoring failed: session anchor unavailable"})
+		}
+		additional := "KNOWLEDGE_RECEIPT status=SESSION_ANCHORED project_id=" + identity.ID +
+			" project_tracking=REGISTERED scope=session-anchor anchor_key=" + anchor.SessionKey +
+			" anchor_created=" + map[bool]string{true: "true", false: "false"}[created] +
+			". Before answering project questions, run `ytqjk session query --project-root <cwd> --session-id <session-id> --expected-project-id " +
+			identity.ID + " <question>` and report the complete receipt."
+		return admittedCommand.write(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": additional}})
+	})
 	if err != nil {
-		return context.write(map[string]any{"systemMessage": "YTQJK session anchoring failed: project tracking unavailable"})
+		return context.write(map[string]any{"systemMessage": "YTQJK session anchoring deferred: maintenance admission unavailable"})
 	}
-	anchor, created, err := rag.EnsureAnchor(knowledgeRoot, event.SessionID, identity.ID)
-	if err != nil {
-		return context.write(map[string]any{"systemMessage": "YTQJK session anchoring failed: session anchor unavailable"})
-	}
-	additional := "KNOWLEDGE_RECEIPT status=SESSION_ANCHORED project_id=" + identity.ID +
-		" project_tracking=REGISTERED scope=session-anchor anchor_key=" + anchor.SessionKey +
-		" anchor_created=" + map[bool]string{true: "true", false: "false"}[created] +
-		". Before answering project questions, run `ytqjk session query --project-root <cwd> --session-id <session-id> --expected-project-id " +
-		identity.ID + " <question>` and report the complete receipt."
-	return context.write(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": additional}})
+	return nil
 }

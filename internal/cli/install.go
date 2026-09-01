@@ -1,6 +1,7 @@
 package cli
 
 import (
+	stdcontext "context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"github.com/0tingqu0/ytqjk-marketplace/internal/dashboard"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/importer"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/install"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/maintenance"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/platform"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/rag"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/runtimeentry"
 )
 
 func (context commandContext) install(arguments []string) int {
@@ -67,6 +70,11 @@ func (context commandContext) install(arguments []string) int {
 		writeFailure(context.out, err)
 		return 2
 	}
+	runtimeRoot, err := platform.RuntimeRoot()
+	if err != nil {
+		writeFailure(context.out, err)
+		return 2
+	}
 	sourceRoot, err := platform.SourceRoot(*sourceValue)
 	if err != nil && !*uninstall {
 		writeFailure(context.out, err)
@@ -109,8 +117,12 @@ func (context commandContext) install(arguments []string) int {
 	receipt["project_bootstrap"] = rag.EmptyBootstrapReceipt("NOT_RUN")
 	receipt["dashboard_service"] = dashboard.ServiceStatus{Status: "NOT_RUN", Port: dashboard.DefaultPort, Autostart: "NOT_CONFIGURED"}
 	receipt["guidance"] = install.GuidanceResult{Status: "NOT_RUN"}
+	receipt["runtime"] = install.RuntimeResult{Status: "NOT_RUN"}
+	receipt["maintenance"] = map[string]any{"status": "NOT_RUN"}
 	if !*apply {
 		receipt["apply"] = map[string]any{"status": "PLANNED", "changed": false}
+		receipt["runtime"] = install.RuntimeResult{Status: "PLANNED"}
+		receipt["maintenance"] = map[string]any{"status": "PLANNED"}
 		return context.emitInstall(receipt, *jsonOutput, 0)
 	}
 	binary, err := os.Executable()
@@ -118,7 +130,56 @@ func (context commandContext) install(arguments []string) int {
 		receipt["apply"] = map[string]any{"status": "FAILED", "error": safeError(err)}
 		return context.emitInstall(receipt, *jsonOutput, 2)
 	}
-	options := install.ApplyOptions{Plan: plan, Target: target, SourceRoot: sourceRoot, CodexRoot: codexRoot, Binary: binary}
+	if *uninstall {
+		if err := install.ValidateRuntimeUninstall(runtimeRoot, binary); err != nil {
+			receipt["runtime"] = install.RuntimeResult{Status: "FAILED", Rollback: "NOT_NEEDED"}
+			receipt["apply"] = map[string]any{"status": "NOT_RUN", "error": safeError(err)}
+			return context.emitInstall(receipt, *jsonOutput, 2)
+		}
+		receipt["dashboard_service"] = dashboard.Probe(dashboard.DefaultPort)
+	}
+	maintenanceController, err := beginInstallMaintenance(
+		stdcontext.Background(), runtimeRoot, codexRoot, knowledgeRoot, target, operation,
+	)
+	if err != nil {
+		receipt["maintenance"] = map[string]any{"status": "FAILED", "error": safeError(err)}
+		receipt["apply"] = map[string]any{"status": "NOT_RUN"}
+		return context.emitInstall(receipt, *jsonOutput, 2)
+	}
+	if err := maintenanceController.beginMutation(); err != nil {
+		receipt["apply"] = map[string]any{"status": "NOT_RUN", "error": safeError(err)}
+		return context.emitInstallMaintenance(
+			receipt, *jsonOutput, 2, maintenanceController, maintenance.OutcomeAborted,
+		)
+	}
+	if *uninstall {
+		serviceStatus := dashboard.RemoveService(knowledgeRoot, dashboard.DefaultPort)
+		receipt["dashboard_service"] = serviceStatus
+		if serviceStatus.Status == "FAILED" {
+			receipt["apply"] = map[string]any{"status": "NOT_RUN", "error": "dashboard removal failed"}
+			return context.emitInstallMaintenance(
+				receipt, *jsonOutput, 2, maintenanceController, maintenance.OutcomeFailedSafe,
+			)
+		}
+	}
+	runtimeBinary := binary
+	runtimeResult := install.RuntimeResult{Status: "PRESERVED"}
+	if !*uninstall {
+		runtimeResult, err = install.InstallRuntime(runtimeRoot, binary, buildinfo.Version)
+		receipt["runtime"] = runtimeResult
+		if err != nil {
+			receipt["apply"] = map[string]any{"status": "NOT_RUN", "error": safeError(err)}
+			return context.emitInstallMaintenance(
+				receipt, *jsonOutput, 2, maintenanceController, maintenance.OutcomeFailedSafe,
+			)
+		}
+		runtimeBinary = runtimeentry.LauncherPath(runtimeRoot)
+	} else {
+		receipt["runtime"] = runtimeResult
+	}
+	options := install.ApplyOptions{
+		Plan: plan, Target: target, SourceRoot: sourceRoot, CodexRoot: codexRoot, Binary: runtimeBinary,
+	}
 	var applyResult install.ApplyResult
 	if *uninstall {
 		applyResult, err = install.Uninstall(options)
@@ -133,8 +194,21 @@ func (context commandContext) install(arguments []string) int {
 			failure["failed_action"] = applyError.FailedAction
 			failure["failed_compensations"] = applyError.FailedCompensations
 		}
+		if !*uninstall && runtimeResult.Changed {
+			rollbackErr := install.RollbackFreshRuntime(runtimeRoot, runtimeResult)
+			runtimeResult.Status = "ROLLED_BACK"
+			runtimeResult.Rollback = "SUCCEEDED"
+			if rollbackErr != nil {
+				runtimeResult.Status = "FAILED"
+				runtimeResult.Rollback = "FAILED"
+				failure["runtime_rollback_error"] = safeError(rollbackErr)
+			}
+			receipt["runtime"] = runtimeResult
+		}
 		receipt["apply"] = failure
-		return context.emitInstall(receipt, *jsonOutput, 2)
+		return context.emitInstallMaintenance(
+			receipt, *jsonOutput, 2, maintenanceController, maintenance.OutcomeFailedSafe,
+		)
 	}
 	receipt["apply"] = applyResult
 	guidanceAction := "install"
@@ -142,12 +216,28 @@ func (context commandContext) install(arguments []string) int {
 		guidanceAction = "remove"
 	}
 	if normalizedMode == "all" || normalizedMode == "codex-only" || normalizedMode == "codex-stable-only" {
-		receipt["guidance"] = install.ConfigureGuidance(codexRoot, knowledgeRoot, normalizedMode, guidanceAction, binary)
+		receipt["guidance"] = install.ConfigureGuidance(codexRoot, knowledgeRoot, normalizedMode, guidanceAction, runtimeBinary)
 	}
 	if *uninstall {
-		return context.emitInstall(receipt, *jsonOutput, 0)
+		if guidance := receipt["guidance"].(install.GuidanceResult); guidance.Status == "FAILED" {
+			return context.emitInstallMaintenance(
+				receipt, *jsonOutput, 6, maintenanceController, maintenance.OutcomeFailedSafe,
+			)
+		}
+		runtimeResult, runtimeErr := install.UninstallRuntime(runtimeRoot, binary)
+		receipt["runtime"] = runtimeResult
+		if runtimeErr != nil {
+			receipt["runtime_error"] = safeError(runtimeErr)
+			return context.emitInstallMaintenance(
+				receipt, *jsonOutput, 2, maintenanceController, maintenance.OutcomeFailedSafe,
+			)
+		}
+		return context.emitInstallMaintenance(
+			receipt, *jsonOutput, 0, maintenanceController, maintenance.OutcomeSucceeded,
+		)
 	}
 	exitCode := 0
+	startDashboard := false
 	if *codexImport != "off" {
 		importReceipt, importErr := importer.Import(codexRoot, knowledgeRoot, *codexImport)
 		receipt["codex_import"] = importReceipt
@@ -175,10 +265,12 @@ func (context commandContext) install(arguments []string) int {
 	}
 	if *dashboardService == "auto" {
 		assets := filepath.Join(sourceRoot, "plugins", "ytqjk-agentic-orchestrator", "skills", "ytqjk", "dashboard")
-		status := dashboard.StartService(binary, knowledgeRoot, assets, dashboard.DefaultPort)
+		status := dashboard.ConfigureService(runtimeBinary, knowledgeRoot, assets, dashboard.DefaultPort)
 		receipt["dashboard_service"] = status
 		if status.Status == "FAILED" && exitCode == 0 {
 			exitCode = 5
+		} else if status.Status == "CONFIGURED" {
+			startDashboard = true
 		}
 	} else {
 		receipt["dashboard_service"] = dashboard.ServiceStatus{Status: "SKIPPED_OFF", Port: dashboard.DefaultPort, Autostart: "NOT_CONFIGURED"}
@@ -186,23 +278,18 @@ func (context commandContext) install(arguments []string) int {
 	if guidance := receipt["guidance"].(install.GuidanceResult); guidance.Status == "FAILED" && exitCode == 0 {
 		exitCode = 6
 	}
-	return context.emitInstall(receipt, *jsonOutput, exitCode)
-}
-
-func (context commandContext) emitInstall(receipt map[string]any, asJSON bool, exitCode int) int {
-	if asJSON {
-		_ = context.write(receipt)
-	} else {
-		fmt.Fprintln(context.out, install.SummaryText(receipt))
+	maintenanceReceipt, maintenanceErr := maintenanceController.complete(maintenance.OutcomeSucceeded)
+	if maintenanceErr != nil {
+		receipt["maintenance"] = map[string]any{"status": "FAILED", "error": safeError(maintenanceErr)}
+		return context.emitInstall(receipt, *jsonOutput, 2)
 	}
-	return exitCode
-}
-
-func oneOf(value string, choices ...string) bool {
-	for _, choice := range choices {
-		if value == choice {
-			return true
+	receipt["maintenance"] = map[string]any{"status": "SUCCEEDED", "receipt": maintenanceReceipt}
+	if startDashboard {
+		status := dashboard.StartConfiguredService(dashboard.DefaultPort)
+		receipt["dashboard_service"] = status
+		if status.Status == "FAILED" && exitCode == 0 {
+			exitCode = 5
 		}
 	}
-	return false
+	return context.emitInstall(receipt, *jsonOutput, exitCode)
 }

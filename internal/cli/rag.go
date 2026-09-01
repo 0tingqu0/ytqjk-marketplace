@@ -1,6 +1,7 @@
 package cli
 
 import (
+	stdcontext "context"
 	"errors"
 	"flag"
 	"io"
@@ -29,55 +30,52 @@ func (context commandContext) rag(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	switch command {
-	case "init":
-		if *projectRoot == "" {
-			return errors.New("--project-root is required")
-		}
-		manifest, directory, err := rag.Init(knowledgeRoot, *projectRoot)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "INITIALIZED", "project_dir": directory, "manifest": manifest})
-	case "index":
-		if *projectRoot == "" {
-			return errors.New("--project-root is required")
-		}
-		result, err := rag.Build(knowledgeRoot, *projectRoot, *vectorMode)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "INDEXED", "result": result})
-	case "index-global":
-		result, err := rag.BuildGlobal(knowledgeRoot, *vectorMode)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "INDEXED", "result": result})
-	case "bootstrap":
-		if *projectRoot == "" {
-			return errors.New("--project-root is required")
-		}
-		result, err := rag.Bootstrap(knowledgeRoot, *projectRoot, *vectorMode)
-		if err != nil {
-			return err
-		}
-		return context.write(map[string]any{"ok": true, "status": "SUCCEEDED", "result": result, "receipt": rag.BootstrapReceipt(result)})
-	case "query":
-		if *projectRoot == "" {
-			return errors.New("--project-root is required")
-		}
-		query := strings.TrimSpace(strings.Join(flags.Args(), " "))
-		if query == "" {
-			return errors.New("query text is required after flags")
-		}
-		receipt, err := rag.Query(knowledgeRoot, *projectRoot, query, *sessionID, *expectedProject, *limit)
-		if err != nil {
-			return err
-		}
-		return context.write(receipt)
+	if command != "index-global" && *projectRoot == "" {
+		return errors.New("--project-root is required")
 	}
-	return errors.New("unreachable RAG command")
+	query := strings.TrimSpace(strings.Join(flags.Args(), " "))
+	if command == "query" && query == "" {
+		return errors.New("query text is required after flags")
+	}
+	response, err := withSharedKnowledge(stdcontext.Background(), knowledgeRoot, func(stdcontext.Context) (any, error) {
+		switch command {
+		case "init":
+			manifest, directory, err := rag.Init(knowledgeRoot, *projectRoot)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "INITIALIZED", "project_dir": directory, "manifest": manifest}, nil
+		case "index":
+			result, err := rag.Build(knowledgeRoot, *projectRoot, *vectorMode)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "INDEXED", "result": result}, nil
+		case "index-global":
+			result, err := rag.BuildGlobal(knowledgeRoot, *vectorMode)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "INDEXED", "result": result}, nil
+		case "bootstrap":
+			result, err := rag.Bootstrap(knowledgeRoot, *projectRoot, *vectorMode)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true, "status": "SUCCEEDED", "result": result, "receipt": rag.BootstrapReceipt(result)}, nil
+		case "query":
+			receipt, err := rag.Query(knowledgeRoot, *projectRoot, query, *sessionID, *expectedProject, *limit)
+			if err != nil {
+				return nil, err
+			}
+			return receipt, nil
+		}
+		return nil, errors.New("unreachable RAG command")
+	})
+	if err != nil {
+		return err
+	}
+	return context.write(response)
 }
 
 func quietFlags(name string) *flag.FlagSet {

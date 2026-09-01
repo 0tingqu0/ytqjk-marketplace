@@ -44,6 +44,32 @@ func TestParseReleaseAndVersionOrdering(t *testing.T) {
 	}
 }
 
+func TestBinaryAssetNameMatchesSupportedReleaseMatrix(t *testing.T) {
+	tests := []struct {
+		goos     string
+		goarch   string
+		expected string
+	}{
+		{"linux", "amd64", "ytqjk-linux-amd64"},
+		{"windows", "amd64", "ytqjk-windows-amd64.exe"},
+		{"linux", "arm64", ""},
+		{"windows", "arm64", ""},
+		{"darwin", "amd64", ""},
+	}
+	for _, test := range tests {
+		name, err := binaryAssetName(test.goos, test.goarch)
+		if test.expected == "" {
+			if errorCode(err) != "PLATFORM_NOT_SUPPORTED" {
+				t.Fatalf("%s/%s error = %v", test.goos, test.goarch, err)
+			}
+			continue
+		}
+		if err != nil || name != test.expected {
+			t.Fatalf("%s/%s name = %q, %v", test.goos, test.goarch, name, err)
+		}
+	}
+}
+
 func TestExpectedChecksumIsExact(t *testing.T) {
 	digest := bytes.Repeat([]byte{'a'}, 64)
 	value, err := ExpectedChecksum([]byte(string(digest)+"  ytqjk-linux-amd64\n"), "ytqjk-linux-amd64")

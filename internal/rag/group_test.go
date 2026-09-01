@@ -78,6 +78,52 @@ func TestGroupIndexDetectsArtifactTampering(t *testing.T) {
 	}
 }
 
+func TestGroupIndexSwitchRestoresPreviousActiveOnInvalidStage(t *testing.T) {
+	root := t.TempDir()
+	writeGroupFixture(t, root, "verified/one.md", "one")
+	if _, err := BuildGroup(root, "operations", nil); err != nil {
+		t.Fatal(err)
+	}
+	before := ReadGroupStatus(root, "operations")
+	active, staging, err := groupLocations(root, "operations", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage := filepath.Join(staging, "operations-invalid")
+	if err := os.Mkdir(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	invalid, err := os.Create(filepath.Join(stage, "invalid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := invalid.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := switchGroupIndex(active, stage, staging, "operations"); groupErrorCode(err) != "ACTIVE_INDEX_READBACK_FAILED" {
+		t.Fatalf("switch error = %v", err)
+	}
+	after := ReadGroupStatus(root, "operations")
+	if after.Status != "READY" || after.Generation != before.Generation {
+		t.Fatalf("restored status = %#v, before = %#v", after, before)
+	}
+	entries, err := os.ReadDir(staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("staging residue = %#v", entries)
+	}
+}
+
+func groupErrorCode(err error) string {
+	var groupErr *GroupError
+	if errors.As(err, &groupErr) {
+		return groupErr.Code
+	}
+	return ""
+}
+
 func writeGroupFixture(t *testing.T, root, relative, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relative))

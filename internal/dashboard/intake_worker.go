@@ -12,24 +12,36 @@ import (
 	"time"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/document"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/maintenance"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
 )
 
-func (s *Server) resumeIntakeJobs() {
+type intakeRetryMode uint8
+
+const (
+	intakeRetryNone intakeRetryMode = iota
+	intakeRetryImmediate
+	intakeRetryDelayed
+)
+
+func (s *Server) resumeIntakeJobs(ctx context.Context) error {
 	if err := s.ensureStores(); err != nil {
-		s.logger.Printf("intake recovery unavailable")
-		return
+		return err
 	}
-	jobs, err := s.intakeStore.List(context.Background(), 1000)
+	jobs, err := s.intakeStore.List(ctx, 1000)
 	if err != nil {
-		s.logger.Printf("intake recovery failed")
-		return
+		return err
 	}
 	for _, job := range jobs {
 		if job.State == "QUEUED" {
 			s.launchIntakeJob(job.ID)
+		} else if job.State == "SUCCEEDED" {
+			if err := s.removeIntakeSource(job); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func (s *Server) launchIntakeJob(identifier string) {
@@ -52,6 +64,7 @@ func (s *Server) launchIntakeJob(identifier string) {
 	s.intakeWG.Add(1)
 	s.intakeMu.Unlock()
 	go func() {
+		retryMode := intakeRetryImmediate
 		defer func() {
 			s.intakeMu.Lock()
 			delete(s.intakeRunning, identifier)
@@ -60,7 +73,20 @@ func (s *Server) launchIntakeJob(identifier string) {
 			if !closing {
 				job, err := s.intakeStore.Get(context.Background(), identifier)
 				if err == nil && job.State == "QUEUED" {
-					s.launchIntakeJob(identifier)
+					switch retryMode {
+					case intakeRetryDelayed:
+						timer := time.NewTimer(maintenanceRetryDelay)
+						select {
+						case <-timer.C:
+							s.launchIntakeJob(identifier)
+						case <-stop:
+							if !timer.Stop() {
+								<-timer.C
+							}
+						}
+					case intakeRetryImmediate:
+						s.launchIntakeJob(identifier)
+					}
 				}
 			}
 			s.intakeWG.Done()
@@ -75,7 +101,7 @@ func (s *Server) launchIntakeJob(identifier string) {
 		closing := s.intakeClosing
 		s.intakeMu.Unlock()
 		if !closing {
-			s.processIntakeJob(identifier)
+			retryMode = s.processIntakeJob(identifier)
 		}
 	}()
 }
@@ -92,8 +118,65 @@ func (s *Server) stopIntakeWorkers() {
 	s.intakeWG.Wait()
 }
 
-func (s *Server) processIntakeJob(identifier string) {
+func (s *Server) intakeJobActive(identifier string) bool {
+	s.intakeMu.Lock()
+	defer s.intakeMu.Unlock()
+	_, active := s.intakeRunning[identifier]
+	return active
+}
+
+func (s *Server) processIntakeJob(identifier string) intakeRetryMode {
 	ctx := context.Background()
+	permit, err := s.acquireSharedPermit(ctx)
+	if err != nil {
+		return s.intakeAdmissionFailure(identifier, err)
+	}
+	admittedContext, err := maintenance.WithShared(ctx, permit)
+	if err != nil {
+		_ = permit.Release()
+		return s.intakeAdmissionFailure(identifier, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = permit.Release()
+		}
+	}()
+	invoked := false
+	err = permit.Commit(func(_ maintenance.Fence) error {
+		invoked = true
+		s.processIntakeJobAdmitted(admittedContext, identifier)
+		return nil
+	})
+	committed = true
+	if err != nil {
+		if invoked && s.logger != nil {
+			s.logger.Printf(
+				"maintenance permit release uncertain after intake processing: id=%s error=%v",
+				identifier, err,
+			)
+		}
+		return s.intakeAdmissionFailure(identifier, err)
+	}
+	if !invoked {
+		return intakeRetryNone
+	}
+	return intakeRetryImmediate
+}
+
+func (s *Server) intakeAdmissionFailure(identifier string, err error) intakeRetryMode {
+	code := maintenanceErrorCode(err)
+	retryable := maintenanceAdmissionRetryable(err)
+	if s.logger != nil {
+		s.logger.Printf("intake admission blocked: id=%s code=%s retryable=%t error=%v", identifier, code, retryable, err)
+	}
+	if retryable {
+		return intakeRetryDelayed
+	}
+	return intakeRetryNone
+}
+
+func (s *Server) processIntakeJobAdmitted(ctx context.Context, identifier string) {
 	job, found, err := s.intakeStore.ClaimID(ctx, identifier)
 	if err != nil || !found {
 		return
@@ -105,7 +188,9 @@ func (s *Server) processIntakeJob(identifier string) {
 	sourceRelative, _ := job.Payload["relative_path"].(string)
 	if containsSecret(purpose) || containsSecret(sourceRelative) {
 		s.failIntake(ctx, job, "SECURITY", errors.New("document metadata contains a high-confidence secret"))
-		s.removeIntakeSource(job)
+		if err := s.removeIntakeSource(job); err != nil {
+			s.logger.Printf("rejected intake source cleanup failed: id=%s", job.ID)
+		}
 		return
 	}
 	name, content, err := s.readIntakeSource(job)
@@ -118,7 +203,9 @@ func (s *Server) processIntakeJob(identifier string) {
 		category := classifyIntakeExtractionError(err)
 		s.failIntake(ctx, job, category, err)
 		if !intakeFailureRetryable(category) {
-			s.removeIntakeSource(job)
+			if cleanupErr := s.removeIntakeSource(job); cleanupErr != nil {
+				s.logger.Printf("failed intake source cleanup failed: id=%s", job.ID)
+			}
 		}
 		return
 	}
@@ -133,7 +220,7 @@ func (s *Server) processIntakeJob(identifier string) {
 	}
 	relative, candidate, err := s.writeIntakeCandidate(job, extracted)
 	if err != nil {
-		s.failIntake(ctx, job, "PERSIST_FAILED", err)
+		s.failIntake(ctx, job, intakePersistenceCategory(err), err)
 		return
 	}
 	if !s.advanceIntake(ctx, &job, "persist", pageCount) {
@@ -145,7 +232,9 @@ func (s *Server) processIntakeJob(identifier string) {
 		_ = os.Remove(candidate)
 		return
 	}
-	s.removeIntakeSource(job)
+	if err := s.removeIntakeSource(job); err != nil {
+		s.logger.Printf("completed intake source cleanup failed: id=%s", job.ID)
+	}
 }
 
 func (s *Server) advanceIntake(ctx context.Context, job *document.Job, stage string, pageCount int) bool {
@@ -168,14 +257,21 @@ func (s *Server) failIntake(ctx context.Context, job document.Job, category stri
 	}
 }
 
+func intakePersistenceCategory(err error) string {
+	if safeio.WasCommitted(err) {
+		return "PERSIST_DURABILITY_UNKNOWN"
+	}
+	return "PERSIST_FAILED"
+}
+
 func (s *Server) readIntakeSource(job document.Job) (string, []byte, error) {
 	name, nameOK := job.Payload["name"].(string)
 	reference, refOK := job.Payload["staging_ref"].(string)
 	expected, digestOK := job.Payload["source_sha256"].(string)
-	if !nameOK || !refOK || !digestOK || safeFileName(name) != name || len(expected) != 64 || !strings.HasPrefix(filepath.ToSlash(reference), "service/intake/uploads/") {
+	if !nameOK || !refOK || !digestOK || safeFileName(name) != name || len(expected) != 64 {
 		return "", nil, errors.New("stored intake source metadata is invalid")
 	}
-	path, err := safeDocumentPath(s.KnowledgeRoot, reference)
+	path, err := s.intakeSourcePath(reference)
 	if err != nil {
 		return "", nil, errors.New("stored intake source path is invalid")
 	}
@@ -293,13 +389,31 @@ func intakeSuccessResult(relative string, result document.Result) map[string]any
 	}
 }
 
-func (s *Server) removeIntakeSource(job document.Job) {
+func (s *Server) removeIntakeSource(job document.Job) error {
+	s.intakeMu.Lock()
+	defer s.intakeMu.Unlock()
 	reference, ok := job.Payload["staging_ref"].(string)
-	if !ok || !strings.HasPrefix(filepath.ToSlash(reference), "service/intake/uploads/") {
-		return
+	if !ok {
+		return errors.New("stored intake source metadata is invalid")
 	}
-	path, err := safeDocumentPath(s.KnowledgeRoot, reference)
-	if err == nil {
-		_ = os.Remove(path)
+	path, err := s.intakeSourcePath(reference)
+	if err != nil {
+		return err
 	}
+	err = os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) intakeSourcePath(reference string) (string, error) {
+	normalized := filepath.Clean(filepath.FromSlash(reference))
+	uploads := filepath.Join("service", "intake", "uploads")
+	relative, err := filepath.Rel(uploads, normalized)
+	if err != nil || relative == "." || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("stored intake source path is invalid")
+	}
+	return safeDocumentPath(s.KnowledgeRoot, filepath.ToSlash(normalized))
 }

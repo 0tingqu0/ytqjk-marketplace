@@ -100,6 +100,7 @@ function configure(action, node, tree) {
   field("tree-node-id-field", creating);
   field("tree-title-field", creating);
   field("tree-node-type-field", creating);
+  field("tree-capacity-field", creating);
   field("tree-parent-id-field", creating || action === "attach"
     || action === "move");
   field("tree-middle-id-field", action === "insert_between");
@@ -119,6 +120,7 @@ function createPayload(node) {
     title: byId("tree-title").value.trim(),
     type: kind,
     parent_id: byId("tree-parent-id").value || null,
+    capacity_bytes: Number(byId("tree-capacity-mib").value) * 1024 * 1024,
     metadata: kind === "mounted" ? {
       mount_id: byId("tree-mount-id").value.trim(),
       capability: byId("tree-capability").value.trim(),

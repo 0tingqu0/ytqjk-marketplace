@@ -15,6 +15,10 @@ const (
 	globalNamespace = "afca7743-836a-4fb3-a7aa-31f010f58eb0"
 )
 
+var errLegacyFeedbackDowngrade = errors.New(
+	"legacy schema blocks feedback downgrade; destructive trigger migration is not approved",
+)
+
 type feedbackDocument struct {
 	ID             string
 	Title          string
@@ -52,6 +56,9 @@ func recordFeedback(tx *sql.Tx, jobID int64, payload map[string]any, now string)
 		return err
 	}
 	nextScore, nextState := feedbackOutcome(score, source.State, correct)
+	if err := validateFeedbackTransition(tx, source.State, nextState); err != nil {
+		return err
+	}
 	globalID, err := linkedGlobalDocument(tx, source.ID)
 	if err != nil {
 		return err
@@ -88,6 +95,26 @@ input_version_id,result_version_id,global_result_version_id,created_at) VALUES (
 		event = "feedback_correct"
 	}
 	return audit(tx, event, source.ID, now)
+}
+
+func validateFeedbackTransition(tx *sql.Tx, prior, next string) error {
+	if !((prior == "approved" && next == "candidate") || (prior == "verified" && next == "approved")) {
+		return nil
+	}
+	var definition string
+	err := tx.QueryRow(
+		"SELECT sql FROM sqlite_master WHERE type='trigger' AND name='versions_state_machine'",
+	).Scan(&definition)
+	if err != nil {
+		return fmt.Errorf("inspect versions state trigger: %w", err)
+	}
+	normalized := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(strings.ToLower(definition))
+	approved := "prior.state='approved'andnew.statein('candidate','approved','verified','tombstone')"
+	verified := "prior.state='verified'andnew.statein('approved','verified','tombstone')"
+	if strings.Contains(normalized, approved) && strings.Contains(normalized, verified) {
+		return nil
+	}
+	return errLegacyFeedbackDowngrade
 }
 
 func feedbackOutcome(score int, state string, correct bool) (int, string) {

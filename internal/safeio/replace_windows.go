@@ -15,3 +15,8 @@ func replaceFile(source, target string) error {
 	}
 	return windows.MoveFileEx(from, to, windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH)
 }
+
+func syncDirectory(string) error {
+	// MOVEFILE_WRITE_THROUGH flushes the replacement before it returns.
+	return nil
+}

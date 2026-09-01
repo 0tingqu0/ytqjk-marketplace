@@ -49,26 +49,6 @@ func decodeTreeArguments(action string, raw json.RawMessage) (treeActionArgument
 		}
 		return arguments, nil
 	}
-	if action == "rebuild_index" {
-		var payload struct {
-			NodeID      string   `json:"node_id"`
-			DocumentIDs []string `json:"document_ids"`
-		}
-		if err := decodeRawExact(raw, &payload, "node_id", "document_ids"); err != nil ||
-			!safeIdentifier(payload.NodeID) {
-			return treeActionArguments{}, errors.New("INVALID_REQUEST_FIELDS")
-		}
-		seen := map[string]bool{}
-		for _, identifier := range payload.DocumentIDs {
-			if len(identifier) != 64 || !isLowerHex(identifier) || seen[identifier] {
-				return treeActionArguments{}, errors.New("INVALID_DOCUMENT_IDS")
-			}
-			seen[identifier] = true
-		}
-		return treeActionArguments{
-			NodeID: payload.NodeID, DocumentIDs: append([]string(nil), payload.DocumentIDs...),
-		}, nil
-	}
 	if action == "detach" {
 		var payload struct {
 			NodeID string `json:"node_id"`
@@ -126,14 +106,5 @@ func decodeRawExact(raw json.RawMessage, target any, fields ...string) error {
 
 func validTreeAction(action string) bool {
 	return action == "attach" || action == "create" || action == "detach" ||
-		action == "insert_between" || action == "move" || action == "rebuild_index"
-}
-
-func isLowerHex(value string) bool {
-	for _, character := range value {
-		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
+		action == "insert_between" || action == "move"
 }

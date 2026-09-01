@@ -10,44 +10,56 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/install"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/runtimeentry"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
 )
 
 type ActivateResult struct {
-	Status          string `json:"status"`
-	CurrentVersion  string `json:"current_version"`
-	PreviousVersion string `json:"previous_version,omitempty"`
-	SnapshotID      string `json:"snapshot_id,omitempty"`
-	Rollback        string `json:"rollback,omitempty"`
+	Status                 string `json:"status"`
+	CurrentVersion         string `json:"current_version"`
+	PreviousVersion        string `json:"previous_version,omitempty"`
+	SnapshotID             string `json:"snapshot_id,omitempty"`
+	SnapshotManifestSHA256 string `json:"snapshot_manifest_sha256,omitempty"`
+	Rollback               string `json:"rollback,omitempty"`
 }
 
-func Activate(ctx context.Context, planFile string) (ActivateResult, error) {
-	plan, err := readPlan(planFile)
+func Activate(
+	ctx context.Context,
+	planFile, expectedPlanSHA256 string,
+	hooks ...ActivationHooks,
+) (returned ActivateResult, returnedErr error) {
+	plan, err := readAuthenticatedPlan(planFile, expectedPlanSHA256)
 	if err != nil {
+		return ActivateResult{}, errors.Join(err, abortPendingFromPlanPath(
+			planFile, "plan.json", phaseActivationPending, "ACTIVATION_PENDING", errorCodeOf(err),
+		))
+	}
+	if err := claimOperation(plan.RuntimeRoot, plan.ID, phaseActivationPending); err != nil {
 		return ActivateResult{}, err
 	}
-	if err := verifyPreparedPlan(ctx, plan); err != nil {
-		_ = writeState(plan.RuntimeRoot, State{
+	defer func() {
+		returnedErr = errors.Join(returnedErr, releaseTerminalOperation(plan.RuntimeRoot, plan.ID, returnedErr))
+	}()
+	verifiedPlan, err := verifyPreparedPlan(ctx, plan)
+	if err != nil {
+		return ActivateResult{}, writeFailureState(plan.RuntimeRoot, State{
 			Status: "FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 			TargetVersion: plan.ToVersion, ErrorCode: errorCodeOf(err),
-		})
-		return ActivateResult{}, err
+		}, err)
 	}
+	plan = verifiedPlan
 	if !waitForHealthState(ctx, plan.Port, "", false, 15*time.Second) {
 		err := failure("DASHBOARD_STILL_RUNNING", nil)
-		_ = writeState(plan.RuntimeRoot, State{
+		return ActivateResult{}, writeFailureState(plan.RuntimeRoot, State{
 			Status: "FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 			TargetVersion: plan.ToVersion, ErrorCode: errorCodeOf(err),
-		})
-		return ActivateResult{}, err
+		}, err)
 	}
 	currentSchema, err := databaseSchemaVersion(filepath.Join(plan.KnowledgeRoot, "service", "knowledge.sqlite3"))
 	if err != nil || currentSchema > plan.TargetMaxSchema || currentSchema > plan.PreviousMaxSchema {
@@ -56,82 +68,91 @@ func Activate(ctx context.Context, planFile string) (ActivateResult, error) {
 		} else {
 			err = failure("KNOWLEDGE_SCHEMA_READ_FAILED", err)
 		}
-		_ = writeState(plan.RuntimeRoot, State{
+		return ActivateResult{}, writeFailureState(plan.RuntimeRoot, State{
 			Status: "FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 			TargetVersion: plan.ToVersion, ErrorCode: errorCodeOf(err),
-		})
-		return ActivateResult{}, err
+		}, err)
 	}
 	plan.DatabaseSchema = currentSchema
+	if err := transitionOperation(plan.RuntimeRoot, plan.ID, phaseActivationPending, phaseActivating); err != nil {
+		return ActivateResult{}, err
+	}
 	if err := writeState(plan.RuntimeRoot, State{
 		Status: "ACTIVATING", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 		TargetVersion: plan.ToVersion,
 	}); err != nil {
-		return ActivateResult{}, failure("UPGRADE_STATE_WRITE_FAILED", err)
+		return ActivateResult{}, stateWriteFailure(err)
 	}
-	snapshot, err := captureSnapshot(ctx, plan)
+	if _, err := runtimeentry.BootstrapLegacy(plan.RuntimeRoot, plan.FromVersion); err != nil {
+		cause := failure("RUNTIME_GENERATION_BOOTSTRAP_FAILED", err)
+		return ActivateResult{}, writeFailureState(plan.RuntimeRoot, State{
+			Status: "FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
+			TargetVersion: plan.ToVersion, ErrorCode: "RUNTIME_GENERATION_BOOTSTRAP_FAILED",
+		}, cause)
+	}
+	snapshot, err := activationSnapshot(ctx, plan)
 	if err != nil {
-		_ = writeState(plan.RuntimeRoot, State{
+		cause := failure("UPGRADE_SNAPSHOT_FAILED", err)
+		return ActivateResult{}, writeFailureState(plan.RuntimeRoot, State{
 			Status: "FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 			TargetVersion: plan.ToVersion, ErrorCode: "UPGRADE_SNAPSHOT_FAILED",
-		})
-		return ActivateResult{}, failure("UPGRADE_SNAPSHOT_FAILED", err)
+		}, cause)
 	}
-	_ = writeState(plan.RuntimeRoot, State{
+	if err := writeState(plan.RuntimeRoot, State{
 		Status: "ACTIVATING", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 		TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID,
-	})
+		SnapshotManifestSHA256: snapshot.ManifestSHA256,
+	}); err != nil {
+		return ActivateResult{}, stateWriteFailure(err)
+	}
 	if err := activatePrepared(ctx, plan); err != nil {
-		return automaticRollback(ctx, plan, snapshot, err)
+		return automaticRollback(ctx, plan, snapshot, err, hooks)
 	}
 	if plan.RestartDashboard {
-		if err := startDashboard(ctx, plan, plan.ToVersion); err != nil {
-			return automaticRollback(ctx, plan, snapshot, err)
+		configuration := dashboardActivation(plan, plan.ToVersion)
+		if err := configureDashboard(ctx, hooks, configuration); err != nil {
+			return automaticRollback(ctx, plan, snapshot, err, hooks)
 		}
 	}
 	state := State{
 		Status: "ACTIVE", OperationID: plan.ID, CurrentVersion: plan.ToVersion,
 		PreviousVersion: plan.FromVersion, TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+		SnapshotManifestSHA256: snapshot.ManifestSHA256,
 	}
 	if err := writeState(plan.RuntimeRoot, state); err != nil {
-		return automaticRollback(ctx, plan, snapshot, failure("UPGRADE_STATE_WRITE_FAILED", err))
+		return automaticRollback(ctx, plan, snapshot, stateWriteFailure(err), hooks)
 	}
 	if err := pruneSnapshots(plan.RuntimeRoot, snapshot.ID); err != nil {
 		return ActivateResult{
 			Status: "ACTIVE", CurrentVersion: plan.ToVersion, PreviousVersion: plan.FromVersion,
-			SnapshotID: snapshot.ID,
+			SnapshotID: snapshot.ID, SnapshotManifestSHA256: snapshot.ManifestSHA256,
 		}, nil
 	}
 	return ActivateResult{
 		Status: "ACTIVE", CurrentVersion: plan.ToVersion, PreviousVersion: plan.FromVersion,
-		SnapshotID: snapshot.ID,
+		SnapshotID: snapshot.ID, SnapshotManifestSHA256: snapshot.ManifestSHA256,
 	}, nil
 }
 
-func verifyPreparedPlan(ctx context.Context, plan Plan) error {
-	state := Status(plan.RuntimeRoot, plan.FromVersion)
-	if state.OperationID != plan.ID || (state.Status != "PREPARED" && state.Status != "ACTIVATION_PENDING") {
-		return failure("UPGRADE_STATE_CONFLICT", nil)
-	}
-	hash, err := safeio.FileSHA256(plan.BinaryPath)
-	if err != nil || subtle.ConstantTimeCompare([]byte(hash), []byte(plan.BinarySHA256)) != 1 {
-		return failure("RELEASE_BINARY_INVALID", err)
-	}
-	version, schema, err := inspectReleaseBinary(ctx, plan.BinaryPath)
-	if err != nil || version != plan.ToVersion || schema != plan.TargetMaxSchema {
-		return failure("RELEASE_BINARY_INVALID", err)
-	}
-	return validateSource(plan.SourceRoot, plan.ToVersion)
-}
-
 func activatePrepared(ctx context.Context, plan Plan) error {
+	target, err := runtimeentry.MaterializeGeneration(
+		plan.RuntimeRoot, plan.ID, plan.ToVersion, plan.BinaryPath, plan.BinarySHA256,
+	)
+	if err != nil {
+		return failure("RUNTIME_ACTIVATION_FAILED", err)
+	}
+	if err := runtimeentry.InstallLauncher(plan.RuntimeRoot, plan.BinaryPath, plan.BinarySHA256); err != nil {
+		return failure("RUNTIME_ACTIVATION_FAILED", err)
+	}
 	if _, err := install.MaterializePlugins(plan.CodexRoot, plan.SourceRoot, plan.BinaryPath); err != nil {
 		return failure("PLUGIN_ACTIVATION_FAILED", err)
 	}
-	targetBinary := filepath.Join(plan.RuntimeRoot, "bin", runtimeBinaryName())
-	if err := transactionalRestore(plan.ID, []restoreItem{{
-		Target: targetBinary, Source: plan.BinaryPath, Present: true,
-	}}); err != nil {
+	if err := runtimeentry.Activate(plan.RuntimeRoot, target); err != nil {
+		return failure("RUNTIME_ACTIVATION_FAILED", err)
+	}
+	active, targetBinary, err := runtimeentry.ReadActive(plan.RuntimeRoot)
+	if err != nil || active.Generation != plan.ID || active.Version != plan.ToVersion ||
+		active.BinarySHA256 != plan.BinarySHA256 {
 		return failure("RUNTIME_ACTIVATION_FAILED", err)
 	}
 	hash, err := safeio.FileSHA256(targetBinary)
@@ -189,82 +210,79 @@ func validateInstalledPlugins(plan Plan) error {
 	return nil
 }
 
-func automaticRollback(ctx context.Context, plan Plan, snapshot Snapshot, cause error) (ActivateResult, error) {
-	_ = stopDashboard(ctx, plan.BinaryPath, plan.KnowledgeRoot, plan.Port)
+func automaticRollback(
+	ctx context.Context,
+	plan Plan,
+	snapshot Snapshot,
+	cause error,
+	hooks []ActivationHooks,
+) (ActivateResult, error) {
 	if err := restoreSnapshot(plan, snapshot, true); err != nil {
-		_ = writeState(plan.RuntimeRoot, State{
-			Status: "ROLLBACK_FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
-			TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID, ErrorCode: "UPGRADE_ROLLBACK_FAILED",
-		})
-		return ActivateResult{
+		cause = failure("UPGRADE_ROLLBACK_FAILED", errors.Join(cause, err))
+		result := ActivateResult{
 			Status: "ROLLBACK_FAILED", CurrentVersion: plan.FromVersion,
-			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID, Rollback: "FAILED",
-		}, failure("UPGRADE_ROLLBACK_FAILED", errors.Join(cause, err))
+			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+			SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "FAILED",
+		}
+		return result, writeFailureState(plan.RuntimeRoot, State{
+			Status: "ROLLBACK_FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
+			TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+			SnapshotManifestSHA256: snapshot.ManifestSHA256, ErrorCode: "UPGRADE_ROLLBACK_FAILED",
+		}, cause)
 	}
-	restartErr := error(nil)
+	configurationErr := error(nil)
 	if plan.RestartDashboard && snapshot.RuntimeBinary {
-		restartErr = startDashboard(ctx, Plan{
-			RuntimeRoot: plan.RuntimeRoot, CodexRoot: plan.CodexRoot, KnowledgeRoot: plan.KnowledgeRoot,
-			Port: plan.Port, RestartDashboard: true,
-		}, plan.FromVersion)
+		configurationErr = configureDashboard(ctx, hooks, dashboardActivation(plan, plan.FromVersion))
 	}
-	if restartErr != nil {
-		_ = writeState(plan.RuntimeRoot, State{
-			Status: "ROLLBACK_FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
-			TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID, ErrorCode: "UPGRADE_ROLLBACK_HEALTH_FAILED",
-		})
-		return ActivateResult{
+	if configurationErr != nil {
+		cause = failure("UPGRADE_ROLLBACK_HEALTH_FAILED", errors.Join(cause, configurationErr))
+		result := ActivateResult{
 			Status: "ROLLBACK_FAILED", CurrentVersion: plan.FromVersion,
-			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID, Rollback: "FAILED",
-		}, failure("UPGRADE_ROLLBACK_HEALTH_FAILED", errors.Join(cause, restartErr))
+			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+			SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "FAILED",
+		}
+		return result, writeFailureState(plan.RuntimeRoot, State{
+			Status: "ROLLBACK_FAILED", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
+			TargetVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+			SnapshotManifestSHA256: snapshot.ManifestSHA256, ErrorCode: "UPGRADE_ROLLBACK_HEALTH_FAILED",
+		}, cause)
 	}
-	_ = writeState(plan.RuntimeRoot, State{
+	if err := writeState(plan.RuntimeRoot, State{
 		Status: "ROLLED_BACK", OperationID: plan.ID, CurrentVersion: plan.FromVersion,
 		PreviousVersion: plan.ToVersion, TargetVersion: plan.ToVersion,
-		SnapshotID: snapshot.ID, ErrorCode: errorCodeOf(cause),
-	})
+		SnapshotID: snapshot.ID, SnapshotManifestSHA256: snapshot.ManifestSHA256,
+		ErrorCode: errorCodeOf(cause),
+	}); err != nil {
+		return rollbackStateWriteResult(plan, snapshot, cause, err)
+	}
 	return ActivateResult{
 		Status: "ROLLED_BACK", CurrentVersion: plan.FromVersion,
-		PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID, Rollback: "SUCCEEDED",
+		PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+		SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "SUCCEEDED",
 	}, failure("UPGRADE_ACTIVATION_ROLLED_BACK", cause)
 }
 
-func startDashboard(ctx context.Context, plan Plan, expectedVersion string) error {
-	binary := filepath.Join(plan.RuntimeRoot, "bin", runtimeBinaryName())
-	assets := filepath.Join(plan.CodexRoot, "plugins", "ytqjk-agentic-orchestrator", "skills", "ytqjk", "dashboard")
-	if _, err := runLifecycle(ctx, binary, "dashboard", "start", "--knowledge-root", plan.KnowledgeRoot, "--assets", assets, "--port", strconv.Itoa(plan.Port)); err != nil {
-		return failure("UPGRADE_HEALTH_FAILED", err)
+func dashboardActivation(plan Plan, version string) DashboardActivation {
+	return DashboardActivation{
+		RuntimeRoot: plan.RuntimeRoot, CodexRoot: plan.CodexRoot,
+		KnowledgeRoot: plan.KnowledgeRoot, Version: version, Port: plan.Port,
 	}
-	if !waitForHealthState(ctx, plan.Port, expectedVersion, true, 15*time.Second) {
-		return failure("UPGRADE_HEALTH_FAILED", nil)
-	}
-	return nil
 }
 
-func stopDashboard(ctx context.Context, binary, knowledgeRoot string, port int) error {
-	_, err := runLifecycle(ctx, binary, "dashboard", "stop", "--knowledge-root", knowledgeRoot, "--port", strconv.Itoa(port))
-	if err != nil && healthVersion(port) != "" {
-		return err
-	}
-	if !waitForHealthState(ctx, port, "", false, 10*time.Second) {
-		return errors.New("dashboard did not stop")
-	}
-	return nil
-}
-
-func runLifecycle(parent context.Context, binary string, arguments ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, binary, arguments...)
-	command.Stdin = nil
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-	if len(output) > 64*1024 {
-		return "", errors.New("lifecycle output is too large")
-	}
-	return string(output), nil
+func rollbackStateWriteResult(
+	plan Plan,
+	snapshot Snapshot,
+	cause error,
+	writeErr error,
+) (ActivateResult, error) {
+	return ActivateResult{
+			Status: "ROLLED_BACK", CurrentVersion: plan.FromVersion,
+			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+			SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "UNKNOWN",
+		}, errors.Join(
+			stateWriteFailure(writeErr),
+			failure("UPGRADE_ACTIVATION_ROLLED_BACK", cause),
+		)
 }
 
 func waitForHealthState(ctx context.Context, port int, version string, running bool, timeout time.Duration) bool {

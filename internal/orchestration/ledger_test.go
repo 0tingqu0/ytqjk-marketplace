@@ -34,7 +34,7 @@ func TestRunGrantAndAttestation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ledger.Verify(token, session); err != nil {
+	if err := ledger.ExecuteMutation(token, session, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ledger.Transition(run.RunID, session, "DONE", 0); err != nil {

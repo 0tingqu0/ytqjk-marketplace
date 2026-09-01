@@ -1,7 +1,7 @@
 package dashboard
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -19,8 +19,10 @@ import (
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/document"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/library"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/maintenance"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/peer"
-	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/platform"
 	securitycheck "github.com/0tingqu0/ytqjk-marketplace/internal/security"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/tree"
 )
@@ -32,35 +34,39 @@ const (
 )
 
 type Server struct {
-	KnowledgeRoot string
-	Assets        string
-	Port          int
-	logger        *log.Logger
-	server        *http.Server
-	mu            sync.Mutex
-	updateMu      sync.Mutex
-	peerRuntimeMu sync.RWMutex
-	intakeMu      sync.Mutex
-	candidateMu   sync.Mutex
-	globalIndexMu sync.Mutex
-	treeCommitMu  sync.Mutex
-	groupIndexMu  sync.RWMutex
-	graphMu       sync.Mutex
-	treeStore     *tree.Store
-	peerStore     *peer.Store
-	intakeStore   *document.JobStore
-	peerServer    *http.Server
-	peerListener  net.Listener
-	peerRuntime   PeerRuntimeStatus
-	treePreviews  map[string]issuedTreePreview
-	updateToken   string
-	updates       updateBackend
-	intakeRunning map[string]struct{}
-	intakeSlots   chan struct{}
-	intakeStop    chan struct{}
-	intakeClosing bool
-	intakeWG      sync.WaitGroup
-	graphCache    graphCacheEntry
+	KnowledgeRoot  string
+	ControlRoot    string
+	Assets         string
+	Port           int
+	logger         *log.Logger
+	server         *http.Server
+	mu             sync.Mutex
+	updateMu       sync.Mutex
+	peerRuntimeMu  sync.RWMutex
+	intakeMu       sync.Mutex
+	candidateMu    sync.Mutex
+	globalIndexMu  sync.Mutex
+	treeCommitMu   sync.Mutex
+	groupIndexMu   sync.RWMutex
+	groupPreviewMu sync.Mutex
+	graphMu        sync.Mutex
+	treeStore      *tree.Store
+	peerStore      *peer.Store
+	intakeStore    *document.JobStore
+	peerServer     *http.Server
+	peerListener   net.Listener
+	peerRuntime    PeerRuntimeStatus
+	treePreviews   map[string]issuedTreePreview
+	groupPreviews  map[string]issuedGroupIndexPreview
+	updateToken    string
+	updates        updateBackend
+	intakeRunning  map[string]struct{}
+	intakeSlots    chan struct{}
+	intakeStop     chan struct{}
+	intakeClosing  bool
+	intakeWG       sync.WaitGroup
+	graphCache     graphCacheEntry
+	startupCommit  func(*maintenance.Permit, func(maintenance.Fence) error) error
 }
 
 type APIError struct {
@@ -75,7 +81,21 @@ func Run(knowledgeRoot, assets string, port int, logger *log.Logger) error {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	instance := &Server{KnowledgeRoot: knowledgeRoot, Assets: assets, Port: port, logger: logger, treePreviews: map[string]issuedTreePreview{}}
+	controlRoot, err := platform.MaintenanceControlRoot()
+	if err != nil {
+		return fmt.Errorf("resolve maintenance control root: %w", err)
+	}
+	if err := maintenance.BootstrapControlRoot(context.Background(), controlRoot); err != nil {
+		return fmt.Errorf("bootstrap maintenance control root: %w", err)
+	}
+	return runWithControlRoot(knowledgeRoot, controlRoot, assets, port, logger)
+}
+
+func runWithControlRoot(knowledgeRoot, controlRoot, assets string, port int, logger *log.Logger) error {
+	instance := &Server{
+		KnowledgeRoot: knowledgeRoot, ControlRoot: controlRoot, Assets: assets, Port: port,
+		logger: logger, treePreviews: map[string]issuedTreePreview{},
+	}
 	instance.server = &http.Server{
 		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
 		Handler:           instance,
@@ -85,19 +105,11 @@ func Run(knowledgeRoot, assets string, port int, logger *log.Logger) error {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    32 * 1024,
 	}
-	if err := os.MkdirAll(knowledgeRoot, 0o755); err != nil {
+	if err := instance.initializeStartup(context.Background()); err != nil {
+		instance.shutdown(context.Background())
 		return err
 	}
-	if err := instance.ensureStores(); err != nil {
-		return err
-	}
-	defer instance.closeStores()
-	instance.startPeerRuntime()
-	defer instance.stopPeerRuntime()
-	instance.resumeIntakeJobs()
-	pid := []byte(strconv.Itoa(os.Getpid()) + "\n")
-	_ = safeio.AtomicWrite(filepath.Join(knowledgeRoot, "dashboard.pid"), pid, 0o600)
-	defer os.Remove(filepath.Join(knowledgeRoot, "dashboard.pid"))
+	defer instance.shutdown(context.Background())
 	logger.Printf("dashboard listening on http://127.0.0.1:%d", port)
 	err := instance.server.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
@@ -123,7 +135,7 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			writeError(writer, status, "FORBIDDEN_REQUEST", "Forbidden request")
 			return
 		}
-		status = s.handleAPI(writer, request)
+		status = s.handleAPIWithAdmission(writer, request)
 		return
 	}
 	status = s.serveAsset(writer, request.URL.Path)
@@ -147,7 +159,7 @@ func (s *Server) handleAPI(writer http.ResponseWriter, request *http.Request) in
 		case path == "/api/update":
 			return s.updateStatus(writer, request)
 		case path == "/api/libraries/tree":
-			return s.treeSnapshot(writer)
+			return s.tree(writer)
 		case path == "/api/knowledge-graph":
 			return s.graph(writer, request.URL.Query().Get("limit"))
 		case path == "/api/knowledge-graph-revision":
@@ -173,16 +185,24 @@ func (s *Server) handleAPI(writer http.ResponseWriter, request *http.Request) in
 		case "/api/update":
 			return s.startUpdate(writer, request)
 		case "/api/libraries/preview":
-			return s.treeActionPreview(writer, request)
+			return s.treePreview(writer, request)
+		case "/api/libraries/create":
+			return s.treeCommit(writer, request, library.ActionCreate)
+		case "/api/libraries/attach":
+			return s.treeCommit(writer, request, library.ActionAttach)
+		case "/api/libraries/detach":
+			return s.treeCommit(writer, request, library.ActionDetach)
+		case "/api/libraries/move":
+			return s.treeCommit(writer, request, library.ActionMove)
+		case "/api/libraries/insert-between":
+			return s.treeCommit(writer, request, library.ActionInsertBetween)
+		case "/api/group-indexes/preview":
+			return s.groupIndexPreview(writer, request)
+		case "/api/group-indexes/rebuild":
+			return s.groupIndexRebuild(writer, request)
 		default:
 			if strings.HasPrefix(path, "/api/intake/jobs/") {
 				return s.intakeJobAction(writer, request, strings.TrimPrefix(path, "/api/intake/jobs/"))
-			}
-			if strings.HasPrefix(path, "/api/libraries/") {
-				action := strings.ReplaceAll(strings.TrimPrefix(path, "/api/libraries/"), "-", "_")
-				if validTreeAction(action) && action != "preview" {
-					return s.treeActionCommit(writer, request, action)
-				}
 			}
 			if strings.HasPrefix(path, "/api/peers/") {
 				return s.peerAction(writer, request, strings.TrimPrefix(path, "/api/peers/"))
@@ -289,66 +309,6 @@ func (s *Server) serveAsset(writer http.ResponseWriter, requestPath string) int 
 	return http.StatusOK
 }
 
-func readJSON(request *http.Request, target any) error {
-	body := io.LimitReader(request.Body, maxBodyBytes+1)
-	decoder := json.NewDecoder(body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var trailing any
-	if decoder.Decode(&trailing) != io.EOF {
-		return errors.New("trailing JSON")
-	}
-	return nil
-}
-
-func writeJSON(writer http.ResponseWriter, status int, value any) {
-	data, _ := json.Marshal(value)
-	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-	writer.Header().Set("Cache-Control", "no-store")
-	writer.Header().Set("Content-Security-Policy", securityPolicy)
-	writer.WriteHeader(status)
-	_, _ = writer.Write(data)
-}
-
-func writeError(writer http.ResponseWriter, status int, code, message string) {
-	writeJSON(writer, status, map[string]any{"ok": false, "error": APIError{Code: code, Message: message}})
-}
-
-func safeRoute(path string) string {
-	if strings.HasPrefix(path, "/api/intake/jobs/") {
-		return "/api/intake/jobs/{job_id}"
-	}
-	if strings.HasPrefix(path, "/api/libraries/") {
-		return "/api/libraries/{operation}"
-	}
-	if strings.HasPrefix(path, "/api/") {
-		return path
-	}
-	return "/assets"
-}
-
-func safeDocumentPath(root, relative string) (string, error) {
-	relative = filepath.Clean(filepath.FromSlash(relative))
-	if filepath.IsAbs(relative) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", errors.New("invalid relative path")
-	}
-	return safeio.Contained(root, filepath.Join(root, relative))
-}
-
-func safeIdentifier(value string) bool {
-	if value == "" || len(value) > 128 {
-		return false
-	}
-	for _, character := range value {
-		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_' || character == '.') {
-			return false
-		}
-	}
-	return true
-}
-
 func safeFileName(value string) string {
 	value = filepath.Base(strings.TrimSpace(value))
 	var builder strings.Builder
@@ -382,14 +342,4 @@ func countMarkdown(directory string) int {
 		}
 	}
 	return count
-}
-
-func clamp(value, minimum, maximum int) int {
-	if value < minimum {
-		return minimum
-	}
-	if value > maximum {
-		return maximum
-	}
-	return value
 }

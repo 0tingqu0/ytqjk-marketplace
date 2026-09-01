@@ -402,5 +402,15 @@ func chunksFingerprint(chunks []Chunk) string {
 }
 
 func sensitive(relative string) bool {
-	return securitycheck.IsSensitivePath(relative)
+	return candidatePath(relative) || securitycheck.IsSensitivePath(relative)
+}
+
+func candidatePath(value string) bool {
+	normalized := strings.ReplaceAll(filepath.ToSlash(value), "\\", "/")
+	for _, part := range strings.Split(normalized, "/") {
+		if strings.EqualFold(part, "candidates") {
+			return true
+		}
+	}
+	return false
 }

@@ -2,14 +2,14 @@
 
 [简体中文](README.zh-CN.md)
 
-YTQJK is a local-first Codex orchestration and knowledge marketplace. Version 0.6.10
+YTQJK is a local-first Codex orchestration and knowledge marketplace. Version 0.7.0
 uses one cross-platform Go binary for installation, plugin hooks, local RAG, session
 anchors, the versioned SQLite service, dashboard APIs, orchestration identity, and
 reviewed Git handoffs. The dashboard remains ordinary static HTML, CSS, and JavaScript.
 
 ## Requirements
 
-- Windows 10/11, Linux, macOS, or WSL2
+- Windows 10/11 x64, Linux x64, or WSL2 x64
 - Git for project identity and handoff workflows
 - Go 1.25 or newer for development
 
@@ -25,7 +25,7 @@ Windows:
 .\install.ps1
 ```
 
-Linux or macOS:
+Linux or WSL2:
 
 ```sh
 sh ./install.sh
@@ -152,9 +152,9 @@ go vet ./...
 go build ./cmd/ytqjk
 ```
 
-CI tests Go 1.25 and 1.27 on Windows and Linux, runs the race detector, verifies
-formatting, rejects remaining first-party Python sources, and cross-compiles Linux,
-Windows, and macOS release binaries.
+CI tests Go 1.25 and 1.27 on Windows x64 and Linux x64, runs the race detector,
+verifies formatting, rejects remaining first-party Python sources, and builds the
+currently supported Windows x64 and Linux x64 release binaries.
 
 ## License
 

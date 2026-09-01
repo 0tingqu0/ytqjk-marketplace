@@ -1,10 +1,96 @@
 package safeio
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestAtomicWriteReplacesExistingFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "state.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := AtomicWrite(path, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertFileContent(t, path, "new")
+	assertNoTemporaryFiles(t, root)
+}
+
+func TestAtomicWriteRenameFailurePreservesExistingFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "state.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	renameErr := errors.New("rename failed")
+
+	err := atomicWrite(path, []byte("new"), 0o600, func(_, _ string) error {
+		return renameErr
+	})
+	if !errors.Is(err, renameErr) {
+		t.Fatalf("AtomicWrite error = %v, want %v", err, renameErr)
+	}
+	if WasCommitted(err) {
+		t.Fatal("rename failure was marked committed")
+	}
+	assertFileContent(t, path, "old")
+	assertNoTemporaryFiles(t, root)
+}
+
+func TestAtomicWriteReportsPostCommitSyncFailure(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "state.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	syncErr := errors.New("directory sync failed")
+
+	err := atomicWriteWithSync(
+		path,
+		[]byte("new"),
+		0o600,
+		replaceFile,
+		func(string) error { return syncErr },
+	)
+	if !errors.Is(err, syncErr) || !WasCommitted(err) {
+		t.Fatalf("AtomicWrite error = %v, want committed error wrapping %v", err, syncErr)
+	}
+	if WasCommitted(errors.New("outer: " + err.Error())) {
+		t.Fatal("plain error text was marked committed")
+	}
+	if !WasCommitted(errors.Join(errors.New("context"), err)) {
+		t.Fatal("wrapped post-commit error lost committed classification")
+	}
+	assertFileContent(t, path, "new")
+	assertNoTemporaryFiles(t, root)
+}
+
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatalf("file content = %q, want %q", got, want)
+	}
+}
+
+func assertNoTemporaryFiles(t *testing.T, directory string) {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(directory, ".ytqjk-*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temporary files remain: %v", matches)
+	}
+}
 
 func TestAtomicJSONAndContainment(t *testing.T) {
 	root := t.TempDir()
@@ -25,24 +111,6 @@ func TestAtomicJSONAndContainment(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("state file = %#v, %v", info, err)
-	}
-}
-
-func TestAtomicWriteReplacesExistingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.txt")
-	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := AtomicWrite(path, []byte("new"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	content, err := os.ReadFile(path)
-	if err != nil || string(content) != "new" {
-		t.Fatalf("content = %q, %v", content, err)
-	}
-	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".ytqjk-*.tmp"))
-	if err != nil || len(matches) != 0 {
-		t.Fatalf("temporary files = %#v, %v", matches, err)
 	}
 }
 

@@ -19,15 +19,14 @@ import (
 const maxIssuedTreePreviews = 256
 
 type treeActionArguments struct {
-	NodeID      string
-	Title       string
-	Kind        string
-	ParentID    string
-	ParentSet   bool
-	MiddleID    string
-	MountID     string
-	Capability  string
-	DocumentIDs []string
+	NodeID     string
+	Title      string
+	Kind       string
+	ParentID   string
+	ParentSet  bool
+	MiddleID   string
+	MountID    string
+	Capability string
 }
 
 type issuedTreePreview struct {
@@ -161,24 +160,6 @@ func (s *Server) treeActionCommit(writer http.ResponseWriter, request *http.Requ
 		writeError(writer, http.StatusConflict, "TOPOLOGY_CHANGED", "TOPOLOGY_CHANGED")
 		return http.StatusConflict
 	}
-	if action == "rebuild_index" {
-		s.groupIndexMu.Lock()
-		receipt, buildErr := rag.BuildGroup(s.KnowledgeRoot, record.Arguments.NodeID, record.Arguments.DocumentIDs)
-		s.groupIndexMu.Unlock()
-		if buildErr != nil {
-			return writeGroupIndexError(writer, buildErr)
-		}
-		current, loadErr := s.treeStore.Load(request.Context())
-		if loadErr != nil {
-			writeError(writer, http.StatusServiceUnavailable, "TREE_NOT_CONFIGURED", "TREE_NOT_CONFIGURED")
-			return http.StatusServiceUnavailable
-		}
-		writeJSON(writer, http.StatusOK, map[string]any{
-			"ok": true, "action": action, "revision": current.Revision(),
-			"tree": s.treePayload(current), "materialization": receipt,
-		})
-		return http.StatusOK
-	}
 	changed, err := tree.FromSnapshot(value.Snapshot())
 	if err != nil {
 		return writeTreeOperationError(writer, err)
@@ -237,19 +218,6 @@ func planTreeAction(value *tree.Tree, action string, arguments treeActionArgumen
 			"old_chain": []string{}, "new_chain": chain, "subtree_size": 1,
 			"anchor_impact": tree.AnchorImpactPending,
 		}, affected, nil
-	}
-	if action == "rebuild_index" {
-		node, exists := value.Node(arguments.NodeID)
-		if !exists {
-			return tree.Preview{}, nil, nil, errors.New("UNKNOWN_NODE")
-		}
-		if node.Kind != "group" {
-			return tree.Preview{}, nil, nil, errors.New("GROUP_NODE_REQUIRED")
-		}
-		return tree.Preview{}, map[string]any{
-			"node_id": arguments.NodeID, "operation": "REBUILD_GROUP_INDEX",
-			"document_count": len(arguments.DocumentIDs), "source_scope": "approved-verified-only",
-		}, []string{arguments.NodeID}, nil
 	}
 	var (
 		preview tree.Preview

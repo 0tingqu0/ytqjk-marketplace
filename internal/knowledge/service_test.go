@@ -1,7 +1,6 @@
 package knowledge
 
 import (
-	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -95,7 +94,7 @@ func TestFeedbackLifecycleAndGlobalMirror(t *testing.T) {
 		t.Fatal("contradictory feedback invocation succeeded")
 	}
 	var failedJobs int
-	if err := service.database.QueryRow("SELECT COUNT(*) FROM jobs WHERE kind='record_feedback' AND state='FAILED'").Scan(&failedJobs); err != nil || failedJobs != 1 {
+	if err := service.database.QueryRow("SELECT COUNT(*) FROM " + service.feedbackJobs + " WHERE kind='record_feedback' AND state='FAILED'").Scan(&failedJobs); err != nil || failedJobs != 1 {
 		t.Fatalf("failed feedback jobs = %d, %v", failedJobs, err)
 	}
 	assertFeedback(t, service, documentID, 2, "approved")
@@ -142,69 +141,6 @@ func TestFeedbackLifecycleAndGlobalMirror(t *testing.T) {
 	}
 	if _, err := service.database.Exec("UPDATE feedback_events SET score=3 WHERE document_id=?", documentID); err == nil {
 		t.Fatal("feedback history was mutable")
-	}
-}
-
-func TestMigratesLegacyV3JobsTable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.sqlite3")
-	database, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := `CREATE TABLE jobs (
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-kind TEXT NOT NULL CHECK(kind IN ('create_project','create_candidate','edit_candidate','soft_delete_candidate','append_state','create_snapshot')),
-payload TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')),
-dedupe_key TEXT UNIQUE,error TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,
-owner TEXT,lease_expires_at TEXT,heartbeat_at TEXT,attempt INTEGER NOT NULL DEFAULT 0)`
-	if _, err := database.Exec(legacy); err != nil {
-		t.Fatal(err)
-	}
-	legacyProvenance := `CREATE TABLE import_provenance (
-document_id TEXT NOT NULL REFERENCES documents(id),source_kind TEXT NOT NULL,source_ref TEXT NOT NULL,
-source_sha256 TEXT NOT NULL,scanner TEXT NOT NULL,scan_state TEXT NOT NULL CHECK(scan_state='CLEAN'),
-PRIMARY KEY(document_id,source_kind,source_ref))`
-	if _, err := database.Exec(legacyProvenance); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec("INSERT INTO jobs(kind,payload,state,created_at) VALUES ('create_project','{}','SUCCEEDED','legacy')"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := database.Exec("PRAGMA user_version=3"); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-	service, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer service.Close()
-	var tableSQL string
-	if err := service.database.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").Scan(&tableSQL); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(tableSQL, "record_feedback") {
-		t.Fatalf("jobs table was not migrated: %s", tableSQL)
-	}
-	columns, err := tableColumns(service.database, "import_provenance")
-	if err != nil || !columns["governance_state"] {
-		t.Fatalf("legacy import provenance was not migrated: %#v, %v", columns, err)
-	}
-	if count, err := service.Count("jobs"); err != nil || count != 1 {
-		t.Fatalf("migrated job count = %d, %v", count, err)
-	}
-	projectID, err := service.CreateProject("project", "legacy-upgrade")
-	if err != nil {
-		t.Fatal(err)
-	}
-	documentID, err := service.CreateCandidate(projectID, "legacy", "migrated", "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := service.RecordFeedback(documentID, "77777777-7777-4777-8777-777777777777", true); err != nil {
-		t.Fatal(err)
 	}
 }
 

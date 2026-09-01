@@ -53,7 +53,7 @@ func TestDashboardSnapshotMatchesFrontendContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8765/api/snapshot", nil)
 	request.Host = "127.0.0.1:8765"
 	response := httptest.NewRecorder()
@@ -113,7 +113,7 @@ func TestCandidateLifecycleUsesVersionCASAndGovernedIndex(t *testing.T) {
 	initial := "---\nstatus: CANDIDATE\n---\n\nInitial draft.\n"
 	writeDashboardFixture(t, root, relative, initial)
 	writeDashboardFixture(t, root, "error-experience/candidates/unapproved.md", "candidate must not be indexed")
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 
 	read := dashboardRequest(t, server, http.MethodGet, "/api/document?path="+url.QueryEscape(relative), nil)
 	if read.Code != http.StatusOK {
@@ -200,7 +200,7 @@ func TestCandidateDeleteChecksVersionAndPathScope(t *testing.T) {
 	root := t.TempDir()
 	relative := "error-experience/candidates/delete.md"
 	writeDashboardFixture(t, root, relative, "delete candidate")
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 	version := candidateVersion([]byte("delete candidate"))
 
 	wrongScope, _ := json.Marshal(map[string]any{"path": "verified/candidates/delete.md", "content": "value", "expected_version": version})
@@ -231,7 +231,7 @@ func TestCandidateHardLinkIsRejected(t *testing.T) {
 	if err := os.Link(filepath.Join(root, filepath.FromSlash(relative)), alias); err != nil {
 		t.Skipf("hard links unavailable: %v", err)
 	}
-	server := dashboardTestServer(root)
+	server := dashboardTestServer(t, root)
 	response := dashboardRequest(t, server, http.MethodGet, "/api/document?path="+url.QueryEscape(relative), nil)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("hard-linked candidate = %d, %s", response.Code, response.Body.String())
@@ -253,8 +253,12 @@ func TestSnapshotMemoryFlagUsesJSONTruthiness(t *testing.T) {
 	}
 }
 
-func dashboardTestServer(root string) *Server {
-	return &Server{KnowledgeRoot: root, Port: 8765, logger: log.New(io.Discard, "", 0)}
+func dashboardTestServer(t *testing.T, root string) *Server {
+	t.Helper()
+	return &Server{
+		KnowledgeRoot: root, ControlRoot: dashboardTestControlRoot(t), Port: 8765,
+		logger: log.New(io.Discard, "", 0),
+	}
 }
 
 func dashboardRequest(t *testing.T, server *Server, method, path string, body []byte) *httptest.ResponseRecorder {

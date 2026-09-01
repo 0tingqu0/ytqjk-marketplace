@@ -2,8 +2,8 @@ package dashboard
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0tingqu0/ytqjk-marketplace/internal/library"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/rag"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
-	"github.com/0tingqu0/ytqjk-marketplace/internal/tree"
 )
 
 func TestDashboardIntakeRunsPersistentGoJob(t *testing.T) {
-	knowledgeRoot := t.TempDir()
-	server := &Server{KnowledgeRoot: knowledgeRoot, Port: 8765, logger: log.New(io.Discard, "", 0)}
+	knowledgeRoot := stableIntakeTempDir(t)
+	server := &Server{KnowledgeRoot: knowledgeRoot, ControlRoot: dashboardTestControlRoot(t), Port: 8765, logger: log.New(io.Discard, "", 0)}
 	if err := server.ensureStores(); err != nil {
 		t.Fatal(err)
 	}
@@ -47,15 +48,12 @@ func TestDashboardIntakeRunsPersistentGoJob(t *testing.T) {
 	if err != nil || !bytes.Contains(content, []byte("Use the snapshot upgrade flow.")) || !bytes.Contains(content, []byte("status: CANDIDATE")) {
 		t.Fatalf("candidate = %q, %v", content, err)
 	}
-	uploads, err := os.ReadDir(filepath.Join(knowledgeRoot, "service", "intake", "uploads"))
-	if err != nil || len(uploads) != 0 {
-		t.Fatalf("staged uploads were not cleaned: %v, %v", uploads, err)
-	}
+	assertDirectoryStablyEmpty(t, filepath.Join(knowledgeRoot, "service", "intake", "uploads"))
 }
 
 func TestDashboardIntakeFailsSecretsWithoutLeakingThem(t *testing.T) {
-	knowledgeRoot := t.TempDir()
-	server := &Server{KnowledgeRoot: knowledgeRoot, Port: 8765, logger: log.New(io.Discard, "", 0)}
+	knowledgeRoot := stableIntakeTempDir(t)
+	server := &Server{KnowledgeRoot: knowledgeRoot, ControlRoot: dashboardTestControlRoot(t), Port: 8765, logger: log.New(io.Discard, "", 0)}
 	if err := server.ensureStores(); err != nil {
 		t.Fatal(err)
 	}
@@ -77,37 +75,92 @@ func TestDashboardIntakeFailsSecretsWithoutLeakingThem(t *testing.T) {
 	if countMarkdown(filepath.Join(knowledgeRoot, "personal-experience", "candidates")) != 0 {
 		t.Fatal("secret intake created a candidate")
 	}
+	assertDirectoryStablyEmpty(t, filepath.Join(knowledgeRoot, "service", "intake", "uploads"))
 }
 
 func TestDashboardRebuildsGovernedGroupIndexInGo(t *testing.T) {
 	knowledgeRoot := t.TempDir()
-	server := &Server{KnowledgeRoot: knowledgeRoot, Port: 8765, logger: log.New(io.Discard, "", 0)}
-	if err := server.ensureStores(); err != nil {
-		t.Fatal(err)
-	}
-	defer server.closeStores()
-	value, err := server.treeStore.Load(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := value.Revision()
-	if err := value.AddNode(tree.Node{NodeID: "operations", Title: "Operations", Kind: "group"}, "global"); err != nil {
-		t.Fatal(err)
-	}
-	if err := value.IncrementRevision(base); err != nil {
-		t.Fatal(err)
-	}
-	if err := server.treeStore.Save(context.Background(), value, base); err != nil {
-		t.Fatal(err)
-	}
+	server := &Server{KnowledgeRoot: knowledgeRoot, ControlRoot: dashboardTestControlRoot(t), Port: 8765, logger: log.New(io.Discard, "", 0)}
+	before := createDashboardLibraryGroup(t, server, "operations")
 	approved := filepath.Join(knowledgeRoot, "personal-experience", "approved", "runbook.md")
 	if err := safeio.AtomicWrite(approved, []byte("approved rollback runbook"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	previewRequest := dashboardPost(t, "/api/libraries/preview", `{"action":"rebuild_index","payload":{"node_id":"operations","document_ids":[]}}`)
+	previewRequest := dashboardPost(t, "/api/group-indexes/preview", `{"node_id":"operations","document_ids":[]}`)
 	previewResponse := httptest.NewRecorder()
 	server.ServeHTTP(previewResponse, previewRequest)
+	if previewResponse.Code != http.StatusOK {
+		t.Fatalf("preview = %d, %s", previewResponse.Code, previewResponse.Body.String())
+	}
+	var preview struct {
+		Preview struct {
+			Digest           string `json:"digest"`
+			ExpectedRevision int64  `json:"expected_revision"`
+			LibraryDigest    string `json:"library_digest"`
+		} `json:"preview"`
+	}
+	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	commitBody, _ := json.Marshal(map[string]any{"digest": preview.Preview.Digest, "expected_revision": preview.Preview.ExpectedRevision})
+	if preview.Preview.ExpectedRevision != before.Revision || preview.Preview.LibraryDigest != before.Digest {
+		t.Fatalf("preview binding = %#v, tree = %#v", preview.Preview, before)
+	}
+	commitRequest := dashboardPost(t, "/api/group-indexes/rebuild", string(commitBody))
+	commitResponse := httptest.NewRecorder()
+	server.ServeHTTP(commitResponse, commitRequest)
+	if commitResponse.Code != http.StatusOK {
+		t.Fatalf("commit = %d, %s", commitResponse.Code, commitResponse.Body.String())
+	}
+	var committed struct {
+		Action          string `json:"action"`
+		LibraryRevision int64  `json:"library_revision"`
+		LibraryDigest   string `json:"library_digest"`
+		Materialization struct {
+			Status      string `json:"status"`
+			Documents   int    `json:"documents"`
+			SourceScope string `json:"source_scope"`
+		} `json:"materialization"`
+	}
+	if err := json.Unmarshal(commitResponse.Body.Bytes(), &committed); err != nil {
+		t.Fatal(err)
+	}
+	if committed.Action != "rebuild" || committed.LibraryRevision != before.Revision ||
+		committed.LibraryDigest != before.Digest || committed.Materialization.Status != "REBUILT" ||
+		committed.Materialization.Documents != 1 || committed.Materialization.SourceScope != "approved-verified-only" {
+		t.Fatalf("commit body = %#v", committed)
+	}
+	after := readTreeResponse(t, server)
+	if after.Revision != before.Revision || after.Digest != before.Digest {
+		t.Fatalf("group materialization changed Library topology: before=%#v after=%#v", before, after)
+	}
+	var groupNode library.Node
+	for _, node := range after.Nodes {
+		if node.ID == "operations" {
+			groupNode = node
+			break
+		}
+	}
+	if groupNode.Stats.IndexedDocuments != 1 || groupNode.Stats.IndexedChunks < 1 || groupNode.Stats.UsedBytes < 1 {
+		t.Fatalf("group Library statistics = %#v", groupNode.Stats)
+	}
+	if status := rag.ReadGroupStatus(knowledgeRoot, "operations"); status.Status != "READY" || status.Documents != 1 {
+		t.Fatalf("group index status = %#v", status)
+	}
+	replayResponse := httptest.NewRecorder()
+	server.ServeHTTP(replayResponse, dashboardPost(t, "/api/group-indexes/rebuild", string(commitBody)))
+	if replayResponse.Code != http.StatusConflict {
+		t.Fatalf("replay = %d, %s", replayResponse.Code, replayResponse.Body.String())
+	}
+	assertDashboardErrorCode(t, replayResponse, "PREVIEW_REPLAYED")
+}
+
+func TestGroupIndexPreviewRejectsTopologyChange(t *testing.T) {
+	server := &Server{KnowledgeRoot: t.TempDir(), ControlRoot: dashboardTestControlRoot(t), Port: 8765, logger: log.New(io.Discard, "", 0)}
+	createDashboardLibraryGroup(t, server, "operations")
+	previewResponse := httptest.NewRecorder()
+	server.ServeHTTP(previewResponse, dashboardPost(t, "/api/group-indexes/preview", `{"node_id":"operations","document_ids":[]}`))
 	if previewResponse.Code != http.StatusOK {
 		t.Fatalf("preview = %d, %s", previewResponse.Code, previewResponse.Body.String())
 	}
@@ -120,45 +173,68 @@ func TestDashboardRebuildsGovernedGroupIndexInGo(t *testing.T) {
 	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
 		t.Fatal(err)
 	}
-	commitBody, _ := json.Marshal(map[string]any{"digest": preview.Preview.Digest, "expected_revision": preview.Preview.ExpectedRevision})
-	commitRequest := dashboardPost(t, "/api/libraries/rebuild-index", string(commitBody))
+	createDashboardLibraryGroup(t, server, "changed")
+	commitBody, err := json.Marshal(map[string]any{
+		"digest": preview.Preview.Digest, "expected_revision": preview.Preview.ExpectedRevision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, dashboardPost(t, "/api/group-indexes/rebuild", string(commitBody)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stale commit = %d, %s", response.Code, response.Body.String())
+	}
+	assertDashboardErrorCode(t, response, "REVISION_CONFLICT")
+	retry := httptest.NewRecorder()
+	server.ServeHTTP(retry, dashboardPost(t, "/api/group-indexes/rebuild", string(commitBody)))
+	if retry.Code != http.StatusConflict {
+		t.Fatalf("stale retry = %d, %s", retry.Code, retry.Body.String())
+	}
+	assertDashboardErrorCode(t, retry, "REVISION_CONFLICT")
+}
+
+func createDashboardLibraryGroup(t *testing.T, server *Server, nodeID string) library.Snapshot {
+	t.Helper()
+	previewBody, err := json.Marshal(map[string]any{
+		"action": "create",
+		"payload": map[string]any{
+			"node_id": nodeID, "title": nodeID, "type": "group", "parent_id": "global",
+			"capacity_bytes": int64(1024 * 1024 * 1024), "metadata": map[string]string{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previewResponse := httptest.NewRecorder()
+	server.ServeHTTP(previewResponse, dashboardPost(t, "/api/libraries/preview", string(previewBody)))
+	if previewResponse.Code != http.StatusOK {
+		t.Fatalf("Library preview = %d, %s", previewResponse.Code, previewResponse.Body.String())
+	}
+	var preview struct {
+		Preview library.MutationPreview `json:"preview"`
+	}
+	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	commitBody, err := json.Marshal(map[string]any{
+		"digest": preview.Preview.Digest, "expected_revision": preview.Preview.ExpectedRevision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	commitResponse := httptest.NewRecorder()
-	server.ServeHTTP(commitResponse, commitRequest)
+	server.ServeHTTP(commitResponse, dashboardPost(t, "/api/libraries/create", string(commitBody)))
 	if commitResponse.Code != http.StatusOK {
-		t.Fatalf("commit = %d, %s", commitResponse.Code, commitResponse.Body.String())
+		t.Fatalf("Library commit = %d, %s", commitResponse.Code, commitResponse.Body.String())
 	}
 	var committed struct {
-		Action          string `json:"action"`
-		Revision        int64  `json:"revision"`
-		Materialization struct {
-			Status      string `json:"status"`
-			Documents   int    `json:"documents"`
-			SourceScope string `json:"source_scope"`
-		} `json:"materialization"`
-		Tree struct {
-			Nodes []struct {
-				ID    string `json:"id"`
-				Index struct {
-					Status string `json:"status"`
-				} `json:"index"`
-			} `json:"nodes"`
-		} `json:"tree"`
+		Tree library.Snapshot `json:"tree"`
 	}
 	if err := json.Unmarshal(commitResponse.Body.Bytes(), &committed); err != nil {
 		t.Fatal(err)
 	}
-	if committed.Action != "rebuild_index" || committed.Revision != preview.Preview.ExpectedRevision || committed.Materialization.Status != "REBUILT" || committed.Materialization.Documents != 1 || committed.Materialization.SourceScope != "approved-verified-only" {
-		t.Fatalf("commit body = %#v", committed)
-	}
-	foundReady := false
-	for _, node := range committed.Tree.Nodes {
-		if node.ID == "operations" && node.Index.Status == "READY" {
-			foundReady = true
-		}
-	}
-	if !foundReady {
-		t.Fatalf("group index was not READY: %#v", committed.Tree.Nodes)
-	}
+	return committed.Tree
 }
 
 type dashboardIntakeJob struct {
@@ -214,6 +290,75 @@ func waitForDashboardIntake(t *testing.T, server *Server, identifier string) das
 	}
 	t.Fatalf("intake job %s did not finish", identifier)
 	return dashboardIntakeJob{}
+}
+
+func assertDirectoryStablyEmpty(t *testing.T, directory string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	const quietWindow = 50 * time.Millisecond
+	var emptySince time.Time
+	var (
+		entries []os.DirEntry
+		err     error
+	)
+	for time.Now().Before(deadline) {
+		entries, err = os.ReadDir(directory)
+		now := time.Now()
+		if err == nil && len(entries) == 0 {
+			if emptySince.IsZero() {
+				emptySince = now
+			}
+			if now.Sub(emptySince) >= quietWindow {
+				entries, err = os.ReadDir(directory)
+				if err == nil && len(entries) == 0 {
+					return
+				}
+				emptySince = time.Time{}
+			}
+		} else {
+			emptySince = time.Time{}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	entries, err = os.ReadDir(directory)
+	t.Fatalf("directory did not become stably empty: %v, %v", entries, err)
+}
+
+func stableIntakeTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := os.MkdirTemp("", "ytqjk-dashboard-intake-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(time.Second)
+		const quietWindow = 50 * time.Millisecond
+		var absentSince time.Time
+		var cleanupErr error
+		for time.Now().Before(deadline) {
+			cleanupErr = os.RemoveAll(directory)
+			now := time.Now()
+			_, statErr := os.Lstat(directory)
+			if cleanupErr == nil && errors.Is(statErr, os.ErrNotExist) {
+				if absentSince.IsZero() {
+					absentSince = now
+				}
+				if now.Sub(absentSince) >= quietWindow {
+					_, statErr = os.Lstat(directory)
+					if errors.Is(statErr, os.ErrNotExist) {
+						return
+					}
+					absentSince = time.Time{}
+				}
+			} else {
+				absentSince = time.Time{}
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		_, statErr := os.Lstat(directory)
+		t.Errorf("temporary intake directory cleanup did not stabilize: remove=%v stat=%v", cleanupErr, statErr)
+	})
+	return directory
 }
 
 func mustJSON(t *testing.T, value any) []byte {

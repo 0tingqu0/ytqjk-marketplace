@@ -94,7 +94,7 @@ func TestDashboardPeerConfigurationNeverReturnsSecret(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{KnowledgeRoot: knowledgeRoot, Port: 8765, logger: log.New(io.Discard, "", 0)}
+	server := &Server{KnowledgeRoot: knowledgeRoot, ControlRoot: dashboardTestControlRoot(t), Port: 8765, logger: log.New(io.Discard, "", 0)}
 	if err := server.ensureStores(); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,12 @@ func TestWorkbenchStateIncludesActiveSnapshotDocuments(t *testing.T) {
 	if _, err := service.CreateSnapshot(projectID); err != nil {
 		t.Fatal(err)
 	}
-	workbench := &Workbench{service: service, project: projectID, csrf: "token", host: "127.0.0.1:4321", created: map[string]bool{}}
+	workbench := &Workbench{
+		project: projectID, csrf: "token", host: "127.0.0.1:4321", created: map[string]bool{},
+		admit: func(_ context.Context, action func(*knowledge.Service) error) error {
+			return action(service)
+		},
+	}
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4321/api/state", nil)
 	request.Host = "127.0.0.1:4321"
 	response := httptest.NewRecorder()

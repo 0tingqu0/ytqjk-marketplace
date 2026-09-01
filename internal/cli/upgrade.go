@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/dashboard"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/knowledge"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/maintenance"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/platform"
+	"github.com/0tingqu0/ytqjk-marketplace/internal/runtimeentry"
 	upgradepkg "github.com/0tingqu0/ytqjk-marketplace/internal/upgrade"
 )
 
@@ -101,21 +102,57 @@ func (commandContext commandContext) applyUpgrade(runtimeRoot, codexRoot, knowle
 	if err != nil {
 		return err
 	}
+	controller, err := beginUpgradeMaintenance(context.Background(), upgradepkg.ActivationBinding{
+		OperationID: plan.ID, RuntimeRoot: plan.RuntimeRoot, CodexRoot: plan.CodexRoot,
+		KnowledgeRoot: plan.KnowledgeRoot,
+	}, "UPGRADE_V070_ACTIVATION")
+	if err != nil {
+		return errors.Join(err, upgradepkg.AbortPrepared(plan, "MAINTENANCE_ADMISSION_FAILED"))
+	}
+	if err := controller.beginMutation(false); err != nil {
+		return controller.fail(errors.Join(err, upgradepkg.AbortPrepared(plan, "MAINTENANCE_MUTATION_FAILED")))
+	}
 	if wasRunning {
 		status := dashboard.StopService(knowledgeRoot, port)
 		if status.Status == "FAILED" {
-			return errors.New("dashboard stop failed before upgrade activation")
+			cause := errors.New("dashboard stop failed before upgrade activation")
+			return controller.fail(errors.Join(cause, upgradepkg.AbortPrepared(plan, "DASHBOARD_STOP_FAILED")))
 		}
 	}
-	if err := upgradepkg.Launch(plan, os.Getpid()); err != nil {
-		if wasRunning && dashboardService == "auto" {
-			binary, binaryErr := os.Executable()
-			assets, assetsErr := resolveAssets("", "dashboard")
-			if binaryErr == nil && assetsErr == nil {
-				_ = dashboard.StartService(binary, knowledgeRoot, assets, port)
-			}
-		}
-		return err
+	preparedPlan := plan
+	boundPlan, err := upgradepkg.BindActivationSnapshot(context.Background(), preparedPlan)
+	if err != nil {
+		restartErr := restartCurrentDashboardAfterActivationFailure(
+			knowledgeRoot, port, wasRunning && dashboardService == "auto",
+		)
+		cause := errors.Join(err, upgradepkg.AbortPrepared(preparedPlan, "SNAPSHOT_BIND_FAILED"))
+		return controller.failAfterRestore(cause, restartErr)
+	}
+	plan = boundPlan
+	binding, err := planBinding(plan)
+	if err != nil {
+		restartErr := restartCurrentDashboardAfterActivationFailure(
+			knowledgeRoot, port, wasRunning && dashboardService == "auto",
+		)
+		cause := errors.Join(err, upgradepkg.AbortPrepared(plan, "PLAN_BINDING_FAILED"))
+		return controller.failAfterRestore(cause, restartErr)
+	}
+	launchOptions, clearCapability, err := controller.launchOptions(
+		binding, maintenance.OutcomeSucceeded, maintenance.OutcomeRolledBack,
+	)
+	if err != nil {
+		restartErr := restartCurrentDashboardAfterActivationFailure(
+			knowledgeRoot, port, wasRunning && dashboardService == "auto",
+		)
+		cause := errors.Join(err, upgradepkg.AbortPrepared(plan, "CANARY_BINDING_FAILED"))
+		return controller.failAfterRestore(cause, restartErr)
+	}
+	defer clearCapability()
+	if err := upgradepkg.Launch(plan, os.Getpid(), launchOptions); err != nil {
+		restartErr := restartCurrentDashboardAfterActivationFailure(
+			knowledgeRoot, port, wasRunning && dashboardService == "auto",
+		)
+		return controller.failAfterRestore(err, restartErr)
 	}
 	return commandContext.write(map[string]any{
 		"status": "ACTIVATION_PENDING", "current_version": buildinfo.Version,
@@ -123,85 +160,70 @@ func (commandContext commandContext) applyUpgrade(runtimeRoot, codexRoot, knowle
 	})
 }
 
-func (commandContext commandContext) activateUpgrade(arguments []string) error {
-	flags := quietFlags("upgrade activate")
-	planPath := flags.String("plan", "", "prepared upgrade plan")
-	parentPID := flags.Int("parent-pid", 0, "parent process to wait for")
-	if err := flags.Parse(arguments); err != nil {
-		return err
-	}
-	if err := requireNoPositionals(flags.Args()); err != nil {
-		return err
-	}
-	if !filepath.IsAbs(*planPath) || *parentPID < 0 {
-		return errors.New("upgrade activation arguments are invalid")
-	}
-	if err := upgradepkg.WaitForParent(*parentPID, 45*time.Second); err != nil {
-		return err
-	}
-	result, err := upgradepkg.Activate(context.Background(), *planPath)
-	if writeErr := commandContext.write(result); writeErr != nil {
-		return writeErr
-	}
-	return err
+func (commandContext commandContext) applyRollback(runtimeRoot, codexRoot, knowledgeRoot string, port int, dashboardService string) error {
+	wasRunning := dashboard.Probe(port).Status == "RUNNING"
+	return commandContext.applyRollbackWithState(
+		runtimeRoot, codexRoot, knowledgeRoot, port,
+		wasRunning, wasRunning && dashboardService == "auto",
+	)
 }
 
-func (commandContext commandContext) applyRollback(runtimeRoot, codexRoot, knowledgeRoot string, port int, dashboardService string) error {
-	binary, err := os.Executable()
+func (commandContext commandContext) applyRollbackWithState(
+	runtimeRoot, codexRoot, knowledgeRoot string,
+	port int,
+	wasRunning, restartDashboard bool,
+) error {
+	active, binary, err := runtimeentry.ReadActive(runtimeRoot)
 	if err != nil {
 		return err
 	}
-	wasRunning := dashboard.Probe(port).Status == "RUNNING"
 	plan, err := upgradepkg.PrepareRollback(context.Background(), upgradepkg.RollbackOptions{
 		RuntimeRoot: runtimeRoot, CodexRoot: codexRoot, KnowledgeRoot: knowledgeRoot,
-		CurrentVersion: buildinfo.Version, CurrentBinary: binary, Port: port,
-		RestartDashboard: wasRunning && dashboardService == "auto",
+		CurrentVersion: active.Version, CurrentBinary: binary, Port: port,
+		RestartDashboard: restartDashboard,
 	})
 	if err != nil {
 		return err
+	}
+	binding, err := rollbackBinding(plan)
+	if err != nil {
+		return errors.Join(err, upgradepkg.AbortPreparedRollback(plan, "PLAN_BINDING_FAILED"))
+	}
+	controller, err := beginUpgradeMaintenance(context.Background(), binding, "ROLLBACK_V070_ACTIVATION")
+	if err != nil {
+		return errors.Join(err, upgradepkg.AbortPreparedRollback(plan, "MAINTENANCE_ADMISSION_FAILED"))
+	}
+	if err := controller.beginMutation(true); err != nil {
+		return controller.fail(errors.Join(err, upgradepkg.AbortPreparedRollback(plan, "MAINTENANCE_MUTATION_FAILED")))
 	}
 	if wasRunning {
 		status := dashboard.StopService(knowledgeRoot, port)
 		if status.Status == "FAILED" {
-			return errors.New("dashboard stop failed before rollback activation")
+			cause := errors.New("dashboard stop failed before rollback activation")
+			return controller.fail(errors.Join(cause, upgradepkg.AbortPreparedRollback(plan, "DASHBOARD_STOP_FAILED")))
 		}
 	}
-	if err := upgradepkg.LaunchRollback(plan, os.Getpid()); err != nil {
-		if wasRunning && dashboardService == "auto" {
-			assets, assetsErr := resolveAssets("", "dashboard")
-			if assetsErr == nil {
-				_ = dashboard.StartService(binary, knowledgeRoot, assets, port)
-			}
-		}
-		return err
+	launchOptions, clearCapability, err := controller.launchOptions(
+		binding, maintenance.OutcomeRolledBack, maintenance.OutcomeFailedSafe,
+	)
+	if err != nil {
+		restartErr := restartDashboardAfterActivationFailure(
+			binary, knowledgeRoot, port, restartDashboard,
+		)
+		cause := errors.Join(err, upgradepkg.AbortPreparedRollback(plan, "CANARY_BINDING_FAILED"))
+		return controller.failAfterRestore(cause, restartErr)
+	}
+	defer clearCapability()
+	if err := upgradepkg.LaunchRollback(plan, os.Getpid(), launchOptions); err != nil {
+		restartErr := restartDashboardAfterActivationFailure(
+			binary, knowledgeRoot, port, restartDashboard,
+		)
+		return controller.failAfterRestore(err, restartErr)
 	}
 	return commandContext.write(map[string]any{
 		"status": "ROLLBACK_PENDING", "current_version": plan.CurrentVersion,
-		"target_version": plan.TargetVersion, "restart_required": wasRunning,
+		"target_version": plan.TargetVersion, "restart_required": restartDashboard,
 	})
-}
-
-func (commandContext commandContext) activateRollback(arguments []string) error {
-	flags := quietFlags("upgrade rollback-activate")
-	planPath := flags.String("plan", "", "prepared rollback plan")
-	parentPID := flags.Int("parent-pid", 0, "parent process to wait for")
-	if err := flags.Parse(arguments); err != nil {
-		return err
-	}
-	if err := requireNoPositionals(flags.Args()); err != nil {
-		return err
-	}
-	if !filepath.IsAbs(*planPath) || *parentPID < 0 {
-		return errors.New("rollback activation arguments are invalid")
-	}
-	if err := upgradepkg.WaitForParent(*parentPID, 45*time.Second); err != nil {
-		return err
-	}
-	result, err := upgradepkg.Rollback(context.Background(), *planPath)
-	if writeErr := commandContext.write(result); writeErr != nil {
-		return writeErr
-	}
-	return err
 }
 
 func upgradeRoots(runtimeValue, codexValue, knowledgeValue string) (string, string, string, error) {

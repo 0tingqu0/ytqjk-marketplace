@@ -154,6 +154,155 @@ func TestGlobalIndexScanStaysBoundedInsideGitRepository(t *testing.T) {
 	}
 }
 
+func TestGlobalAndProjectRAGExcludeCandidates(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	knowledgeRoot := t.TempDir()
+	globalAllowed := []string{
+		"personal-approved-global-token",
+		"error-approved-global-token",
+		"verified-global-token",
+	}
+	globalForbidden := []string{
+		"personal-candidate-global-token",
+		"error-candidate-global-token",
+	}
+	globalFiles := map[string]string{
+		"personal-experience/approved/personal.md":   globalAllowed[0],
+		"error-experience/approved/error.md":         globalAllowed[1],
+		"verified/verified.md":                       globalAllowed[2],
+		"personal-experience/candidates/personal.md": globalForbidden[0],
+		"error-experience/candidates/error.md":       globalForbidden[1],
+	}
+	for path, token := range globalFiles {
+		writeRAGTestFile(t, knowledgeRoot, path, token)
+	}
+	global, err := BuildGlobal(knowledgeRoot, "off")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if global.Stats.Files != len(globalAllowed) {
+		t.Fatalf("global files = %d, want %d", global.Stats.Files, len(globalAllowed))
+	}
+	assertRAGIndexGovernance(
+		t,
+		filepath.Join(global.ProjectDir, "index.json"),
+		filepath.Join(global.ProjectDir, "manifest.json"),
+		globalAllowed,
+		globalForbidden,
+	)
+
+	repo := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repo, "init")
+	runTestGit(t, repo, "config", "user.name", "YTQJK Test")
+	runTestGit(t, repo, "config", "user.email", "ytqjk@example.invalid")
+	projectAllowed := []string{
+		"personal-approved-project-token",
+		"error-approved-project-token",
+		"verified-project-token",
+	}
+	projectForbidden := []string{
+		"personal-candidate-project-token",
+		"error-candidate-project-token",
+	}
+	projectFiles := map[string]string{
+		"personal-experience/approved/personal.md":   projectAllowed[0],
+		"error-experience/approved/error.md":         projectAllowed[1],
+		"verified/verified.md":                       projectAllowed[2],
+		"personal-experience/candidates/personal.md": projectForbidden[0],
+		"error-experience/candidates/error.md":       projectForbidden[1],
+	}
+	for path, token := range projectFiles {
+		writeRAGTestFile(t, repo, path, token)
+	}
+	runTestGit(t, repo, "add", ".")
+	runTestGit(t, repo, "commit", "-m", "initial")
+	project, err := Build(knowledgeRoot, repo, "off")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Stats.Files != len(projectAllowed) {
+		t.Fatalf("project files = %d, want %d", project.Stats.Files, len(projectAllowed))
+	}
+	assertRAGIndexGovernance(
+		t,
+		filepath.Join(project.ProjectDir, "index.json"),
+		filepath.Join(project.ProjectDir, "manifest.json"),
+		projectAllowed,
+		projectForbidden,
+	)
+}
+
+func TestQueryIndexRejectsCandidateChunks(t *testing.T) {
+	directory := t.TempDir()
+	indexPath := filepath.Join(directory, "index.json")
+	if err := safeio.WriteJSON(indexPath, Index{SchemaVersion: SchemaVersion, ProjectID: "legacy", Chunks: []Chunk{
+		integrityTestChunk("personal-experience/candidates/leak.md", "personal-legacy-candidate-token"),
+		integrityTestChunk("error-experience/candidates/leak.md", "error-legacy-candidate-token"),
+		integrityTestChunk("verified/approved.md", "legacy-approved-token"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	assertRAGQueries(
+		t,
+		indexPath,
+		filepath.Join(directory, "manifest.json"),
+		[]string{"legacy-approved-token"},
+		[]string{"personal-legacy-candidate-token", "error-legacy-candidate-token"},
+	)
+}
+
+func assertRAGIndexGovernance(t *testing.T, indexPath, manifestPath string, allowed, forbidden []string) {
+	t.Helper()
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range forbidden {
+		if strings.Contains(string(data), token) {
+			t.Errorf("candidate token %q entered index", token)
+		}
+	}
+	assertRAGQueries(t, indexPath, manifestPath, allowed, forbidden)
+}
+
+func assertRAGQueries(t *testing.T, indexPath, manifestPath string, allowed, forbidden []string) {
+	t.Helper()
+	for _, token := range forbidden {
+		results, _, queryErr := queryIndex(indexPath, manifestPath, token, 5, "test")
+		if queryErr != nil {
+			t.Fatal(queryErr)
+		}
+		if len(results) != 0 {
+			t.Errorf("candidate token %q returned from query: %#v", token, results)
+		}
+	}
+	for _, token := range allowed {
+		results, _, queryErr := queryIndex(indexPath, manifestPath, token, 5, "test")
+		if queryErr != nil {
+			t.Fatal(queryErr)
+		}
+		if len(results) == 0 {
+			t.Errorf("approved token %q was not queryable", token)
+		}
+	}
+}
+
+func writeRAGTestFile(t *testing.T, root, relative, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func runTestGit(t *testing.T, directory string, arguments ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", directory}, arguments...)...)

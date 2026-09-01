@@ -18,42 +18,45 @@ type PeerRuntimeStatus struct {
 	Port     int    `json:"port,omitempty"`
 }
 
-func (s *Server) startPeerRuntime() {
+func (s *Server) startPeerRuntime() error {
 	status := PeerRuntimeStatus{Status: "NOT_CONFIGURED"}
 	if err := s.ensureStores(); err != nil {
 		status.Status = "FAILED"
 		s.setPeerRuntime(status)
-		return
+		return err
 	}
 	settings, err := s.peerStore.Load(context.Background())
 	if errors.Is(err, peer.ErrNotConfigured) {
 		s.setPeerRuntime(status)
-		return
+		return nil
 	}
 	if err != nil {
 		status.Status = "FAILED"
 		s.setPeerRuntime(status)
-		return
+		return err
 	}
 	status.BindHost, status.Port = settings.BindHost, settings.Port
 	if !settings.Enabled {
 		status.Status = "DISABLED"
 		s.setPeerRuntime(status)
-		return
+		return nil
 	}
 	address := net.JoinHostPort(settings.BindHost, strconv.Itoa(settings.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		status.Status = "FAILED"
 		s.setPeerRuntime(status)
-		s.logger.Printf("peer runtime failed to listen")
-		return
+		if s.logger != nil {
+			s.logger.Printf("peer runtime failed to listen: error=%v", err)
+		}
+		return err
+	}
+	peerHandler := &peer.Handler{
+		KnowledgeRoot: s.KnowledgeRoot, Peers: s.peerStore, Trees: s.treeStore, Logger: s.logger,
 	}
 	server := &http.Server{
-		Addr: address,
-		Handler: &peer.Handler{
-			KnowledgeRoot: s.KnowledgeRoot, Peers: s.peerStore, Trees: s.treeStore, Logger: s.logger,
-		},
+		Addr:              address,
+		Handler:           &peerAdmissionHandler{server: s, next: peerHandler},
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       20 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -73,7 +76,10 @@ func (s *Server) startPeerRuntime() {
 			s.logger.Printf("peer runtime stopped unexpectedly")
 		}
 	}()
-	s.logger.Printf("peer runtime listening on %s", fmt.Sprintf("%s:%d", settings.BindHost, settings.Port))
+	if s.logger != nil {
+		s.logger.Printf("peer runtime listening on %s", fmt.Sprintf("%s:%d", settings.BindHost, settings.Port))
+	}
+	return nil
 }
 
 func (s *Server) stopPeerRuntime() {

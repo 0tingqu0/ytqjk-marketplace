@@ -1,5 +1,15 @@
 import { api } from "../api.js";
-import { byId, clear, formatBytes, formatTime, text } from "./dom.js";
+import { byId, clear, formatBytes, text } from "./dom.js";
+
+function groupChunks(chunks) {
+	const files = new Map();
+	chunks.forEach((chunk) => {
+		const parts = files.get(chunk.path) || [];
+		parts.push(chunk);
+		files.set(chunk.path, parts);
+	});
+	return [...files.values()];
+}
 
 function appendIndexFiles(files, heading) {
   if (!files.length) return;
@@ -11,10 +21,10 @@ function appendIndexFiles(files, heading) {
     const parts = text("div", "", "project-chunks");
     chunks.forEach((chunk) => {
       const part = document.createElement("article");
-      part.append(
-        text(
-          "small",
-          `第 ${chunk.line_start}-${chunk.line_end} 行`,
+		part.append(
+			text(
+				"small",
+				`第 ${chunk.start}-${chunk.end} 字符`,
         ),
         text("pre", chunk.content),
       );
@@ -35,45 +45,29 @@ function open(kicker, title, meta) {
 }
 
 export async function showGlobalLibrary() {
-  open("总库", "总库知识索引", "读取总库索引…");
-  try {
-    const library = await api.globalLibrary();
-    const files = `${library.file_count}/${library.expected_files}`;
-    const chunks = `${library.chunk_count}/${library.expected_chunks}`;
-    byId("project-library-meta").textContent =
-      `知识索引 ${files} 文件 · ${chunks} 分块；`
-      + `索引于 ${formatTime(library.indexed_at)}`;
-    byId("project-library-empty").hidden = library.files.length > 0;
-    appendIndexFiles(library.files, "已验证与已批准知识");
-  } catch (error) { byId("project-library-meta").textContent = error.message; }
+	open("总库", "总库资料索引", "读取总库索引…");
+	try {
+		const library = await api.globalLibrary();
+		byId("project-library-meta").textContent =
+			`当前载入 ${library.count} 分块作为资料预览`;
+		byId("project-library-empty").hidden = library.count > 0;
+		appendIndexFiles(groupChunks(library.chunks), "已验证与已批准资料");
+	} catch (error) { byId("project-library-meta").textContent = error.message; }
 }
 
-export async function showProjectLibrary(project) {
-  open("项目子库", project.name, "读取项目索引…");
-  try {
-    const library = await api.projectLibrary(project.id);
-    const cache = library.cache;
-    const files = `${library.file_count}/${library.expected_files}`;
-    const chunks = `${library.chunk_count}/${library.expected_chunks}`;
-    const used = formatBytes(cache.used_bytes);
-    byId("project-library-meta").textContent =
-      `知识缓存 ${library.prefetch.length} 分块 · ${used}；`
-      + `源码索引 ${files} 文件 · ${chunks} 分块；${cache.policy}`;
-    byId("project-library-empty").hidden =
-      library.files.length > 0 || library.prefetch.length > 0;
-    const target = byId("project-library-files");
-    if (library.prefetch.length) {
-      target.append(text("h3", "总库预取缓存"));
-      library.prefetch.forEach((entry) => {
-        target.append(text(
-          "pre",
-          `命中 ${entry.hit_count} 次 · ${entry.path}\n${entry.content}`,
-          "project-knowledge",
-        ));
-      });
-    }
-    appendIndexFiles(library.files, "项目源码索引");
-  } catch (error) { byId("project-library-meta").textContent = error.message; }
+export async function showProjectLibrary(project, node) {
+	open("项目子库", project.name, "读取项目索引…");
+	try {
+		const library = await api.projectLibrary(project.id);
+		const stats = node.stats;
+		byId("project-library-meta").textContent =
+			`资料索引 ${stats.indexed_documents}/${stats.total_documents} 文件 · `
+			+ `${stats.indexed_chunks}/${stats.total_chunks} 分块；`
+			+ `占用 ${formatBytes(stats.used_bytes)}/${formatBytes(node.capacity_bytes)}；`
+			+ `当前载入 ${library.count} 分块作为资料预览`;
+		byId("project-library-empty").hidden = library.count > 0;
+		appendIndexFiles(groupChunks(library.chunks), "项目资料预览");
+	} catch (error) { byId("project-library-meta").textContent = error.message; }
 }
 
 export function bindLibraryDialog() {

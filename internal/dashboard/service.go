@@ -3,14 +3,23 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
+	"strings"
 	"time"
 )
+
+var errServiceNotConfigured = errors.New("dashboard service is not configured")
+
+type serviceSpec struct {
+	Binary        string
+	KnowledgeRoot string
+	Assets        string
+	Port          int
+}
 
 type ServiceStatus struct {
 	Status    string `json:"status"`
@@ -21,59 +30,59 @@ type ServiceStatus struct {
 }
 
 func StartService(binary, knowledgeRoot, assets string, port int) ServiceStatus {
-	if status := Probe(port); status.Status == "RUNNING" {
-		return status
+	configured := ConfigureService(binary, knowledgeRoot, assets, port)
+	if configured.Status == "FAILED" {
+		return configured
 	}
-	if err := os.MkdirAll(knowledgeRoot, 0o755); err != nil {
-		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "NOT_CONFIGURED"}
+	if running := Probe(port); running.Status == "RUNNING" {
+		if !configured.Changed {
+			running.Autostart = configured.Autostart
+			return running
+		}
+		if _, _, err := stopPlatformService(); err != nil {
+			return ServiceStatus{Status: "FAILED", Port: port, Autostart: configured.Autostart}
+		}
 	}
-	logPath := filepath.Join(knowledgeRoot, "dashboard.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	started := StartConfiguredService(port)
+	started.Changed = configured.Changed || started.Changed
+	return started
+}
+
+func ConfigureService(binary, knowledgeRoot, assets string, port int) ServiceStatus {
+	spec, err := prepareServiceSpec(binary, knowledgeRoot, assets, port)
 	if err != nil {
 		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "NOT_CONFIGURED"}
 	}
-	command := exec.Command(binary, "dashboard", "serve", "--knowledge-root", knowledgeRoot, "--assets", assets, "--port", strconv.Itoa(port))
-	command.Stdin = nil
-	command.Stdout = logFile
-	command.Stderr = logFile
-	configureDetached(command)
-	if err := command.Start(); err != nil {
-		logFile.Close()
+	changed, autostart, err := configurePlatformService(spec)
+	if err != nil {
 		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "NOT_CONFIGURED"}
 	}
-	pid := command.Process.Pid
-	_ = command.Process.Release()
-	_ = logFile.Close()
+	return ServiceStatus{Status: "CONFIGURED", Changed: changed, Port: port, Autostart: autostart}
+}
+
+func StartConfiguredService(port int) ServiceStatus {
+	if err := startPlatformService(); err != nil {
+		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "UNKNOWN"}
+	}
 	for attempt := 0; attempt < 40; attempt++ {
 		time.Sleep(100 * time.Millisecond)
 		if status := Probe(port); status.Status == "RUNNING" {
 			status.Changed = true
-			status.PID = pid
-			status.Autostart = "PROCESS"
+			status.Autostart = platformAutostart()
 			return status
 		}
 	}
-	return ServiceStatus{Status: "FAILED", Port: port, Autostart: "NOT_CONFIGURED", PID: pid}
+	return ServiceStatus{Status: "FAILED", Port: port, Autostart: platformAutostart()}
 }
 
 func StopService(knowledgeRoot string, port int) ServiceStatus {
-	pidData, err := os.ReadFile(filepath.Join(knowledgeRoot, "dashboard.pid"))
-	if err != nil {
-		if Probe(port).Status != "RUNNING" {
-			return ServiceStatus{Status: "STOPPED", Port: port, Autostart: "NOT_CONFIGURED"}
-		}
-		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "UNKNOWN"}
-	}
-	pid, err := strconv.Atoi(string(bytesTrimSpace(pidData)))
-	if err != nil || pid <= 0 {
-		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "UNKNOWN"}
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil || process.Kill() != nil {
-		return ServiceStatus{Status: "FAILED", Port: port, Autostart: "UNKNOWN", PID: pid}
-	}
-	_ = os.Remove(filepath.Join(knowledgeRoot, "dashboard.pid"))
-	return ServiceStatus{Status: "STOPPED", Changed: true, Port: port, Autostart: "REMOVED", PID: pid}
+	changed, autostart, err := stopPlatformService()
+	return waitForServiceStop(port, changed, autostart, err)
+}
+
+func RemoveService(knowledgeRoot string, port int) ServiceStatus {
+	changed, autostart, err := removePlatformService()
+	return waitForServiceStop(port, changed, autostart, err)
 }
 
 func Probe(port int) ServiceStatus {
@@ -96,13 +105,46 @@ func Probe(port int) ServiceStatus {
 	return ServiceStatus{Status: "RUNNING", Port: port, Autostart: "UNKNOWN"}
 }
 
-func bytesTrimSpace(value []byte) []byte {
-	start, end := 0, len(value)
-	for start < end && (value[start] == ' ' || value[start] == '\n' || value[start] == '\r' || value[start] == '\t') {
-		start++
+func prepareServiceSpec(binary, knowledgeRoot, assets string, port int) (serviceSpec, error) {
+	if port < 1 || port > 65535 || strings.ContainsAny(binary+knowledgeRoot+assets, "\x00\r\n") {
+		return serviceSpec{}, errors.New("dashboard service parameters are invalid")
 	}
-	for end > start && (value[end-1] == ' ' || value[end-1] == '\n' || value[end-1] == '\r' || value[end-1] == '\t') {
-		end--
+	values := []*string{&binary, &knowledgeRoot, &assets}
+	for _, value := range values {
+		absolute, err := filepath.Abs(*value)
+		if err != nil {
+			return serviceSpec{}, err
+		}
+		*value = filepath.Clean(absolute)
 	}
-	return value[start:end]
+	if err := os.MkdirAll(knowledgeRoot, 0o700); err != nil {
+		return serviceSpec{}, err
+	}
+	for path, directory := range map[string]bool{binary: false, knowledgeRoot: true, assets: true} {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || info.IsDir() != directory {
+			return serviceSpec{}, errors.Join(errors.New("dashboard service path is unsafe"), err)
+		}
+	}
+	indexInfo, err := os.Lstat(filepath.Join(assets, "index.html"))
+	if err != nil || !indexInfo.Mode().IsRegular() || indexInfo.Mode()&os.ModeSymlink != 0 {
+		return serviceSpec{}, errors.Join(errors.New("dashboard assets are incomplete"), err)
+	}
+	return serviceSpec{Binary: binary, KnowledgeRoot: knowledgeRoot, Assets: assets, Port: port}, nil
+}
+
+func waitForServiceStop(port int, changed bool, autostart string, err error) ServiceStatus {
+	if errors.Is(err, errServiceNotConfigured) && Probe(port).Status != "RUNNING" {
+		return ServiceStatus{Status: "STOPPED", Port: port, Autostart: "NOT_CONFIGURED"}
+	}
+	if err != nil {
+		return ServiceStatus{Status: "FAILED", Port: port, Autostart: autostart}
+	}
+	for attempt := 0; attempt < 40; attempt++ {
+		if Probe(port).Status != "RUNNING" {
+			return ServiceStatus{Status: "STOPPED", Changed: changed, Port: port, Autostart: autostart}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return ServiceStatus{Status: "FAILED", Port: port, Autostart: autostart}
 }

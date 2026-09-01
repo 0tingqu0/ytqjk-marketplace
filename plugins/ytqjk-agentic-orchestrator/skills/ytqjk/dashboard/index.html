@@ -149,6 +149,10 @@
             <option value="mounted">只读挂载库</option>
           </select>
         </label>
+        <label id="tree-capacity-field">容量上限（MiB）
+          <input id="tree-capacity-mib" type="number" required
+                 min="64" max="1048576" step="64" value="1024">
+        </label>
         <label id="tree-parent-id-field">父知识库
           <select id="tree-parent-id"></select>
         </label>

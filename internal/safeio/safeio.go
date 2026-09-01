@@ -17,7 +17,48 @@ import (
 	"strings"
 )
 
+// PostCommitError reports that an operation committed its target but the final
+// durability sync failed. Callers must read back the target before retrying.
+type PostCommitError struct {
+	Operation string
+	Err       error
+}
+
+func (e *PostCommitError) Error() string {
+	operation := e.Operation
+	if operation == "" {
+		operation = "filesystem operation"
+	}
+	return operation + " committed but durability sync failed: " + e.Err.Error()
+}
+
+func (e *PostCommitError) Unwrap() error {
+	return e.Err
+}
+
+// WasCommitted reports whether the target was committed before an error.
+func WasCommitted(err error) bool {
+	var committed *PostCommitError
+	return errors.As(err, &committed)
+}
+
+// AtomicWrite atomically replaces a file. Parent creation is best effort;
+// callers that need directory-creation durability must provision it first.
 func AtomicWrite(path string, data []byte, mode fs.FileMode) error {
+	return atomicWrite(path, data, mode, replaceFile)
+}
+
+func atomicWrite(path string, data []byte, mode fs.FileMode, rename func(string, string) error) error {
+	return atomicWriteWithSync(path, data, mode, rename, syncDirectory)
+}
+
+func atomicWriteWithSync(
+	path string,
+	data []byte,
+	mode fs.FileMode,
+	rename func(string, string) error,
+	sync func(string) error,
+) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
@@ -46,10 +87,13 @@ func AtomicWrite(path string, data []byte, mode fs.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := replaceFile(temporaryPath, path); err != nil {
+	if err := rename(temporaryPath, path); err != nil {
 		return err
 	}
 	ok = true
+	if err := sync(directory); err != nil {
+		return &PostCommitError{Operation: "atomic write", Err: err}
+	}
 	return nil
 }
 

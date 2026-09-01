@@ -2,14 +2,14 @@
 
 [English](README.md)
 
-YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。自 0.6.10 起，安装器、
+YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。自 0.7.0 起，安装器、
 插件钩子、本地 RAG、会话锚点、SQLite v4 知识服务、Dashboard API、编排身份账本
 和经复审的 Git handoff 全部由同一个跨平台 Go 二进制提供。Dashboard 前端保留为
 普通的 HTML、CSS 和 JavaScript 静态资源。
 
 ## 环境要求
 
-- Windows 10/11、Linux、macOS 或 WSL2
+- Windows 10/11 x64、Linux x64 或 WSL2 x64
 - Git（项目身份与 handoff 工作流需要）
 - 开发时使用 Go 1.25 或更高版本
 
@@ -24,7 +24,7 @@ Windows：
 .\install.ps1
 ```
 
-Linux 或 macOS：
+Linux 或 WSL2：
 
 ```sh
 sh ./install.sh
@@ -139,8 +139,8 @@ go vet ./...
 go build ./cmd/ytqjk
 ```
 
-CI 在 Windows 与 Linux 上测试 Go 1.25/1.27，运行竞态检测、格式检查、Go-only
-迁移守卫，并交叉编译 Linux、Windows 与 macOS 发布二进制。
+CI 在 Windows x64 与 Linux x64 上测试 Go 1.25/1.27，运行竞态检测、格式检查、
+Go-only 迁移守卫，并构建当前支持的 Linux x64、Windows x64 发布二进制。
 
 ## 许可证
 

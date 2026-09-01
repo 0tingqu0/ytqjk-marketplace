@@ -1,0 +1,11 @@
+{
+  "contract": "library.v1.create",
+  "request": {
+    "node_id": "team-library",
+    "title": "Team Library",
+    "type": "group",
+    "parent_id": null,
+    "capacity_bytes": 1073741824,
+    "metadata": {}
+  }
+}
