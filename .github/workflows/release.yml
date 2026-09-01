@@ -820,8 +820,9 @@ jobs:
           fi
           jq -c '.[0]' <<< "${release_matches}" > "${release_json}"
           if [[ "$(jq -r '.draft' "${release_json}")" != true ]] || \
-              [[ "$(jq -r '.prerelease' "${release_json}")" != false ]]; then
-              echo "::error::Existing release is not an unpublished draft"
+              [[ "$(jq -r '.prerelease' "${release_json}")" != false ]] || \
+              [[ "$(jq -r '.target_commitish' "${release_json}")" != "${RELEASE_COMMIT}" ]]; then
+              echo "::error::Existing release state or target commit is invalid"
               exit 1
           fi
           release_id="$(jq -er '.id | tostring' "${release_json}")"
@@ -911,8 +912,9 @@ jobs:
           assert_remote_tag_commit
           gh api "${release_api}" > "${release_json}"
           if [[ "$(jq -r '.draft' "${release_json}")" != true ]] || \
-              [[ "$(jq -r '.prerelease' "${release_json}")" != false ]]; then
-              echo "::error::Verified release is no longer an unpublished draft"
+              [[ "$(jq -r '.prerelease' "${release_json}")" != false ]] || \
+              [[ "$(jq -r '.target_commitish' "${release_json}")" != "${RELEASE_COMMIT}" ]]; then
+              echo "::error::Verified release state or target commit changed"
               exit 1
           fi
 

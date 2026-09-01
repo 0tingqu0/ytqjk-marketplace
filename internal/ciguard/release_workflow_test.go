@@ -24,6 +24,7 @@ func TestReleaseWorkflowResolvesDraftByID(t *testing.T) {
 		`select(.tag_name == $tag)`,
 		`release_id="$(jq -er '.id | tostring' "${release_json}")"`,
 		`release_api="repos/${GITHUB_REPOSITORY}/releases/${release_id}"`,
+		`[[ "$(jq -r '.target_commitish' "${release_json}")" != "${RELEASE_COMMIT}" ]]`,
 	}
 	for _, fragment := range required {
 		if !strings.Contains(workflow, fragment) {
