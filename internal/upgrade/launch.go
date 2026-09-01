@@ -156,8 +156,9 @@ func stopStartedHelper(command *exec.Cmd) error {
 	if err := killStartedHelper(command); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
+	wait := waitStartedHelper
 	waited := make(chan error, 1)
-	go func() { waited <- waitStartedHelper(command) }()
+	go func() { waited <- wait(command) }()
 	timer := time.NewTimer(helperStopWait)
 	defer timer.Stop()
 	select {
