@@ -100,3 +100,47 @@ func TestInstallActivatesStableRuntime(t *testing.T) {
 		t.Fatalf("active = %#v, target = %q", active, target)
 	}
 }
+
+func TestUninstallSkipsDashboardRemovalWhenDisabled(t *testing.T) {
+	dataRoot := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("LOCALAPPDATA", dataRoot)
+	} else {
+		t.Setenv("XDG_DATA_HOME", dataRoot)
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRoot := filepath.Join(t.TempDir(), "target")
+	codexRoot := filepath.Join(t.TempDir(), "codex")
+	knowledgeRoot := filepath.Join(t.TempDir(), "knowledge")
+	common := []string{
+		"--mode", "knowledge-only", "--source-root", repositoryRoot,
+		"--target-root", targetRoot, "--codex-root", codexRoot,
+		"--knowledge-root", knowledgeRoot, "--codex-import", "off",
+		"--project-bootstrap", "off", "--dashboard-service", "off",
+		"--apply", "--yes", "--json",
+	}
+	var installOutput bytes.Buffer
+	if exitCode := Main(append([]string{"install"}, common...), strings.NewReader(""), &installOutput, &installOutput); exitCode != 0 {
+		t.Fatalf("install exit code = %d, output = %q", exitCode, installOutput.String())
+	}
+	var uninstallOutput bytes.Buffer
+	arguments := append([]string{"install", "--uninstall"}, common...)
+	if exitCode := Main(arguments, strings.NewReader(""), &uninstallOutput, &uninstallOutput); exitCode != 0 {
+		t.Fatalf("uninstall exit code = %d, output = %q", exitCode, uninstallOutput.String())
+	}
+	var receipt map[string]any
+	if err := json.Unmarshal(uninstallOutput.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	dashboardReceipt, ok := receipt["dashboard_service"].(map[string]any)
+	if !ok || dashboardReceipt["status"] != "SKIPPED_OFF" {
+		t.Fatalf("dashboard receipt = %#v", receipt["dashboard_service"])
+	}
+	runtimeReceipt, ok := receipt["runtime"].(map[string]any)
+	if !ok || runtimeReceipt["status"] != "REMOVED" {
+		t.Fatalf("runtime receipt = %#v", receipt["runtime"])
+	}
+}

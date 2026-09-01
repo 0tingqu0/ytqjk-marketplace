@@ -153,7 +153,12 @@ func (context commandContext) install(arguments []string) int {
 		)
 	}
 	if *uninstall {
-		serviceStatus := dashboard.RemoveService(knowledgeRoot, dashboard.DefaultPort)
+		serviceStatus := dashboard.ServiceStatus{
+			Status: "SKIPPED_OFF", Port: dashboard.DefaultPort, Autostart: "NOT_CONFIGURED",
+		}
+		if *dashboardService != "off" {
+			serviceStatus = dashboard.RemoveService(knowledgeRoot, dashboard.DefaultPort)
+		}
 		receipt["dashboard_service"] = serviceStatus
 		if serviceStatus.Status == "FAILED" {
 			receipt["apply"] = map[string]any{"status": "NOT_RUN", "error": "dashboard removal failed"}

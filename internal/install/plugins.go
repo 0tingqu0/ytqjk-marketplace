@@ -13,7 +13,10 @@ import (
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
 )
 
-const managedManifest = ".ytqjk-managed-plugins.json"
+const (
+	managedManifest       = ".ytqjk-managed-plugins.json"
+	legacyManagedManifest = ".ytqjk-managed.json"
+)
 
 var pluginNames = []string{"ytqjk-agentic-orchestrator", "ytqjk-knowledge"}
 
@@ -126,6 +129,18 @@ func MaterializePlugins(codexRoot, sourceRoot, binary string) (PluginResult, err
 			return PluginResult{}, err
 		}
 	}
+	legacyTarget := filepath.Join(pluginsRoot, legacyManagedManifest)
+	if _, err := os.Lstat(legacyTarget); err == nil {
+		legacySaved := filepath.Join(backup, legacyManagedManifest)
+		if err := os.Rename(legacyTarget, legacySaved); err != nil {
+			rollback()
+			return PluginResult{}, err
+		}
+		changed = append(changed, move{target: legacyTarget, saved: legacySaved})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		rollback()
+		return PluginResult{}, err
+	}
 	return result, nil
 }
 
@@ -172,11 +187,24 @@ func validateManagedTargets(pluginsRoot string) error {
 	if manifestErr != nil && !errors.Is(manifestErr, os.ErrNotExist) {
 		return manifestErr
 	}
+	legacy, legacyErr := readLegacyManagedManifest(filepath.Join(pluginsRoot, legacyManagedManifest))
+	if legacyErr != nil && !errors.Is(legacyErr, os.ErrNotExist) {
+		return legacyErr
+	}
+	if manifest != nil && legacy != nil {
+		return errors.New("multiple managed plugin manifests are present")
+	}
 	managed := map[string]pluginEntry{}
+	hashTree := safeio.TreeHash
 	if manifest != nil {
 		for _, entry := range manifest.Plugins {
 			managed[entry.Name] = entry
 		}
+	} else if legacy != nil {
+		for _, entry := range legacy.Plugins {
+			managed[entry.Name] = pluginEntry{Name: entry.Name, TreeSHA256: entry.TreeSHA256}
+		}
+		hashTree = legacyTreeHash
 	}
 	for _, name := range pluginNames {
 		target := filepath.Join(pluginsRoot, name)
@@ -194,12 +222,33 @@ func validateManagedTargets(pluginsRoot string) error {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("managed stable plugin directory %s is invalid", name)
 		}
-		hash, hashErr := safeio.TreeHash(target)
+		hash, hashErr := hashTree(target)
 		if hashErr != nil || hash != entry.TreeSHA256 {
 			return fmt.Errorf("managed stable plugin directory %s was modified", name)
 		}
 	}
 	return nil
+}
+
+func knownPlugin(name string) bool {
+	for _, candidate := range pluginNames {
+		if name == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func validSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
 }
 
 func readManagedManifest(path string) (*pluginManifest, error) {
@@ -216,7 +265,7 @@ func readManagedManifest(path string) (*pluginManifest, error) {
 	}
 	seen := map[string]bool{}
 	for _, entry := range manifest.Plugins {
-		if seen[entry.Name] || len(entry.TreeSHA256) != 64 {
+		if seen[entry.Name] || !knownPlugin(entry.Name) || !validSHA256(entry.TreeSHA256) {
 			return nil, errors.New("managed plugin manifest is invalid")
 		}
 		seen[entry.Name] = true
