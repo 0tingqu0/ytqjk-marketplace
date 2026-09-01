@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { byId, button, clear, formatBytes, text } from "../ui/dom.js";
+import { byId, button, clear, formatBytes, icon, text } from "../ui/dom.js";
 import { confirmAction } from "../ui/confirm.js";
 
 const TYPE_LABELS = {
@@ -64,6 +64,26 @@ function action(label, name, node, tree, openAction) {
   return control;
 }
 
+function actionMenu(node, controls) {
+  const menu = document.createElement("details");
+  menu.className = "tree-action-menu";
+  const trigger = document.createElement("summary");
+  trigger.title = "更多操作";
+  trigger.setAttribute("aria-label", `${node.title}：更多操作`);
+  trigger.append(icon("ph-dots-three"));
+  controls.addEventListener("click", (event) => {
+    if (event.target.closest("button")) menu.open = false;
+  });
+  menu.addEventListener("toggle", () => {
+    if (!menu.open) return;
+    document.querySelectorAll(".tree-action-menu[open]").forEach((item) => {
+      if (item !== menu) item.open = false;
+    });
+  });
+  menu.append(trigger, controls);
+  return menu;
+}
+
 function renderNode(node, children, projects, tree, handlers, depth) {
   const item = document.createElement("details");
   item.className = "tree-node";
@@ -109,7 +129,7 @@ function renderNode(node, children, projects, tree, handlers, depth) {
       action("拆卸", "detach", node, tree, handlers.openAction),
     );
   }
-  item.append(controls);
+  item.append(actionMenu(node, controls));
 
   const nested = children.get(node.id) || [];
   if (nested.length) {

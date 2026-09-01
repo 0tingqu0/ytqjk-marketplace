@@ -1,5 +1,22 @@
 import { byId, button, clear, icon, text } from "../ui/dom.js";
 
+function renderReviewEmpty(snapshot, hasCandidates) {
+  const loading = !snapshot;
+  byId("review-empty-icon").className = loading
+    ? "ph ph-circle-notch"
+    : hasCandidates ? "ph ph-cursor-click" : "ph ph-check-circle";
+  byId("review-empty-kicker").textContent = loading ? "同步中" : "审阅队列";
+  byId("review-empty-title").textContent = loading
+    ? "正在读取候选资料"
+    : hasCandidates ? "选择一条候选资料" : "候选队列已清空";
+  byId("review-empty-copy").textContent = loading
+    ? "正在检查待决策内容与当前状态。"
+    : hasCandidates
+      ? "查看评估说明并编辑正文，再决定批准或删除。"
+      : "当前没有待决策资料。新投递会先进入候选区，不会自动批准。";
+  byId("review-empty-action").hidden = loading || hasCandidates;
+}
+
 function reviewEditor(selected, state, actions) {
   const target = byId("review-detail");
   const item = selected.item;
@@ -46,8 +63,12 @@ export function renderReview(snapshot, state, actions) {
   const candidates = snapshot
     ? snapshot.documents.filter((item) => item.state === "candidate")
     : [];
+  const queueIsEmpty = Boolean(snapshot && !candidates.length);
+  byId("review-workbench").classList.toggle("is-empty", queueIsEmpty);
+  byId("review-queue").hidden = queueIsEmpty;
+  renderReviewEmpty(snapshot, candidates.length > 0);
   if (!snapshot) clear(list, [text("p", "正在读取候选资料…", "muted")]);
-  else if (!candidates.length) clear(list, [text("p", "没有候选资料等待审阅。", "muted")]);
+  else if (!candidates.length) clear(list, []);
   else clear(list, candidates.map((item) => {
     const row = button("", "document-row");
     row.setAttribute(

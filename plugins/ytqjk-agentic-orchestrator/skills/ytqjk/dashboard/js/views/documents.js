@@ -1,6 +1,6 @@
 import { selectionFor } from "../draft-conflicts.js";
 import { confirmAction } from "../ui/confirm.js";
-import { byId, button, clear, stateLabel, text } from "../ui/dom.js";
+import { byId, button, clear, icon, stateLabel, text } from "../ui/dom.js";
 
 export function createDocumentActions(api, state, callbacks) {
   const { deleteDraft, refresh, render } = callbacks;
@@ -145,11 +145,29 @@ function renderPreview(selected, state) {
   byId("preview-actions").hidden = selected.item.state !== "candidate";
 }
 
+function documentListEmpty(filtered) {
+  const empty = text("div", "", "list-empty-state");
+  empty.append(
+    icon(filtered ? "ph-magnifying-glass" : "ph-files"),
+    text("h3", filtered ? "没有匹配结果" : "知识库还是空的"),
+    text(
+      "p",
+      filtered ? "调整关键词或状态筛选后再试。" : "投递资料后会在这里形成可检索文档。",
+    ),
+  );
+  return empty;
+}
+
 export function renderDocuments(snapshot, state, onSelect) {
   const target = byId("documents");
   if (!snapshot) { clear(target, [text("p", "正在读取文档…", "muted")]); return; }
   const rows = filteredDocuments(snapshot, state);
-  if (!rows.length) clear(target, [text("p", "没有符合筛选条件的知识文档。", "muted")]);
+  if (!rows.length) {
+    const filtered = Boolean(
+      state.documentFilter.trim() || state.documentState !== "all",
+    );
+    clear(target, [documentListEmpty(filtered)]);
+  }
   else clear(target, rows.map((item) => {
     const row = button("", "document-row");
     row.setAttribute(

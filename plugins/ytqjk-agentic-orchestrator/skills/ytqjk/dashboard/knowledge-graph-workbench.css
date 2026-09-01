@@ -89,10 +89,10 @@
   border-radius: var(--radius);
   overflow: hidden;
   background:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     var(--surface);
-  background-size: 32px 32px;
+  background-size: 40px 40px;
 }
 
 .graph-settings-toggle {
@@ -728,7 +728,7 @@
 }
 
 .semantic-edge {
-  opacity: .38;
+  opacity: .24;
 }
 
 .semantic-edge-link {
@@ -779,33 +779,35 @@
 .semantic-cluster-label {
   fill: var(--muted);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 700;
   letter-spacing: .04em;
 }
 
 .semantic-edge--mentions {
   stroke-width: calc(.72px * var(--semantic-link-scale, 1));
+  opacity: .18;
 }
 
 .semantic-edge--similar_to {
   stroke: var(--graph-session);
   stroke-width: calc(1.15px * var(--semantic-link-scale, 1));
   stroke-dasharray: 4 7;
+  opacity: .32;
   animation: graph-edge-flow 12s linear infinite;
 }
 
 .semantic-edge:not(.semantic-edge--mentions):not(.semantic-edge--similar_to) {
   stroke: var(--accent);
   stroke-width: calc(1.25px * var(--semantic-link-scale, 1));
-  opacity: .64;
+  opacity: .42;
 }
 
 .semantic-edge-label {
   display: none;
   fill: var(--accent-strong);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 9px;
+  font-size: 10.5px;
   paint-order: stroke;
   stroke: var(--graph-label-halo);
   stroke-width: 3px;
@@ -829,7 +831,8 @@
 
 .semantic-node .graph-node-label {
   opacity: 0;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 650;
   transition: opacity .16s ease;
 }
 
@@ -840,6 +843,25 @@
 .semantic-node.is-selected .graph-node-label,
 .semantic-node.is-path .graph-node-label {
   opacity: 1;
+}
+
+.knowledge-topology.graph-zoom-far:not(.show-all-node-labels)
+  .semantic-node .graph-node-label {
+  opacity: 0;
+}
+
+.knowledge-topology.graph-zoom-near
+  .semantic-node .graph-node-label.is-secondary {
+  opacity: .88;
+}
+
+.knowledge-topology.graph-zoom-detail .semantic-node .graph-node-label {
+  opacity: .92;
+}
+
+.knowledge-topology.graph-zoom-detail .semantic-edge-label {
+  display: block;
+  opacity: .72;
 }
 
 .semantic-node.is-selected .graph-node-dot {
@@ -1039,11 +1061,16 @@
   }
 
   .graph-viewport-controls button {
-    width: 40px;
-    min-height: 40px;
+    width: 44px;
+    min-height: 44px;
   }
 
   .semantic-node .graph-node-label.is-prominent {
+    opacity: 0;
+  }
+
+  .knowledge-topology.graph-zoom-near
+    .semantic-node .graph-node-label.is-secondary {
     opacity: 0;
   }
 
@@ -1057,7 +1084,12 @@
 
   .semantic-node:focus-visible .graph-node-label,
   .semantic-node.is-selected .graph-node-label,
-  .semantic-node.is-path .graph-node-label {
+  .semantic-node.is-path .graph-node-label,
+  .knowledge-topology.graph-zoom-near
+    .semantic-node .graph-node-label.is-prominent,
+  .knowledge-topology.graph-zoom-detail .semantic-node .graph-node-label,
+  .knowledge-topology.graph-zoom-detail
+    .semantic-node .graph-node-label.is-secondary {
     opacity: 1;
   }
 }

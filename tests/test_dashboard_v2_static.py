@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -109,6 +112,40 @@ class DashboardV2StaticTest(unittest.TestCase):
         self.assertIn("event.target === event.currentTarget", confirm)
         self.assertIn('dialog.close("cancel")', confirm)
 
+    def test_mobile_route_change_resets_window_scroll(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is unavailable")
+        module = DASHBOARD / "js" / "router.js"
+        script = (
+            "const events=new EventTarget();"
+            "globalThis.window=events;"
+            "window.location={hash:'#libraries'};"
+            "window.matchMedia=()=>({matches:true});"
+            "let scrollY=147;"
+            "window.scrollTo=({top})=>{scrollY=top};"
+            "globalThis.history={replaceState(){}};"
+            f"const {{createRouter}}=await import({json.dumps(module.as_uri())});"
+            "const router=createRouter(()=>{});"
+            "router.go('overview');"
+            "window.dispatchEvent(new Event('hashchange'));"
+            "if(scrollY!==0)process.exit(2);"
+            "window.matchMedia=()=>({matches:false});"
+            "scrollY=99;"
+            "router.go('libraries');"
+            "window.dispatchEvent(new Event('hashchange'));"
+            "if(scrollY!==99)process.exit(3);"
+        )
+        completed = subprocess.run(
+            [node, "--input-type=module", "--eval", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_overview_uses_technology_knowledge_graph(self) -> None:
         html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
         overview = (DASHBOARD / "js/views/overview.js").read_text(
@@ -149,6 +186,31 @@ class DashboardV2StaticTest(unittest.TestCase):
             "black-hole",
         ):
             self.assertNotIn(discarded_style, combined)
+
+    def test_requested_visual_polish_contracts_are_present(self) -> None:
+        html = (DASHBOARD / "index.html").read_text(encoding="utf-8")
+        theme = (DASHBOARD / "space-theme.css").read_text(encoding="utf-8")
+        graph_css = (DASHBOARD / "knowledge-graph-workbench.css").read_text(
+            encoding="utf-8"
+        )
+        viewport = (
+            DASHBOARD / "js/views/knowledge-graph-viewport.js"
+        ).read_text(encoding="utf-8")
+        libraries = (DASHBOARD / "js/views/libraries.js").read_text(
+            encoding="utf-8"
+        )
+
+        for zoom_class in (
+            "graph-zoom-far", "graph-zoom-near", "graph-zoom-detail"
+        ):
+            self.assertIn(zoom_class, viewport)
+            self.assertIn(zoom_class, graph_css)
+        self.assertIn("min-width: 901px", theme)
+        self.assertIn("--rail-width: 76px", theme)
+        self.assertIn('id="review-workbench"', html)
+        self.assertIn("empty-state-featured", html)
+        self.assertIn("actionMenu(node, controls)", libraries)
+        self.assertIn("tree-action-menu", libraries)
 
 
 if __name__ == "__main__":

@@ -101,7 +101,11 @@ function graphNode(node, position, degree, index, onSelect) {
     x: 11,
     y: 4,
     "text-anchor": "start",
-  }, `graph-node-label${degree >= 5 ? " is-prominent" : ""}`);
+  }, [
+    "graph-node-label",
+    degree >= 4 ? "is-secondary" : "",
+    degree >= 7 ? "is-prominent" : "",
+  ].filter(Boolean).join(" "));
   label.textContent = shortened(displayLabel(node));
   group.append(title, hit, dot, label);
   group.onclick = () => onSelect(node);
