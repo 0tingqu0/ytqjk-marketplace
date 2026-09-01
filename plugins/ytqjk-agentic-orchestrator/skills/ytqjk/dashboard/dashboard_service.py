@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
+from dashboard_process import wait_for_process_exit
 from dashboard_restart import single_restart_scheduler
 from dashboard_server_runtime import serve_dashboard
 from desktop_autostart import install as install_autostart
@@ -147,9 +148,12 @@ def start_configured(
 
 def stop(root: Path, port: int) -> dict[str, object]:
     root = root.resolve()
+    pid = _service_pid(root)
     if not healthy(port, root):
         state_path(root).unlink(missing_ok=True)
         stop_path(root).unlink(missing_ok=True)
+        if pid is not None and not wait_for_process_exit(pid, 6.0):
+            return _result("FAILED", port, True)
         return _result("STOPPED", port, False)
     marker = stop_path(root)
     marker.parent.mkdir(parents=True, exist_ok=True)
@@ -159,11 +163,21 @@ def stop(root: Path, port: int) -> dict[str, object]:
             for _ in range(60):
                 if not state_path(root).exists():
                     marker.unlink(missing_ok=True)
-                    return _result("STOPPED", port, True)
+                    if pid is None or wait_for_process_exit(pid, 6.0):
+                        return _result("STOPPED", port, True)
+                    return _result("FAILED", port, True)
                 time.sleep(0.1)
             return _result("FAILED", port, True)
         time.sleep(0.1)
     return _result("FAILED", port, True)
+
+
+def _service_pid(root: Path) -> int | None:
+    try:
+        value = json.loads(state_path(root).read_text(encoding="utf-8"))["pid"]
+    except (KeyError, OSError, TypeError, ValueError):
+        return None
+    return value if isinstance(value, int) and value > 0 else None
 
 
 def install(
