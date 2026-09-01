@@ -55,6 +55,7 @@ type Server struct {
 	intakeStore    *document.JobStore
 	peerServer     *http.Server
 	peerListener   net.Listener
+	peerRuntimeWG  sync.WaitGroup
 	peerRuntime    PeerRuntimeStatus
 	treePreviews   map[string]issuedTreePreview
 	groupPreviews  map[string]issuedGroupIndexPreview

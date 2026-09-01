@@ -138,16 +138,12 @@ func canonicalDirectory(value string) (string, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", errors.Join(errors.New("directory is unsafe"), err)
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
+	scan, err := scanStableResource(absolute, resourceDirectory)
 	if err != nil {
-		return "", err
+		return "", errors.Join(errors.New("directory traverses a symbolic link"), err)
 	}
-	resolved, err = filepath.Abs(resolved)
-	if err != nil {
-		return "", err
-	}
-	if canonicalKey(resolved) != canonicalKey(absolute) {
-		return "", errors.New("directory traverses a symbolic link")
+	if !scan.targetExists {
+		return "", errors.New("directory is unavailable")
 	}
 	return absolute, nil
 }

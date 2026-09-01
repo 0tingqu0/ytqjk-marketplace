@@ -343,7 +343,7 @@ func validateExclusiveOptions(ctx context.Context, options ExclusiveOptions) (ti
 }
 
 func lockDeadline(ctx context.Context) time.Time {
-	deadline := clockNow().Add(defaultLockWait)
+	deadline := time.Now().Add(defaultLockWait)
 	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 		return contextDeadline
 	}

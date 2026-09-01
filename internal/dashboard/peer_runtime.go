@@ -66,8 +66,10 @@ func (s *Server) startPeerRuntime() error {
 	s.peerRuntimeMu.Lock()
 	s.peerServer, s.peerListener = server, listener
 	s.peerRuntime = PeerRuntimeStatus{Status: "RUNNING", BindHost: settings.BindHost, Port: settings.Port}
+	s.peerRuntimeWG.Add(1)
 	s.peerRuntimeMu.Unlock()
 	go func() {
+		defer s.peerRuntimeWG.Done()
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.peerRuntimeMu.Lock()
@@ -95,6 +97,7 @@ func (s *Server) stopPeerRuntime() {
 	if listener != nil {
 		_ = listener.Close()
 	}
+	s.peerRuntimeWG.Wait()
 	s.peerRuntimeMu.Lock()
 	if s.peerRuntime.Status == "RUNNING" {
 		s.peerRuntime.Status = "STOPPED"

@@ -16,7 +16,9 @@ func lockResource(ctx context.Context, file *os.File, exclusive bool, deadline t
 		return nil, errors.New("maintenance lock handle is nil")
 	}
 	var err error
-	var overlapped windows.Overlapped
+	// Lock outside the bootstrap receipt bytes so initialization proof remains
+	// readable while this file is used as a coordination lock.
+	overlapped := windows.Overlapped{OffsetHigh: 1}
 	flags := uint32(windows.LOCKFILE_FAIL_IMMEDIATELY)
 	if exclusive {
 		flags |= windows.LOCKFILE_EXCLUSIVE_LOCK

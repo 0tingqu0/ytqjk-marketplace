@@ -102,6 +102,10 @@ func TestManualRollbackKeepsRolledBackGenerationAsPrevious(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	targetBinaryHash, err := snapshotRuntimeBinarySHA256(target)
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeFixture(t, binary, "generation-b")
 	writeFixture(t, filepath.Join(base.CodexRoot, "plugins", ".ytqjk-managed-plugins.json"), "manifest-b")
 	for _, name := range pluginNames {
@@ -116,6 +120,7 @@ func TestManualRollbackKeepsRolledBackGenerationAsPrevious(t *testing.T) {
 		Schema: rollbackPlanSchema, ID: operationID, PreparedAt: time.Now().UTC(),
 		CurrentVersion: "0.7.0", TargetVersion: "0.6.10", TargetSnapshotID: target.ID,
 		TargetSnapshotManifestSHA256: target.ManifestSHA256,
+		TargetBinarySHA256:           targetBinaryHash,
 		RuntimeRoot:                  base.RuntimeRoot, CodexRoot: base.CodexRoot, KnowledgeRoot: base.KnowledgeRoot,
 		StageRoot: stage, BinaryPath: helper, BinarySHA256: helperHash, Port: unusedPort(t),
 	}

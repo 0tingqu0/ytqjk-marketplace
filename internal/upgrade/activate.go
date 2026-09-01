@@ -276,13 +276,13 @@ func rollbackStateWriteResult(
 	writeErr error,
 ) (ActivateResult, error) {
 	return ActivateResult{
-			Status: "ROLLED_BACK", CurrentVersion: plan.FromVersion,
-			PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
-			SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "UNKNOWN",
-		}, errors.Join(
-			stateWriteFailure(writeErr),
-			failure("UPGRADE_ACTIVATION_ROLLED_BACK", cause),
-		)
+		Status: "ROLLED_BACK", CurrentVersion: plan.FromVersion,
+		PreviousVersion: plan.ToVersion, SnapshotID: snapshot.ID,
+		SnapshotManifestSHA256: snapshot.ManifestSHA256, Rollback: "UNKNOWN",
+	}, errors.Join(
+		stateWriteFailure(writeErr),
+		failure("UPGRADE_ACTIVATION_ROLLED_BACK", cause),
+	)
 }
 
 func waitForHealthState(ctx context.Context, port int, version string, running bool, timeout time.Duration) bool {
