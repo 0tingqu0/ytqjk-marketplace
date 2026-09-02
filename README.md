@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-YTQJK is a local-first Codex orchestration and knowledge marketplace. Version 0.7.2
+YTQJK is a local-first Codex orchestration and knowledge marketplace. Version 0.7.3
 uses one cross-platform Go binary for installation, plugin hooks, local RAG, session
 anchors, the versioned SQLite service, dashboard APIs, orchestration identity, and
 reviewed Git handoffs. The dashboard remains ordinary static HTML, CSS, and JavaScript.
