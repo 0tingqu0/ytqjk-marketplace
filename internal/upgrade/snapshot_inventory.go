@@ -37,6 +37,7 @@ func baseSnapshotSpecs() []snapshotSpec {
 		{snapshotRootRuntime, filepath.ToSlash(filepath.Join("bin", runtimeBinaryName())), snapshotClassActive, snapshotKindFile},
 		{snapshotRootCodex, "plugins/ytqjk-agentic-orchestrator", snapshotClassActive, snapshotKindTree},
 		{snapshotRootCodex, "plugins/ytqjk-knowledge", snapshotClassActive, snapshotKindTree},
+		{snapshotRootCodex, "plugins/.ytqjk-managed.json", snapshotClassActive, snapshotKindFile},
 		{snapshotRootCodex, "plugins/.ytqjk-managed-plugins.json", snapshotClassActive, snapshotKindFile},
 		{snapshotRootKnowledge, "service/knowledge.sqlite3", snapshotClassData, snapshotKindSQLite},
 		{snapshotRootKnowledge, "service/library-v1.sqlite3", snapshotClassData, snapshotKindSQLite},

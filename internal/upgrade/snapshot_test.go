@@ -85,6 +85,38 @@ func TestSnapshotRestoresRuntimePluginsAndDatabase(t *testing.T) {
 	}
 }
 
+func TestSnapshotRestoresLegacyPluginManifestForRollforward(t *testing.T) {
+	root := t.TempDir()
+	plan := Plan{
+		FromVersion: "0.6.10", ToVersion: "0.7.2", PreviousMaxSchema: 4,
+		RuntimeRoot: filepath.Join(root, "runtime"), CodexRoot: filepath.Join(root, "codex"),
+		KnowledgeRoot: filepath.Join(root, "knowledge"),
+	}
+	binary := filepath.Join(plan.RuntimeRoot, "bin", runtimeBinaryName())
+	legacy := filepath.Join(plan.CodexRoot, "plugins", ".ytqjk-managed.json")
+	current := filepath.Join(plan.CodexRoot, "plugins", ".ytqjk-managed-plugins.json")
+	writeFixture(t, binary, "legacy-runtime")
+	writeFixture(t, legacy, "legacy-manifest")
+
+	snapshot, err := captureSnapshot(context.Background(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(legacy); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, binary, "go-runtime")
+	writeFixture(t, current, "go-manifest")
+
+	if err := restoreSnapshot(plan, snapshot, true); err != nil {
+		t.Fatal(err)
+	}
+	assertFixture(t, legacy, "legacy-manifest")
+	if _, err := os.Lstat(current); !os.IsNotExist(err) {
+		t.Fatalf("Go manifest remains after legacy rollback: %v", err)
+	}
+}
+
 func TestManualRollbackKeepsRolledBackGenerationAsPrevious(t *testing.T) {
 	root := t.TempDir()
 	base := Plan{
