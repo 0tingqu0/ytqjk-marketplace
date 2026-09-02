@@ -66,6 +66,21 @@ function Resolve-GoRuntime {
   return $executable
 }
 
+function Resolve-DefaultCodexRoot {
+  if ($env:CODEX_HOME) {
+    return [IO.Path]::GetFullPath($env:CODEX_HOME)
+  }
+  return Join-Path $env:USERPROFILE '.codex'
+}
+
+function Resolve-DefaultProjectRoot {
+  $location = Get-Location
+  if ($location.Provider.Name -ne 'FileSystem') {
+    throw 'YTQJK installation must run from a file-system project directory.'
+  }
+  return [IO.Path]::GetFullPath($location.ProviderPath)
+}
+
 $bundleBinary = Join-Path $PSScriptRoot 'bin\ytqjk.exe'
 $bundleManifest = Join-Path $PSScriptRoot 'release-manifest.json'
 $bundleCommand = Join-Path $PSScriptRoot 'install.cmd'
@@ -146,16 +161,20 @@ if ($bundleDetected) {
 
 if ($Arguments.Count -eq 0) {
   Write-Host 'YTQJK: starting full installation.'
+  $defaultTargetRoot = Resolve-DefaultCodexRoot
+  $defaultProjectRoot = Resolve-DefaultProjectRoot
   $Arguments = @(
     '--mode', 'all',
-    '--target-root', $PSScriptRoot,
-    '--project-root', $PSScriptRoot,
+    '--target-root', $defaultTargetRoot,
+    '--project-root', $defaultProjectRoot,
     '--source-root', $PSScriptRoot,
     '--apply', '--yes'
   )
 } elseif ($Arguments -contains '--uninstall') {
   if ($Arguments -notcontains '--mode') { $Arguments += @('--mode', 'all') }
-  if ($Arguments -notcontains '--target-root') { $Arguments += @('--target-root', $PSScriptRoot) }
+  if ($Arguments -notcontains '--target-root') {
+    $Arguments += @('--target-root', (Resolve-DefaultCodexRoot))
+  }
   if ($Arguments -notcontains '--source-root') { $Arguments += @('--source-root', $PSScriptRoot) }
   if ($Arguments -notcontains '--apply') { $Arguments += '--apply' }
   if ($Arguments -notcontains '--yes') { $Arguments += '--yes' }

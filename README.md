@@ -2,49 +2,74 @@
 
 [简体中文](README.zh-CN.md)
 
-YTQJK is a local-first Codex orchestration and knowledge marketplace. Version 0.7.3
-uses one cross-platform Go binary for installation, plugin hooks, local RAG, session
-anchors, the versioned SQLite service, dashboard APIs, orchestration identity, and
-reviewed Git handoffs. The dashboard remains ordinary static HTML, CSS, and JavaScript.
+YTQJK is a local-first Codex orchestration and knowledge marketplace. The latest
+supported stable deployment is [v0.7.0](https://github.com/0tingqu0/ytqjk-marketplace/releases/tag/v0.7.0).
+The default branch may contain unreleased changes. One cross-platform Go binary
+provides installation, plugin hooks, local RAG, session anchors, the versioned SQLite
+service, dashboard APIs, orchestration identity, and reviewed Git handoffs.
 
 ## Requirements
 
-- Windows 10/11 x64, Linux x64, or WSL2 x64
-- Git for project identity and handoff workflows
-- Go 1.25 or newer for development
+- Windows 10/11 x64, Linux x64, or WSL2 x64.
+- Git and the Codex CLI. `all` and `codex-only` modes call `codex plugin`.
+- Node.js, npm, and `npx` only when `all` or `ide-only` must install a missing
+  `grill-me` skill.
+- A release bundle needs no Go toolchain. A source checkout needs Go 1.25 or newer;
+  the source installer can download and verify Go 1.27.0.
+- Linux source installation additionally needs `curl` or `wget`, a SHA-256 tool,
+  and `tar`.
 
-The installation scripts use an existing compatible Go toolchain or download the
-official Go 1.27.0 archive and verify its SHA-256 before building YTQJK. No Python
-runtime, virtual environment, or package installation is used.
+The active installation uses no Python runtime, virtual environment, or Python
+package installation. The signed v0.7.0 release retains a frozen Python rollback
+artifact for its bounded rollback window; it is not part of the active installation.
 
 ## Install
 
-Windows:
+Use the platform archive from the
+[v0.7.0 release](https://github.com/0tingqu0/ytqjk-marketplace/releases/tag/v0.7.0),
+download `SHA256SUMS`, verify the archive, and extract it outside the project. Then
+open a terminal in the project that should be indexed.
+
+Windows release bundle:
 
 ```powershell
-.\install.ps1
+$ErrorActionPreference = 'Stop'
+$bundle = 'D:\Download\ytqjk-v0.7.0'
+& "$bundle\install.ps1" --mode all --target-root "$HOME\.codex" `
+  --project-root (Get-Location).Path --apply --yes --json
 ```
 
-Linux or WSL2:
+Linux or WSL2 release bundle:
 
 ```sh
-sh ./install.sh
+set -eu
+bundle="$HOME/Downloads/ytqjk-v0.7.0"
+sh "$bundle/install.sh" --mode all --target-root "${CODEX_HOME:-$HOME/.codex}" \
+  --project-root "$PWD" --apply --yes --json
 ```
 
-The no-argument path builds the `ytqjk` binary, installs both plugins, bootstraps the
-current project index, imports safe Codex knowledge candidates, and starts the local
-dashboard. Preview a plan without changing state:
+The immutable v0.7.0 bundle must be run with explicit `--target-root` and
+`--project-root`; its historical no-argument path binds both values to the bundle
+directory. The default branch fixes that behavior for a future release. Previewing
+omits `--apply --yes`:
 
 ```powershell
-.\install.ps1 --mode all --target-root . --json
+$ErrorActionPreference = 'Stop'
+& "$bundle\install.ps1" --mode all --target-root "$HOME\.codex" `
+  --project-root (Get-Location).Path --json
 ```
 
-Mutation requires all of `--target-root`, `--apply`, and `--yes`. Uninstall preserves
-the knowledge database:
+Mutation requires all of `--target-root`, `--apply`, and `--yes`. Keep the verified
+bundle: uninstall must run from that external installer bootstrap and preserves the
+knowledge database. The installed runtime deliberately refuses to delete itself.
 
 ```powershell
-.\install.ps1 --uninstall
+$ErrorActionPreference = 'Stop'
+& "$bundle\install.ps1" --uninstall --target-root "$HOME\.codex" --json
 ```
+
+See the complete [installation, verification, upgrade, rollback, uninstall, and
+troubleshooting guide](docs/installation.md).
 
 ## CLI
 
@@ -57,16 +82,22 @@ ytqjk knowledge <create-project|create-candidate|edit|delete|state|snapshot|feed
 ytqjk dashboard <serve|start|stop|status|restart> [options]
 ytqjk orchestration <start-run|show-run|transition|grant|attest|verify> [options]
 ytqjk handoff <export|apply> [options]
-ytqjk upgrade <check|apply|status|rollback> [options]
+ytqjk upgrade <check|apply|status|rollback|schema-version> [options]
 ```
 
-Examples:
+`ytqjk uninstall` is a bootstrap command: the active installed runtime refuses to
+delete itself. Normal users must run uninstall through the retained release bundle.
 
-```sh
-ytqjk rag bootstrap --project-root . --vector-mode auto
-ytqjk session query --project-root . --session-id "$CODEX_THREAD_ID" "installer architecture"
-ytqjk dashboard start
-ytqjk upgrade check
+The installer does not mutate the user's `PATH`. Use the installed launcher directly
+or add its containing directory to `PATH` yourself. Windows examples:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$ytqjk = Join-Path $env:LOCALAPPDATA 'YTQJK\runtime\bin\ytqjk.exe'
+& $ytqjk version
+& $ytqjk rag bootstrap --project-root . --vector-mode auto
+& $ytqjk dashboard status
+& $ytqjk upgrade check
 ```
 
 The Go retrieval runtime persists an external-service-free hashed character/word
@@ -83,11 +114,12 @@ YTQJK does not force an Android-style full Virtual A/B layout onto Codex. Plugin
 remain at stable paths and Windows should not depend on symlink slot switching, so the
 cross-platform implementation uses an A/B-lite transactional snapshot:
 
-```sh
-ytqjk upgrade check
-ytqjk upgrade apply --yes
-ytqjk upgrade status
-ytqjk upgrade rollback --yes
+```powershell
+$ErrorActionPreference = 'Stop'
+& $ytqjk upgrade check
+& $ytqjk upgrade apply --yes
+& $ytqjk upgrade status
+& $ytqjk upgrade rollback --yes
 ```
 
 The updater validates the fixed GitHub repository's stable SemVer release, platform

@@ -36,6 +36,7 @@ if [ "$os-$arch" != linux-amd64 ]; then
 fi
 
 data_root=${XDG_DATA_HOME:-"$HOME/.local/share"}
+codex_root=${CODEX_HOME:-"$HOME/.codex"}
 bundle_binary="$script_dir/bin/ytqjk"
 bundle_manifest="$script_dir/release-manifest.json"
 bootstrap=
@@ -119,9 +120,10 @@ else
 fi
 
 if [ "$#" -eq 0 ]; then
+  project_root=$(pwd -P)
   set -- --mode all \
-    --target-root "$script_dir" \
-    --project-root "$script_dir" \
+    --target-root "$codex_root" \
+    --project-root "$project_root" \
     --source-root "$script_dir" \
     --apply --yes
 else
@@ -144,7 +146,7 @@ else
   fi
   if [ "$uninstall" = true ]; then
     [ "$has_mode" = true ] || set -- "$@" --mode all
-    [ "$has_target" = true ] || set -- "$@" --target-root "$script_dir"
+    [ "$has_target" = true ] || set -- "$@" --target-root "$codex_root"
     [ "$has_apply" = true ] || set -- "$@" --apply
     [ "$has_yes" = true ] || set -- "$@" --yes
   fi

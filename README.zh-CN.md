@@ -2,46 +2,66 @@
 
 [English](README.md)
 
-YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。当前版本 0.7.3 的安装器、
-插件钩子、本地 RAG、会话锚点、SQLite v4 知识服务、Dashboard API、编排身份账本
-和经复审的 Git handoff 全部由同一个跨平台 Go 二进制提供。Dashboard 前端保留为
-普通的 HTML、CSS 和 JavaScript 静态资源。
+YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。当前受支持的正式部署版本是
+[v0.7.0](https://github.com/0tingqu0/ytqjk-marketplace/releases/tag/v0.7.0)，默认分支可能包含
+尚未发布的改动。安装器、插件钩子、本地 RAG、会话锚点、SQLite 知识服务、Dashboard API、
+编排身份账本和经复审的 Git handoff 均由同一个跨平台 Go 二进制提供。
 
 ## 环境要求
 
-- Windows 10/11 x64、Linux x64 或 WSL2 x64
-- Git（项目身份与 handoff 工作流需要）
-- 开发时使用 Go 1.25 或更高版本
+- Windows 10/11 x64、Linux x64 或 WSL2 x64。
+- Git 与 Codex CLI；`all`、`codex-only` 模式会调用 `codex plugin`。
+- 仅当 `all` 或 `ide-only` 需要补装缺失的 `grill-me` 时，才需要 Node.js、npm、`npx`。
+- 正式发布包不需要 Go；源码安装需要 Go 1.25 或更高版本，源码安装器可下载并校验
+  Go 1.27.0。
+- Linux 源码安装还需要 `curl` 或 `wget`、SHA-256 工具和 `tar`。
 
-安装脚本会优先使用现有 Go；未找到兼容版本时，会下载 Go 1.27.0 官方归档并校验
-SHA-256 后再构建 YTQJK。项目不再使用 Python 运行时、虚拟环境或 Python 依赖。
+活动安装不使用 Python 运行时、虚拟环境或 Python 依赖。v0.7.0 发布中保留的冻结 Python
+回退制品只用于有界回滚窗口，不进入活动安装树。
 
 ## 安装
 
-Windows：
+从 [v0.7.0 Release](https://github.com/0tingqu0/ytqjk-marketplace/releases/tag/v0.7.0)
+下载对应平台压缩包和 `SHA256SUMS`，校验后解压到项目目录之外，再在需要建立索引的项目
+目录中打开终端。
+
+Windows 正式发布包：
 
 ```powershell
-.\install.ps1
+$ErrorActionPreference = 'Stop'
+$bundle = 'D:\Download\ytqjk-v0.7.0'
+& "$bundle\install.ps1" --mode all --target-root "$HOME\.codex" `
+  --project-root (Get-Location).Path --apply --yes --json
 ```
 
-Linux 或 WSL2：
+Linux 或 WSL2 正式发布包：
 
 ```sh
-sh ./install.sh
+set -eu
+bundle="$HOME/Downloads/ytqjk-v0.7.0"
+sh "$bundle/install.sh" --mode all --target-root "${CODEX_HOME:-$HOME/.codex}" \
+  --project-root "$PWD" --apply --yes --json
 ```
 
-无参数安装会构建 `ytqjk`、安装两个插件、为当前项目建立索引、导入通过安全扫描的
-Codex 知识候选，并启动本地 Dashboard。只查看计划而不修改系统：
+不可变的 v0.7.0 发布包必须显式提供 `--target-root` 和 `--project-root`；它的历史无参数
+入口会把两者都绑定到发布包目录。默认分支已经为后续版本修正该行为。预览不提供
+`--apply --yes`：
 
 ```powershell
-.\install.ps1 --mode all --target-root . --json
+$ErrorActionPreference = 'Stop'
+& "$bundle\install.ps1" --mode all --target-root "$HOME\.codex" `
+  --project-root (Get-Location).Path --json
 ```
 
-真正修改必须同时提供 `--target-root`、`--apply` 与 `--yes`。卸载会保留知识库：
+真正修改必须同时提供 `--target-root`、`--apply` 与 `--yes`。请保留已校验的发布包：卸载
+必须从这个外部可信安装入口执行，并会保留知识库；已安装的运行时会主动拒绝删除自身。
 
 ```powershell
-.\install.ps1 --uninstall
+$ErrorActionPreference = 'Stop'
+& "$bundle\install.ps1" --uninstall --target-root "$HOME\.codex" --json
 ```
+
+完整步骤见[安装、验收、升级、回滚、卸载与排障指南](docs/installation.zh-CN.md)。
 
 ## 统一命令行
 
@@ -54,16 +74,22 @@ ytqjk knowledge <create-project|create-candidate|edit|delete|state|snapshot|feed
 ytqjk dashboard <serve|start|stop|status|restart> [选项]
 ytqjk orchestration <start-run|show-run|transition|grant|attest|verify> [选项]
 ytqjk handoff <export|apply> [选项]
-ytqjk upgrade <check|apply|status|rollback> [选项]
+ytqjk upgrade <check|apply|status|rollback|schema-version> [选项]
 ```
 
-示例：
+`ytqjk uninstall` 是安装引导命令；活动运行时会拒绝删除自身。普通用户必须通过保留的
+正式发布包执行卸载。
+
+安装器不会静默修改用户 `PATH`。请直接使用运行时完整路径，或者自行把对应目录加入
+`PATH`。Windows 示例：
 
 ```powershell
-ytqjk rag bootstrap --project-root . --vector-mode auto
-ytqjk session query --project-root . --session-id $env:CODEX_THREAD_ID '安装器架构'
-ytqjk dashboard start
-ytqjk upgrade check
+$ErrorActionPreference = 'Stop'
+$ytqjk = Join-Path $env:LOCALAPPDATA 'YTQJK\runtime\bin\ytqjk.exe'
+& $ytqjk version
+& $ytqjk rag bootstrap --project-root . --vector-mode auto
+& $ytqjk dashboard status
+& $ytqjk upgrade check
 ```
 
 当前 Go 检索实现会持久化无外部服务依赖的哈希字符/词 n-gram 稀疏向量，并将向量
@@ -78,10 +104,11 @@ ytqjk upgrade check
 Windows 也不适合依赖符号链接切槽；因此采用跨平台的 A/B-lite 事务式快照：
 
 ```powershell
-ytqjk upgrade check
-ytqjk upgrade apply --yes
-ytqjk upgrade status
-ytqjk upgrade rollback --yes
+$ErrorActionPreference = 'Stop'
+& $ytqjk upgrade check
+& $ytqjk upgrade apply --yes
+& $ytqjk upgrade status
+& $ytqjk upgrade rollback --yes
 ```
 
 升级会验证固定 GitHub 仓库的正式 SemVer 发布、平台二进制、`SHA256SUMS`、安全压缩
