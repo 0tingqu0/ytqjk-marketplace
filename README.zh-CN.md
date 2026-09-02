@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。自 0.7.0 起，安装器、
+YTQJK 是一个本地优先的 Codex 编排与知识库插件市场。当前版本 0.7.1 的安装器、
 插件钩子、本地 RAG、会话锚点、SQLite v4 知识服务、Dashboard API、编排身份账本
 和经复审的 Git handoff 全部由同一个跨平台 Go 二进制提供。Dashboard 前端保留为
 普通的 HTML、CSS 和 JavaScript 静态资源。

@@ -128,7 +128,7 @@ jobs:
           printf '%s\n' \
             '#!/usr/bin/env sh' \
             ': > "$YTQJK_TAMPER_SENTINEL"' \
-            'printf "%s\\n" "0.7.0"' \
+            'printf "%s\\n" "0.7.1"' \
             > "$tampered/bin/ytqjk"
           chmod 755 "$tampered/bin/ytqjk"
           YTQJK_TAMPER_SENTINEL="$tamper_proof" "$tampered/bin/ytqjk" version >/dev/null
@@ -152,7 +152,7 @@ jobs:
           cmp "$extracted/bin/ytqjk" "$XDG_DATA_HOME/ytqjk/runtime/bin/ytqjk"
           active_manifest="$XDG_DATA_HOME/ytqjk/runtime/active.json"
           jq -e \
-            '.schema == "ytqjk-runtime-active/v1" and .version == "0.7.0" and
+            '.schema == "ytqjk-runtime-active/v1" and .version == "0.7.1" and
              (.generation | test("^[0-9a-f]{64}$")) and
              (.binary_sha256 | test("^[0-9a-f]{64}$"))' \
             "$active_manifest"
@@ -228,7 +228,7 @@ jobs:
                 panic(err)
               }
             }
-            fmt.Println("0.7.0")
+            fmt.Println("0.7.1")
           }
           '@
           [IO.File]::WriteAllText(
@@ -344,7 +344,7 @@ jobs:
           $activeManifestPath = Join-Path $runtimeRoot 'active.json'
           $active = Get-Content -LiteralPath $activeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
           if ($active.schema -ne 'ytqjk-runtime-active/v1' -or
-            $active.version -ne '0.7.0' -or
+            $active.version -ne '0.7.1' -or
             $active.generation -notmatch '^[0-9a-f]{64}$' -or
             $active.binary_sha256 -notmatch '^[0-9a-f]{64}$') {
             throw 'Installed Windows runtime manifest is invalid.'

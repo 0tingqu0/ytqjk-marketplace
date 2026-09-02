@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo"
 )
 
 func TestExtractBundleValidatesWindowsZipAndLinuxTarGzip(t *testing.T) {
@@ -29,7 +31,7 @@ func TestExtractBundleValidatesWindowsZipAndLinuxTarGzip(t *testing.T) {
 			test.write(t, archive, files)
 
 			source, digest, err := ExtractBundle(
-				archive, filepath.Join(root, "source"), "0.7.0", test.goos, test.goarch,
+				archive, filepath.Join(root, "source"), buildinfo.Version, test.goos, test.goarch,
 			)
 			if err != nil || digest != expectedDigest {
 				t.Fatalf("bundle digest = %q, %v", digest, err)
@@ -57,7 +59,7 @@ func TestExtractBundleRejectsTraversalForBothArchiveFormats(t *testing.T) {
 			archive := filepath.Join(root, "unsafe")
 			test.write(t, archive, map[string]string{"../escape.txt": "blocked"})
 			_, _, err := ExtractBundle(
-				archive, filepath.Join(root, "source"), "0.7.0", test.goos, "amd64",
+				archive, filepath.Join(root, "source"), buildinfo.Version, test.goos, "amd64",
 			)
 			if errorCode(err) != "RELEASE_ARCHIVE_UNSAFE" {
 				t.Fatalf("unsafe bundle error = %v", err)
@@ -78,7 +80,7 @@ func bundleFixture(t *testing.T, goos, goarch string) (map[string]string, string
 	binaryContent := "verified-" + goos + "-binary"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(binaryContent)))
 	manifest, err := json.Marshal(map[string]string{
-		"schema": "ytqjk-release-bundle/v1", "version": "0.7.0",
+		"schema": "ytqjk-release-bundle/v1", "version": buildinfo.Version,
 		"os": goos, "arch": goarch, "binary_sha256": digest,
 	})
 	if err != nil {
@@ -95,7 +97,7 @@ func bundleFixture(t *testing.T, goos, goarch string) (map[string]string, string
 		files["install.sh"] = "fixture"
 	}
 	for _, name := range pluginNames {
-		pluginManifest, err := json.Marshal(map[string]string{"name": name, "version": "0.7.0"})
+		pluginManifest, err := json.Marshal(map[string]string{"name": name, "version": buildinfo.Version})
 		if err != nil {
 			t.Fatal(err)
 		}

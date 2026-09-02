@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/0tingqu0/ytqjk-marketplace/internal/buildinfo"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/runtimeentry"
 	"github.com/0tingqu0/ytqjk-marketplace/internal/safeio"
 )
@@ -27,7 +28,7 @@ func TestRuntimeLauncherExecutesActiveGeneration(t *testing.T) {
 	}
 	generation := strings.Repeat("a", 64)
 	manifest, err := runtimeentry.MaterializeGeneration(
-		runtimeRoot, generation, "0.7.0", source, digest,
+		runtimeRoot, generation, buildinfo.Version, source, digest,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +40,7 @@ func TestRuntimeLauncherExecutesActiveGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	output, err := exec.Command(runtimeentry.LauncherPath(runtimeRoot), "version").CombinedOutput()
-	if err != nil || strings.TrimSpace(string(output)) != "0.7.0" {
+	if err != nil || strings.TrimSpace(string(output)) != buildinfo.Version {
 		t.Fatalf("launcher version: %v: %q", err, output)
 	}
 }

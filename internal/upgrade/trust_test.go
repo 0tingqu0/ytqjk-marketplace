@@ -71,7 +71,7 @@ func signedReleaseFixtureWithArchive(
 	publicDigest := fmt.Sprintf("%x", sha256.Sum256(der))
 	restoreBuildTrust(t, base64.StdEncoding.EncodeToString(der), publicDigest)
 
-	release := Release{Version: "0.7.0", Tag: "v0.7.0"}
+	release := Release{Version: buildinfo.Version, Tag: "v" + buildinfo.Version}
 	manifest := releaseManifest{
 		Schema: "ytqjk-release/v1", Version: release.Version, Tag: release.Tag,
 		Commit: strings.Repeat("a", 40),
