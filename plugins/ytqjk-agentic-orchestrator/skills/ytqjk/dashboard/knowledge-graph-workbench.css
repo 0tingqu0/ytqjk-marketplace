@@ -384,6 +384,29 @@
   cursor: grabbing;
 }
 
+.semantic-node {
+  cursor: grab;
+}
+
+.semantic-node.is-dragging {
+  cursor: grabbing;
+}
+
+.semantic-node.is-dragging .graph-node-dot {
+  filter: drop-shadow(0 0 10px var(--accent));
+  stroke: var(--focus);
+  stroke-width: 2.5;
+  transform: scale(1.22);
+}
+
+.knowledge-topology.is-node-dragging .semantic-node:not(.is-related):not(.is-dragging) {
+  opacity: .34;
+}
+
+.knowledge-topology.is-node-dragging .semantic-edge-link:not(.is-related) {
+  opacity: .12;
+}
+
 .graph-stage:has(.graph-inspector:not([hidden])) {
   grid-template-columns: minmax(0, 1fr) 286px;
 }
@@ -794,7 +817,12 @@
   stroke-width: calc(1.15px * var(--semantic-link-scale, 1));
   stroke-dasharray: 4 7;
   opacity: .32;
-  animation: graph-edge-flow 12s linear infinite;
+  animation: none;
+}
+
+.knowledge-topology.is-node-dragging .semantic-edge--similar_to,
+.knowledge-topology.is-graph-settling .semantic-edge--similar_to {
+  animation: graph-edge-flow 1.4s linear infinite;
 }
 
 .semantic-edge:not(.semantic-edge--mentions):not(.semantic-edge--similar_to) {
@@ -1095,7 +1123,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .semantic-edge--similar_to {
+  .semantic-edge--similar_to,
+  .semantic-node .graph-node-dot {
     animation: none !important;
+    transition: none !important;
   }
 }

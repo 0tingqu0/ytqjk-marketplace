@@ -166,6 +166,7 @@ export function layoutKnowledgeGraph(graph) {
   const result = {
     width: WIDTH,
     height: HEIGHT,
+    nodeClusters: clusters.keys,
     positions: new Map(graph.nodes.map((node, index) => [
       node.id,
       { x: points[index].x, y: points[index].y },

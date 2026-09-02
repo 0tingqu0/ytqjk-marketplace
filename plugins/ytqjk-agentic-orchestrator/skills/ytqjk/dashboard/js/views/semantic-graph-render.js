@@ -1,4 +1,5 @@
 import { bindKnowledgeGraphMotion } from "./knowledge-graph-motion.js";
+import { bindGraphNodeDrag } from "./knowledge-graph-drag.js";
 import { layoutKnowledgeGraph } from "./knowledge-graph-layout.js";
 import { bindGraphViewport } from "./knowledge-graph-viewport.js";
 import { bindRovingGraphNavigation } from "./knowledge-graph-accessibility.js";
@@ -185,6 +186,12 @@ export function renderSemanticGraph(
   bindKnowledgeGraphMotion(target);
   bindRovingGraphNavigation(svg);
   const viewport = bindGraphViewport(svg, target, onZoom);
+  const drag = bindGraphNodeDrag(svg, target, graph, layout);
+  const destroyViewport = viewport.destroy.bind(viewport);
+  viewport.destroy = () => {
+    drag.destroy();
+    destroyViewport();
+  };
   target.graphViewport = viewport;
   return viewport;
 }
