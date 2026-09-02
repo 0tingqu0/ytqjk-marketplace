@@ -1,4 +1,4 @@
-function errorFrom(body, fallback) {
+export function errorFrom(body, fallback) {
   if (body && typeof body.error === "string") return body.error;
   const detail = body && body.error;
   if (detail && typeof detail.message === "string") return detail.message;

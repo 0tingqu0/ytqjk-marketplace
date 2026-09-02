@@ -1,3 +1,5 @@
+import { errorFrom } from "./js/api.js";
+
 (() => {
   const panel = document.getElementById("update-panel");
   const status = document.getElementById("update-status");
@@ -38,7 +40,7 @@
     const currentVersion = String(result.current_version || "");
     trigger.textContent = currentVersion ? `v${currentVersion}` : "v–";
     if (!response.ok) {
-      throw new Error(result.error || "检查更新失败");
+      throw new Error(errorFrom(result, "检查更新失败"));
     }
     latestVersion = String(result.latest_version || "");
     const updateAvailable = Boolean(result.update_available);
@@ -86,7 +88,7 @@
       status.textContent = "更新中，请勿关闭";
       return postUpdate(false);
     }
-    if (!response.ok) throw new Error(result.error || "更新失败");
+    if (!response.ok) throw new Error(errorFrom(result, "更新失败"));
     return result;
   }
 
