@@ -5,7 +5,8 @@
 }
 
 .tree-node {
-  overflow: clip;
+  position: relative;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -17,7 +18,7 @@
   gap: 12px;
   align-items: center;
   min-height: 62px;
-  padding: 12px 14px;
+  padding: 12px 66px 12px 14px;
   cursor: pointer;
 }
 
@@ -43,17 +44,74 @@
   font: 11px ui-monospace, Consolas, monospace;
 }
 
+.tree-action-menu {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 12px;
+}
+
+.tree-action-menu[open] {
+  z-index: 4;
+}
+
+.tree-action-menu > summary {
+  width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--surface-elevated);
+  cursor: pointer;
+  list-style: none;
+}
+
+.tree-action-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree-action-menu > summary:hover,
+.tree-action-menu[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-weak);
+}
+
+.tree-action-menu > summary i {
+  font-size: 21px;
+}
+
 .tree-node-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding: 0 14px 12px 36px;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 176px;
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-elevated);
+  box-shadow: 0 14px 28px var(--shadow);
 }
 
 .tree-action {
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 11px;
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-color: transparent;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+
+.tree-action:hover {
+  border-color: var(--line);
+  background: var(--surface-muted);
 }
 
 .tree-children {
@@ -119,14 +177,16 @@
 @media (max-width: 600px) {
   .tree-node > summary {
     grid-template-columns: 1fr;
+    padding-right: 62px;
   }
 
   .tree-node > summary > .muted {
     padding-left: 16px;
   }
 
-  .tree-node-actions {
-    padding-left: 14px;
+  .tree-action-menu {
+    top: 8px;
+    right: 8px;
   }
 
   .tree-children {

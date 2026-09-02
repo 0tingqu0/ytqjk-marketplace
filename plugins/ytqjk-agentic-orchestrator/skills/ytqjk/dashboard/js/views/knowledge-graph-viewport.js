@@ -86,6 +86,9 @@ export function bindGraphViewport(svg, target, onChange) {
     );
     const percent = Math.round((base.width / box.width) * 100);
     target.dataset.graphZoom = String(percent);
+    target.classList.toggle("graph-zoom-far", percent < 80);
+    target.classList.toggle("graph-zoom-near", percent >= 130);
+    target.classList.toggle("graph-zoom-detail", percent >= 190);
     onChange?.({
       percent,
       canZoomIn: box.width > base.width * MIN_SCALE + 0.1,

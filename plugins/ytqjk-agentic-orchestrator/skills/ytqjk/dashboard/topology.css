@@ -25,8 +25,8 @@
 
 .overview-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 276px;
+  gap: 18px;
   align-items: start;
 }
 
@@ -433,18 +433,18 @@
 
 .overview-aside {
   display: grid;
-  grid-template-rows: auto minmax(247px, 1fr) 112px 68px;
-  gap: 18px;
-  margin-top: 20px;
+  grid-template-rows: repeat(4, auto);
+  gap: 12px;
+  margin-top: 0;
 }
 
 .status-surface,
 .review-surface {
-  padding: 20px;
+  padding: 14px;
 }
 
 .panel-title {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .panel-title .section-accent {
@@ -460,12 +460,12 @@
 }
 
 .metric {
-  min-height: 68px;
+  min-height: 52px;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 9px 0;
+  gap: 9px;
+  padding: 6px 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
@@ -478,7 +478,7 @@
 
 .metric-icon {
   color: var(--accent);
-  font-size: 28px;
+  font-size: 22px;
 }
 
 .metric-candidate .metric-icon {
@@ -501,7 +501,7 @@
   display: inline;
   margin-top: 0;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 27px;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -515,7 +515,7 @@
 }
 
 .overview-empty {
-  min-height: 142px;
+  min-height: 88px;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -526,7 +526,7 @@
 
 .overview-empty i {
   color: var(--muted);
-  font-size: 48px;
+  font-size: 32px;
 }
 
 .overview-empty p {
@@ -539,16 +539,16 @@
 .overview-secondary-action {
   width: 100%;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 18px;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 12px;
-  padding: 16px 18px;
+  gap: 10px;
+  padding: 11px 13px;
   text-align: left;
 }
 
 .overview-primary-action > i:first-child,
 .overview-secondary-action > i:first-child {
-  font-size: 34px;
+  font-size: 26px;
 }
 
 .overview-primary-action span {
@@ -557,7 +557,7 @@
 }
 
 .overview-primary-action b {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .overview-primary-action small {

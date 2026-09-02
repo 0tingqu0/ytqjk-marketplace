@@ -13,7 +13,16 @@ function routeFromHash() {
 }
 
 export function createRouter(onRoute) {
-  const apply = () => onRoute(routeFromHash());
+  let currentRoute = null;
+  const apply = () => {
+    const route = routeFromHash();
+    const changed = currentRoute !== null && currentRoute !== route;
+    currentRoute = route;
+    onRoute(route);
+    if (changed && window.matchMedia?.("(max-width: 600px)").matches) {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }
+  };
   window.addEventListener("hashchange", apply);
   if (!Object.hasOwn(ROUTES, window.location.hash.slice(1))) {
     history.replaceState(null, "", "#overview");

@@ -25,6 +25,7 @@ body[data-theme="light"] {
   --focus: #0ea5e9;
   --shadow: #17324d1f;
   --graph-edge: #80a4c0;
+  --grid-line: #80a4c014;
   --graph-project: #238dd1;
   --graph-indexed: #00a9a5;
   --graph-document: #14a987;
@@ -66,6 +67,7 @@ body[data-theme="dark"] {
   --focus: #67e8f9;
   --shadow: #00000059;
   --graph-edge: #315d82;
+  --grid-line: #315d821c;
   --graph-project: #4bb8f4;
   --graph-indexed: #37d6c0;
   --graph-document: #65ddbd;
@@ -190,9 +192,9 @@ h3,
   min-height: 100vh;
   background-color: var(--canvas);
   background-image:
-    linear-gradient(#38bdf806 1px, transparent 1px),
-    linear-gradient(90deg, #38bdf806 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
 .appbar {
@@ -309,9 +311,9 @@ dialog {
   border-color: var(--line-strong);
   background-color: var(--surface);
   background-image:
-    linear-gradient(var(--graph-edge) 1px, transparent 1px),
-    linear-gradient(90deg, var(--graph-edge) 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
   background-position: -1px -1px;
 }
 
@@ -364,7 +366,7 @@ dialog {
 }
 
 .overview-primary-action {
-  min-height: 112px;
+  min-height: 76px;
   border-color: #237baa;
   color: #eff9ff;
   background:
@@ -387,7 +389,7 @@ dialog {
 }
 
 .overview-secondary-action {
-  min-height: 68px;
+  min-height: 52px;
   border-color: var(--line-strong);
   color: var(--accent-strong);
   background: var(--surface-elevated);
@@ -547,6 +549,18 @@ select:focus {
   box-shadow: 0 9px 22px var(--shadow);
 }
 
+.tree-action-menu .tree-action {
+  border-color: transparent;
+  color: var(--text);
+  background: transparent;
+}
+
+.tree-action-menu .tree-action:hover {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
 .tree-node > summary:hover,
 .session-group summary:hover {
   background: var(--surface-elevated);
@@ -657,6 +671,69 @@ button {
 @media (max-width: 1180px) {
   .overview-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1120px) {
+  :root,
+  body[data-theme="light"],
+  body[data-theme="system"],
+  body[data-theme="dark"] {
+    --rail-width: 76px;
+  }
+
+  .app-rail {
+    padding-inline: 9px;
+  }
+
+  .rail-brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .rail-brand div,
+  .rail-nav strong {
+    display: none;
+  }
+
+  #theme-toggle {
+    display: grid;
+    place-items: center;
+    padding-inline: 0;
+    font-size: 0;
+  }
+
+  #theme-toggle::before {
+    content: "◐";
+    font-size: 20px;
+  }
+
+  .rail-nav button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding-inline: 0;
+  }
+
+  .rail-nav span,
+  .rail-footer span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .rail-footer button {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .appbar,
+  #view-root {
+    padding-inline: 24px;
   }
 }
 
