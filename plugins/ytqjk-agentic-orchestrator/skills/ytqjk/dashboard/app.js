@@ -24,20 +24,66 @@ import {
   shouldAutoRefresh,
 } from "./js/refresh-policy.js";
 let router, documentActions;
-function showRoute(route, focus = false) {
+
+function focusRouteHeading(panel) {
+  const viewRoot = byId("view-root");
+  const target = panel?.querySelector("h2") || viewRoot;
+  if (target === viewRoot) {
+    target.focus({ preventScroll: true });
+    return;
+  }
+  const previousTabIndex = target.getAttribute("tabindex");
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  target.addEventListener("blur", () => {
+    if (previousTabIndex === null) target.removeAttribute("tabindex");
+    else target.setAttribute("tabindex", previousTabIndex);
+  }, { once: true });
+}
+
+function bindSkipLink() {
+  const skipLink = document.querySelector(".skip-link");
+  if (!skipLink) return;
+  const moveFocus = () => {
+    const target = byId("view-root");
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "start" });
+  };
+  skipLink.addEventListener("click", (event) => {
+    event.preventDefault();
+    requestAnimationFrame(moveFocus);
+  });
+  skipLink.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    moveFocus();
+  });
+}
+
+function showRoute(route, routeChanged = false) {
   state.route = route;
   const [kicker, title] = ROUTES[route];
   byId("view-kicker").textContent = kicker;
   byId("view-title").textContent = title;
+  let activePanel;
   document.querySelectorAll(".view-panel").forEach((panel) => {
     panel.hidden = panel.dataset.view !== route;
+    if (!panel.hidden) activePanel = panel;
   });
   document.querySelectorAll("[data-route]").forEach((node) => {
     const current = node.dataset.route === route ? "page" : "false";
     node.setAttribute("aria-current", String(current));
   });
-  closeRail();
-  if (focus) byId("view-root").focus();
+  const moreCurrent = ["review", "libraries", "sessions"].includes(route);
+  byId("bottom-more").setAttribute(
+    "aria-current", moreCurrent ? "page" : "false",
+  );
+  closeRail({ restoreFocus: !routeChanged });
+  if (routeChanged) {
+    requestAnimationFrame(() => {
+      if (!activePanel.hidden && state.route === route) focusRouteHeading(activePanel);
+    });
+  }
 }
 function renderAll() {
   const snapshot = state.snapshot;
@@ -163,7 +209,8 @@ documentActions = createDocumentActions(api, state, {
   render: renderAll,
 });
 setTheme(restoreTheme());
-router = createRouter((route) => showRoute(route));
+router = createRouter(showRoute);
+bindSkipLink();
 bindLibraryDialog();
 bindTreeDialog((tree) => {
   state.tree = tree;

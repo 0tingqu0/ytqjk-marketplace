@@ -1,7 +1,16 @@
 import { byId, clear, text } from "../ui/dom.js";
 import { syncRovingTabStop } from "./knowledge-graph-accessibility.js";
+import { syncGraphClusters } from "./knowledge-graph-clusters.js";
+import {
+  graphDensityLimits,
+  graphNeighborhood,
+  visibleGraphElements,
+} from "./knowledge-graph-density.js";
+
+export { graphNeighborhood, visibleGraphElements };
 
 const STORAGE_KEY = "ytqjk.semanticGraph.settings.v2";
+const SETTINGS_MODAL_QUERY = "(max-width: 900px)";
 const DEFAULTS = Object.freeze({
   local: false,
   depth: 1,
@@ -15,112 +24,6 @@ const DEFAULTS = Object.freeze({
   nodeScale: 1,
   linkScale: 1,
 });
-
-function adjacency(graph) {
-  const neighbors = new Map((graph.nodes || []).map((node) => [node.id, []]));
-  (graph.edges || []).forEach((edge) => {
-    if (!neighbors.has(edge.source) || !neighbors.has(edge.target)) return;
-    neighbors.get(edge.source).push({ nodeId: edge.target, edgeId: edge.id });
-    neighbors.get(edge.target).push({ nodeId: edge.source, edgeId: edge.id });
-  });
-  return neighbors;
-}
-
-export function graphNeighborhood(graph, selectedId, depth = 1) {
-  const neighbors = adjacency(graph);
-  const nodeIds = new Set();
-  const edgeIds = new Set();
-  if (!neighbors.has(selectedId)) return { nodeIds, edgeIds };
-  nodeIds.add(selectedId);
-  let frontier = new Set([selectedId]);
-  for (let level = 0; level < depth; level += 1) {
-    const next = new Set();
-    frontier.forEach((nodeId) => {
-      neighbors.get(nodeId).forEach((neighbor) => {
-        edgeIds.add(neighbor.edgeId);
-        if (!nodeIds.has(neighbor.nodeId)) next.add(neighbor.nodeId);
-        nodeIds.add(neighbor.nodeId);
-      });
-    });
-    frontier = next;
-    if (!frontier.size) break;
-  }
-  return { nodeIds, edgeIds };
-}
-
-function relationMatches(edge, relation) {
-  if (relation === "all") return true;
-  if (relation === "explicit") {
-    return edge.type !== "mentions" && edge.type !== "similar_to";
-  }
-  return edge.type === relation;
-}
-
-function importantNode(node, degree) {
-  return node.type === "document"
-    || Number(node.mentions || 0) >= 2
-    || Number(node.document_count || 0) >= 2
-    || degree > 1;
-}
-
-function importantEdge(edge) {
-  const confidence = Number(edge.confidence);
-  if (!Number.isFinite(confidence)) return true;
-  if (edge.type === "mentions") return confidence >= 0.78 || edge.weight > 1;
-  if (edge.type === "similar_to") return confidence >= 0.55;
-  return true;
-}
-
-export function visibleGraphElements(graph, settings, selectedId) {
-  const local = settings.local
-    ? graphNeighborhood(graph, selectedId, settings.depth).nodeIds
-    : new Set((graph.nodes || []).map((node) => node.id));
-  const degree = new Map((graph.nodes || []).map((node) => [node.id, 0]));
-  (graph.edges || []).forEach((edge) => {
-    degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
-    degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
-  });
-  const nodeIds = new Set((graph.nodes || []).filter((node) => (
-    local.has(node.id)
-    && (node.type === "document" ? settings.documents : settings.entities)
-    && (
-      !settings.smart
-      || node.id === selectedId
-      || importantNode(node, degree.get(node.id) || 0)
-    )
-  )).map((node) => node.id));
-  const edgeIds = new Set((graph.edges || []).filter((edge) => (
-    nodeIds.has(edge.source)
-    && nodeIds.has(edge.target)
-    && relationMatches(edge, settings.relation)
-    && (!settings.smart || importantEdge(edge))
-  )).map((edge) => edge.id));
-  if (settings.smart) {
-    const connected = new Set([selectedId]);
-    graph.edges.forEach((edge) => {
-      if (!edgeIds.has(edge.id)) return;
-      connected.add(edge.source);
-      connected.add(edge.target);
-    });
-    graph.nodes.forEach((node) => {
-      if (node.type !== "document" && !connected.has(node.id)) {
-        nodeIds.delete(node.id);
-      }
-    });
-  }
-  if (settings.relation !== "all") {
-    const connected = new Set([selectedId]);
-    graph.edges.forEach((edge) => {
-      if (!edgeIds.has(edge.id)) return;
-      connected.add(edge.source);
-      connected.add(edge.target);
-    });
-    [...nodeIds].forEach((id) => {
-      if (!connected.has(id)) nodeIds.delete(id);
-    });
-  }
-  return { nodeIds, edgeIds };
-}
 
 function readSettings() {
   return {
@@ -186,12 +89,28 @@ function updateOutputs(settings) {
 }
 
 function applyVisibility(target, graph, settings, selectedId) {
-  const visible = visibleGraphElements(graph, settings, selectedId);
+  const visible = visibleGraphElements(
+    graph, settings, selectedId, graphDensityLimits(),
+  );
   target.querySelectorAll("[data-node]").forEach((node) => {
     node.classList.toggle("is-filtered-out", !visible.nodeIds.has(node.dataset.node));
   });
   target.querySelectorAll("[data-edge]").forEach((edge) => {
     edge.classList.toggle("is-filtered-out", !visible.edgeIds.has(edge.dataset.edge));
+  });
+  const values = {
+    documents: graph.nodes.filter((node) => (
+      node.type === "document" && visible.nodeIds.has(node.id)
+    )).length,
+    entities: graph.nodes.filter((node) => (
+      node.type !== "document" && visible.nodeIds.has(node.id)
+    )).length,
+    relations: visible.edgeIds.size,
+  };
+  target.querySelectorAll(".graph-stats [data-stat]").forEach((item) => {
+    const total = item.dataset.total;
+    item.querySelector("b").textContent = `${values[item.dataset.stat]}/${total}`;
+    item.title = `当前可见 ${values[item.dataset.stat]}，总计 ${total}`;
   });
   return visible;
 }
@@ -215,17 +134,82 @@ function updateActiveFilters(settings, visible, graph) {
     labels.push(byId("graph-relation-filter").selectedOptions[0].textContent);
   }
   labels.push(`${visible.nodeIds.size}/${graph.nodes.length} 节点`);
+  labels.push(`${visible.edgeIds.size}/${graph.edges.length} 关系`);
   clear(byId("graph-active-filters"), labels.map((label) => (
     text("span", label, "graph-filter-chip")
   )));
 }
 
-function setPanel(open) {
-  byId("graph-settings-panel").hidden = !open;
-  byId("graph-settings-toggle").setAttribute("aria-expanded", String(open));
+function panelControls(panel) {
+  return [...panel.querySelectorAll(
+    "button:not([disabled]), input:not([disabled]), select:not([disabled]), "
+      + "summary, [tabindex]:not([tabindex='-1'])",
+  )].filter((control) => (
+    !control.closest("[hidden]")
+    && (!control.closest("details:not([open])") || control.matches("summary"))
+  ));
+}
+
+let panelHome;
+const backgroundInertState = new Map();
+
+function isSettingsModal() {
+  return Boolean(window.matchMedia?.(SETTINGS_MODAL_QUERY).matches);
+}
+
+function setBackgroundInert(panel, inert) {
+  if (inert) {
+    [...document.body.children].forEach((node) => {
+      if (node === panel || node.tagName === "SCRIPT") return;
+      if (!backgroundInertState.has(node)) {
+        backgroundInertState.set(node, node.inert);
+      }
+      node.inert = true;
+    });
+    return;
+  }
+  backgroundInertState.forEach((wasInert, node) => {
+    if (node.isConnected) node.inert = wasInert;
+  });
+  backgroundInertState.clear();
+}
+
+function restorePanelHome(panel) {
+  if (!panelHome || panel.parentNode === panelHome.parent) return;
+  if (panelHome.next?.parentNode === panelHome.parent) {
+    panelHome.parent.insertBefore(panel, panelHome.next);
+  } else {
+    panelHome.parent.append(panel);
+  }
+}
+
+function setPanel(open, restoreFocus = false) {
+  const panel = byId("graph-settings-panel");
+  const toggle = byId("graph-settings-toggle");
+  panelHome ||= { parent: panel.parentNode, next: panel.nextSibling };
+  const modal = open && isSettingsModal();
+  if (modal && panel.parentNode !== document.body) document.body.append(panel);
+  panel.hidden = !open;
+  if (modal) panel.setAttribute("aria-modal", "true");
+  else panel.removeAttribute("aria-modal");
+  setBackgroundInert(panel, modal);
+  toggle.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("graph-settings-open", open);
+  if (open) {
+    requestAnimationFrame(() => {
+      if (!panel.hidden) byId("graph-settings-close").focus();
+    });
+  } else {
+    restorePanelHome(panel);
+    if (restoreFocus) toggle.focus();
+  }
 }
 
 export function bindGraphExplorer(context) {
+  byId("graph-settings-panel").setAttribute("role", "dialog");
+  let lastViewport = null;
+  let lastFitKey = "";
+  let lastWasFitted = false;
   const inputIds = [
     "graph-local-enabled", "graph-local-depth", "graph-show-documents",
     "graph-show-entities", "graph-smart-density", "graph-group-clusters",
@@ -233,18 +217,34 @@ export function bindGraphExplorer(context) {
     "graph-node-scale", "graph-link-scale",
   ];
 
-  function sync() {
+  function sync(event) {
     const { target, graph, selectedId, viewport } = context();
     if (!target || !graph) return;
     const settings = readSettings();
+    if (event?.type === "input" && event.target?.matches?.("[id$='-scale']")) {
+      applyScale(target, settings);
+      updateOutputs(settings);
+      return;
+    }
     if (!selectedId && settings.local) {
       settings.local = false;
       byId("graph-local-enabled").checked = false;
     }
     const visible = applyVisibility(target, graph, settings, selectedId);
+    syncGraphClusters(target);
     applyScale(target, settings);
-    if (settings.local) viewport?.fit(visible.nodeIds);
-    else viewport?.clearFit?.();
+    const shouldFit = settings.local || visible.nodeIds.size < graph.nodes.length;
+    const fitKey = shouldFit ? [...visible.nodeIds].sort().join("\u001f") : "";
+    const fitChanged = viewport !== lastViewport
+      || shouldFit !== lastWasFitted
+      || (shouldFit && fitKey !== lastFitKey);
+    if (fitChanged) {
+      if (shouldFit) viewport?.fit(visible.nodeIds);
+      else viewport?.clearFit?.();
+    }
+    lastViewport = viewport;
+    lastFitKey = fitKey;
+    lastWasFitted = shouldFit;
     target.classList.toggle("show-all-node-labels", settings.labels);
     target.classList.toggle("show-relation-labels", settings.relations);
     target.classList.toggle("show-graph-clusters", settings.grouped);
@@ -267,23 +267,53 @@ export function bindGraphExplorer(context) {
   }
 
   inputIds.map(byId).forEach((input) => input.addEventListener("input", sync));
+  ["graph-node-scale", "graph-link-scale"].map(byId)
+    .forEach((input) => input.addEventListener("change", sync));
   byId("graph-settings-toggle").onclick = () => setPanel(
-    byId("graph-settings-panel").hidden,
+    byId("graph-settings-panel").hidden, true,
   );
-  byId("graph-settings-close").onclick = () => setPanel(false);
+  byId("graph-settings-close").onclick = () => setPanel(false, true);
+  byId("graph-settings-panel").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setPanel(false, true);
+      return;
+    }
+    if (event.key !== "Tab" || !isSettingsModal()) return;
+    const controls = panelControls(event.currentTarget);
+    if (!controls.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
   byId("graph-settings-reset").onclick = () => {
     writeSettings(DEFAULTS);
     sync();
   };
+  const compact = window.matchMedia("(max-width: 900px)");
+  compact.addEventListener?.("change", sync);
+  window.matchMedia(SETTINGS_MODAL_QUERY).addEventListener?.("change", () => {
+    setPanel(false, !byId("graph-settings-panel").hidden);
+  });
+  window.addEventListener("hashchange", () => setPanel(false, false));
   writeSettings(savedSettings());
-  setPanel(false);
+  setPanel(false, false);
   return {
     sync,
+    closePanel(restoreFocus = false) {
+      setPanel(false, restoreFocus);
+    },
     focusLocal() {
       byId("graph-local-enabled").checked = true;
       byId("graph-local-depth").value = "1";
       sync();
-      setPanel(false);
+      setPanel(false, false);
     },
   };
 }

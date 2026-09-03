@@ -41,8 +41,8 @@ body[data-theme="light"] {
   --rail-width: 238px;
 }
 
-body[data-theme="system"],
-body[data-theme="dark"] {
+body[data-theme="dark"],
+body[data-theme="system"][data-resolved-theme="dark"] {
   color-scheme: dark;
   --rail: #06101c;
   --rail-hover: #0d1c2d;
@@ -119,6 +119,9 @@ h3,
 }
 
 .app-rail {
+  padding-top: max(20px, env(safe-area-inset-top));
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding-left: max(13px, env(safe-area-inset-left));
   border-right: 1px solid var(--line);
   background: var(--rail);
 }
@@ -200,7 +203,11 @@ h3,
 .appbar {
   position: relative;
   min-height: 104px;
-  padding: 18px 36px;
+  padding:
+    max(18px, env(safe-area-inset-top))
+    max(36px, env(safe-area-inset-right))
+    18px
+    max(36px, env(safe-area-inset-left));
   border-bottom-color: var(--line);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   box-shadow: 0 1px 0 var(--shadow);
@@ -208,9 +215,9 @@ h3,
 
 .appbar::after {
   position: absolute;
-  right: 36px;
+  right: max(36px, env(safe-area-inset-right));
   bottom: -1px;
-  left: 36px;
+  left: max(36px, env(safe-area-inset-left));
   height: 1px;
   background: linear-gradient(90deg, var(--accent), transparent 38%);
   content: "";
@@ -273,7 +280,11 @@ button:hover {
 }
 
 #view-root {
-  padding: 28px 36px 40px;
+  padding:
+    28px
+    max(36px, env(safe-area-inset-right))
+    max(40px, env(safe-area-inset-bottom))
+    max(36px, env(safe-area-inset-left));
 }
 
 .surface,
@@ -674,16 +685,41 @@ button {
   }
 }
 
+@media (max-width: 600px) {
+  .appbar {
+    min-height: 68px;
+    padding:
+      max(12px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      12px
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .appbar::after {
+    right: max(16px, env(safe-area-inset-right));
+    left: max(16px, env(safe-area-inset-left));
+  }
+
+  #view-root {
+    padding:
+      20px
+      max(16px, env(safe-area-inset-right))
+      calc(88px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+}
+
 @media (min-width: 901px) and (max-width: 1120px) {
   :root,
   body[data-theme="light"],
   body[data-theme="system"],
   body[data-theme="dark"] {
-    --rail-width: 76px;
+    --rail-width: calc(76px + env(safe-area-inset-left));
   }
 
   .app-rail {
-    padding-inline: 9px;
+    padding-right: 9px;
+    padding-left: max(9px, env(safe-area-inset-left));
   }
 
   .rail-brand {
@@ -709,9 +745,37 @@ button {
   }
 
   .rail-nav button {
+    position: relative;
     grid-template-columns: 1fr;
     justify-items: center;
     padding-inline: 0;
+  }
+
+  .app-rail button[data-tooltip]::after {
+    position: absolute;
+    z-index: 30;
+    top: 50%;
+    left: calc(100% + 12px);
+    padding: 7px 9px;
+    border: 1px solid var(--line-strong);
+    border-radius: 5px;
+    color: var(--text);
+    background: var(--surface-elevated);
+    box-shadow: 0 8px 22px var(--shadow);
+    content: attr(data-tooltip);
+    font-size: 12px;
+    font-weight: 650;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(4px, -50%);
+    transition: opacity .14s ease, transform .14s ease;
+    white-space: nowrap;
+  }
+
+  .app-rail button[data-tooltip]:hover::after,
+  .app-rail button[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(0, -50%);
   }
 
   .rail-nav span,
@@ -727,19 +791,44 @@ button {
   }
 
   .rail-footer button {
+    position: relative;
     justify-content: center;
     padding-inline: 0;
   }
 
   .appbar,
   #view-root {
-    padding-inline: 24px;
+    padding-right: max(24px, env(safe-area-inset-right));
+    padding-left: max(24px, env(safe-area-inset-left));
+  }
+
+  .appbar::after {
+    right: max(24px, env(safe-area-inset-right));
+    left: max(24px, env(safe-area-inset-left));
   }
 }
 
 @media (max-width: 900px) {
   .app-rail {
     box-shadow: 18px 0 40px var(--shadow);
+  }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+  .appbar {
+    padding-top: max(18px, env(safe-area-inset-top));
+    padding-right: max(36px, env(safe-area-inset-right));
+    padding-left: max(36px, env(safe-area-inset-left));
+  }
+
+  .appbar::after {
+    right: max(36px, env(safe-area-inset-right));
+    left: max(36px, env(safe-area-inset-left));
+  }
+
+  #view-root {
+    padding-right: max(36px, env(safe-area-inset-right));
+    padding-left: max(36px, env(safe-area-inset-left));
   }
 }
 
@@ -753,7 +842,24 @@ button {
   }
 
   #view-root {
-    padding-inline: 16px;
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-width: 420px) {
+  .appbar {
+    gap: 10px;
+  }
+
+  .appbar-title h1 {
+    font-size: 0;
+    white-space: nowrap;
+  }
+
+  .appbar-title h1::after {
+    content: "YTQJK";
+    font-size: 20px;
   }
 }
 

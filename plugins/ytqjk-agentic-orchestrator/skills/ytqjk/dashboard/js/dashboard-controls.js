@@ -11,11 +11,51 @@ const THEME_LABELS = {
 const NEXT_THEME = {
   system: "light", light: "dark", dark: "system",
 };
+const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
+let themeMedia;
+let themeMediaBound = false;
+
+function normalizeTheme(theme) {
+  return Object.hasOwn(THEME_LABELS, theme) ? theme : "system";
+}
+
+export function resolveTheme(theme, prefersDark = false) {
+  const normalized = normalizeTheme(theme);
+  if (normalized !== "system") return normalized;
+  return prefersDark ? "dark" : "light";
+}
+
+function applyTheme(theme, persist) {
+  const normalized = normalizeTheme(theme);
+  themeMedia ||= window.matchMedia?.(DARK_SCHEME_QUERY);
+  const resolved = resolveTheme(normalized, themeMedia?.matches);
+  document.body.dataset.theme = normalized;
+  document.body.dataset.resolvedTheme = resolved;
+  document.documentElement.style.colorScheme = resolved;
+  byId("theme-toggle")?.replaceChildren(
+    document.createTextNode(`主题：${THEME_LABELS[normalized]}`),
+  );
+  byId("theme-toggle")?.setAttribute(
+    "aria-label", `切换主题，当前为${THEME_LABELS[normalized]}主题`,
+  );
+  if (persist) saveTheme(normalized);
+}
 
 export function setTheme(theme) {
-  document.body.dataset.theme = theme;
-  byId("theme-toggle").textContent = `主题：${THEME_LABELS[theme]}`;
-  saveTheme(theme);
+  applyTheme(theme, true);
+}
+
+function bindSystemTheme() {
+  themeMedia ||= window.matchMedia?.(DARK_SCHEME_QUERY);
+  if (!themeMedia || themeMediaBound) return;
+  const sync = () => {
+    if (document.body.dataset.theme === "system") {
+      applyTheme("system", false);
+    }
+  };
+  themeMedia.addEventListener?.("change", sync);
+  if (!themeMedia.addEventListener) themeMedia.addListener?.(sync);
+  themeMediaBound = true;
 }
 
 export function bindDashboardControls(context) {
@@ -57,6 +97,7 @@ export function bindDashboardControls(context) {
   byId("theme-toggle").onclick = () => {
     setTheme(NEXT_THEME[document.body.dataset.theme]);
   };
+  bindSystemTheme();
   bindRail();
   bindCommandPalette(router, documentActions.selectDocument);
 }

@@ -1,6 +1,7 @@
 import { selectionFor } from "../draft-conflicts.js";
 import { confirmAction } from "../ui/confirm.js";
 import { byId, button, clear, icon, stateLabel, text } from "../ui/dom.js";
+import { renderDocumentMarkdown } from "./document-markdown.js";
 
 export function createDocumentActions(api, state, callbacks) {
   const { deleteDraft, refresh, render } = callbacks;
@@ -125,29 +126,109 @@ function filteredDocuments(snapshot, state) {
   });
 }
 
+function previewSource(selected, state) {
+  return state.drafts.get(selected.item.path) ?? selected.content ?? "";
+}
+
+function renderReadingState(reading, selected, source, hasDraft) {
+  if (selected.loading && !hasDraft) {
+    const message = text("p", "正在读取文档正文…", "status-message");
+    message.setAttribute("role", "status");
+    clear(reading, [message]);
+    return;
+  }
+  if (selected.error && !hasDraft) {
+    const message = text(
+      "p",
+      `文档读取失败：${selected.error}`,
+      "status-message",
+    );
+    message.setAttribute("role", "alert");
+    clear(reading, [message]);
+    return;
+  }
+  renderDocumentMarkdown(reading, source);
+  if (selected.error) {
+    const message = text(
+      "p",
+      `重新读取失败：${selected.error}；当前显示未保存草稿。`,
+      "status-message",
+    );
+    message.setAttribute("role", "alert");
+    reading.prepend(message);
+  }
+}
+
+function setPreviewMode(elements, mode, focusEditor = false) {
+  const editing = mode === "edit";
+  elements.preview.dataset.documentMode = mode;
+  elements.reading.hidden = editing;
+  elements.content.hidden = !editing;
+  elements.readButton.setAttribute("aria-pressed", String(!editing));
+  elements.editButton.setAttribute("aria-pressed", String(editing));
+  if (editing && focusEditor) elements.content.focus();
+}
+
 function renderPreview(selected, state) {
   const empty = byId("document-empty");
   const preview = byId("preview");
-  if (!selected) { empty.hidden = false; preview.hidden = true; return; }
+  if (!selected) {
+    empty.hidden = false;
+    preview.hidden = true;
+    delete preview.dataset.documentPath;
+    delete preview.dataset.documentMode;
+    return;
+  }
   empty.hidden = true;
   preview.hidden = false;
   byId("path").textContent = selected.item.path;
   const tag = byId("state");
   tag.textContent = stateLabel(selected.item);
   tag.className = `state-tag ${selected.item.state}`;
+  const reading = byId("document-reading");
   const content = byId("content");
-  content.hidden = false;
-  content.readOnly = selected.item.state !== "candidate";
-  const saved = state.drafts.get(selected.item.path);
-  content.value = selected.loading
-    ? "读取中…"
-    : selected.error || saved || selected.content || "";
+  const conflict = byId("document-conflict");
+  const modeActions = byId("document-mode-actions");
+  const readButton = byId("document-read-mode");
+  const editButton = byId("document-edit-mode");
+  const changed = preview.dataset.documentPath !== selected.item.path;
+  const hasDraft = state.drafts.has(selected.item.path);
+  const source = previewSource(selected, state);
+  const candidate = selected.item.state === "candidate";
+  const contentReady = hasDraft || (!selected.loading && !selected.error);
+  preview.dataset.documentPath = selected.item.path;
+  reading.setAttribute("aria-busy", String(selected.loading && !hasDraft));
+  reading.setAttribute("aria-label", "文档正文");
+  content.value = source;
+  content.readOnly = !candidate;
+  content.setAttribute("aria-label", `编辑候选资料正文：${selected.item.path}`);
+  content.setAttribute("aria-describedby", "document-conflict");
   content.setAttribute("aria-invalid", String(Boolean(selected.conflict)));
-  content.title = selected.conflict || "";
-  content.oninput = selected.item.state === "candidate" ? () => {
+  conflict.textContent = selected.conflict || "";
+  conflict.hidden = !selected.conflict;
+  renderReadingState(reading, selected, source, hasDraft);
+  modeActions.hidden = !candidate || !contentReady;
+  readButton.setAttribute("aria-controls", "document-reading");
+  editButton.setAttribute("aria-controls", "content");
+  editButton.disabled = !candidate || !contentReady;
+  content.oninput = candidate ? () => {
     state.drafts.set(selected.item.path, content.value);
   } : null;
-  byId("preview-actions").hidden = selected.item.state !== "candidate";
+  const elements = {
+    preview, reading, content, readButton, editButton,
+  };
+  const mode = changed || !candidate || !contentReady
+    ? "read"
+    : preview.dataset.documentMode || "read";
+  setPreviewMode(elements, mode);
+  readButton.onclick = () => {
+    renderReadingState(reading, selected, content.value, true);
+    setPreviewMode(elements, "read");
+  };
+  editButton.onclick = () => setPreviewMode(elements, "edit", true);
+  byId("preview-actions").hidden = !candidate
+    || selected.loading
+    || Boolean(selected.error);
 }
 
 function documentListEmpty(filtered) {

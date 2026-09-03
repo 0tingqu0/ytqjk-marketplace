@@ -53,7 +53,14 @@ function updateZoomControls(state = null) {
   byId("graph-zoom-level").textContent = `${state?.percent || 100}%`;
 }
 
+function destroyViewport(target = runtime.target) {
+  target?.graphViewport?.destroy?.();
+  if (target) target.graphViewport = null;
+  runtime.viewport = null;
+}
+
 function emptyGraph(message) {
+  destroyViewport();
   const empty = text("div", "", "graph-empty-state");
   const title = text("strong", "暂时无法生成语义图谱");
   empty.append(title, text("p", message));
@@ -64,11 +71,12 @@ function renderMode() {
   if (!runtime.target) return;
   modeButtons();
   if (!runtime.snapshot) {
+    destroyViewport();
     clear(runtime.target, [text("p", "正在读取知识图谱…", "topology-loading")]);
     return;
   }
   if (runtime.mode === "topology") {
-    runtime.viewport = null;
+    destroyViewport();
     updateZoomControls();
     renderLibraryTopology(runtime.target, runtime.snapshot);
     return;
@@ -245,9 +253,11 @@ export function bindKnowledgeGraphWorkbench(api) {
   runtime.directory = bindGraphNodeDirectory(
     () => ({ target: runtime.target, graph: runtime.graph }),
     selectNode,
+    selectEdge,
   );
   document.querySelectorAll("[data-graph-mode]").forEach((control) => {
     control.onclick = () => {
+      runtime.explorer?.closePanel(false);
       runtime.mode = control.dataset.graphMode;
       renderMode();
     };
@@ -274,6 +284,7 @@ export function renderKnowledgeGraphWorkbench(target, snapshot, graph, error) {
   const snapshotChanged = runtime.snapshot !== snapshot;
   const graphChanged = runtime.graph !== graph;
   const errorChanged = runtime.error !== error;
+  if (targetChanged) destroyViewport(runtime.target);
   if (graphChanged) reconcileGraphState(graph);
   runtime.target = target;
   runtime.snapshot = snapshot;

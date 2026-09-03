@@ -388,6 +388,28 @@
   cursor: grab;
 }
 
+.semantic-node-hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: none;
+}
+
+.semantic-node:focus-visible .semantic-node-hit {
+  stroke: transparent;
+}
+
+.semantic-node-focus-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2px;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.semantic-node:focus-visible .semantic-node-focus-ring {
+  stroke: var(--focus);
+}
+
 .semantic-node.is-dragging {
   cursor: grabbing;
 }
@@ -400,11 +422,11 @@
 }
 
 .knowledge-topology.is-node-dragging .semantic-node:not(.is-related):not(.is-dragging) {
-  opacity: .34;
+  opacity: .5;
 }
 
 .knowledge-topology.is-node-dragging .semantic-edge-link:not(.is-related) {
-  opacity: .12;
+  opacity: .72;
 }
 
 .graph-stage:has(.graph-inspector:not([hidden])) {
@@ -671,6 +693,32 @@
   white-space: nowrap;
 }
 
+.graph-directory-heading {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  color: var(--accent-strong);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.graph-directory-more {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
+.graph-node-row > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-relation-row {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--surface-elevated) 88%, var(--accent-weak));
+}
+
 .graph-empty-copy,
 .graph-error-copy {
   margin: 0;
@@ -793,8 +841,9 @@
 
 .semantic-cluster-halo {
   fill: var(--accent-weak);
-  fill-opacity: .18;
+  fill-opacity: .1;
   stroke: var(--line-strong);
+  stroke-opacity: .62;
   stroke-dasharray: 4 8;
   stroke-width: 1;
 }
@@ -807,22 +856,26 @@
   letter-spacing: .04em;
 }
 
+.semantic-cluster.is-filtered-out {
+  display: none;
+}
+
 .semantic-edge--mentions {
-  stroke-width: calc(.72px * var(--semantic-link-scale, 1));
-  opacity: .18;
+  stroke-width: calc(.92px * var(--semantic-link-scale, 1));
+  opacity: .28;
 }
 
 .semantic-edge--similar_to {
   stroke: var(--graph-session);
   stroke-width: calc(1.15px * var(--semantic-link-scale, 1));
   stroke-dasharray: 4 7;
-  opacity: .32;
+  opacity: .36;
   animation: none;
 }
 
 .knowledge-topology.is-node-dragging .semantic-edge--similar_to,
 .knowledge-topology.is-graph-settling .semantic-edge--similar_to {
-  animation: graph-edge-flow 1.4s linear infinite;
+  opacity: .52;
 }
 
 .semantic-edge:not(.semantic-edge--mentions):not(.semantic-edge--similar_to) {
@@ -899,20 +952,56 @@
   transform: scale(1.3);
 }
 
+.semantic-node.is-selected .semantic-node-focus-ring {
+  stroke: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: semantic-node-confirm .48s cubic-bezier(.22, 1, .36, 1);
+}
+
+.semantic-node.is-selected:focus-visible .semantic-node-focus-ring {
+  stroke: var(--focus);
+}
+
+@keyframes semantic-node-confirm {
+  0% {
+    opacity: 0;
+    transform: scale(.72);
+  }
+
+  64% {
+    opacity: .78;
+    transform: scale(1.72);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.knowledge-topology.has-active-node .semantic-edge {
+  opacity: .26;
+}
+
+.knowledge-topology.has-active-node .semantic-node {
+  opacity: .48;
+}
+
 .knowledge-topology.has-selection .semantic-edge-link:not(.is-neighbor):not(.is-selected) {
-  opacity: .08;
+  opacity: .72;
 }
 
 .knowledge-topology.has-selection .semantic-node:not(.is-neighbor):not(.is-selected) {
-  opacity: .24;
+  opacity: .5;
 }
 
 .knowledge-topology.has-path .semantic-edge {
-  opacity: .05;
+  opacity: .2;
 }
 
 .knowledge-topology.has-path .semantic-node {
-  opacity: .16;
+  opacity: .34;
 }
 
 .knowledge-topology.has-path .semantic-edge.is-path {
@@ -944,7 +1033,9 @@
 .graph-workbench[data-mode="topology"] .graph-search-meta,
 .graph-workbench[data-mode="topology"] .graph-search-results,
 .graph-workbench[data-mode="topology"] .graph-path-panel,
-.graph-workbench[data-mode="topology"] .graph-inspector {
+.graph-workbench[data-mode="topology"] .graph-inspector,
+.graph-workbench[data-mode="topology"] .graph-active-filters,
+.graph-workbench[data-mode="topology"] .graph-node-directory {
   display: none;
 }
 
@@ -990,19 +1081,64 @@
   .graph-node-list {
     grid-template-columns: 1fr;
   }
+
+  .semantic-node .graph-node-label.is-prominent,
+  .knowledge-topology.graph-zoom-near
+    .semantic-node .graph-node-label.is-secondary {
+    opacity: 0;
+  }
+
+  .semantic-node:focus-visible .graph-node-label,
+  .semantic-node.is-selected .graph-node-label,
+  .semantic-node.is-path .graph-node-label,
+  .knowledge-topology.graph-zoom-detail .semantic-node .graph-node-label,
+  .knowledge-topology.graph-zoom-detail
+    .semantic-node .graph-node-label.is-secondary {
+    opacity: 1;
+  }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 900px) {
+  body.graph-settings-open {
+    overflow: hidden;
+  }
+
+  body.graph-settings-open::before {
+    position: fixed;
+    z-index: 39;
+    inset: 0;
+    background: #11151899;
+    content: "";
+  }
+
   .graph-settings-panel {
     position: fixed;
-    z-index: 3;
-    top: auto;
-    right: 8px;
-    bottom: 62px;
-    left: 8px;
+    z-index: 40;
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
     width: auto;
-    max-height: min(64dvh, 540px);
+    max-height: none;
+    overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .graph-settings-panel > header button,
+  .graph-settings-actions #graph-settings-close {
+    min-height: 44px;
+  }
+
+  .graph-mode-switch button,
+  .graph-search button,
+  .graph-select-setting select,
+  .graph-range-setting input[type="range"] {
+    min-height: 44px;
+  }
+
+  .graph-settings-actions #graph-settings-close {
+    width: 44px;
   }
 
   .graph-settings-section > summary {
@@ -1029,8 +1165,8 @@
   .graph-settings-toggle {
     top: 8px;
     left: 8px;
-    width: 40px;
-    min-height: 40px;
+    width: 44px;
+    min-height: 44px;
   }
 
   .graph-settings-toggle[aria-expanded="true"] {
@@ -1093,6 +1229,15 @@
     min-height: 44px;
   }
 
+  .graph-inspector header button {
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .graph-endpoint-actions button {
+    min-height: 44px;
+  }
+
   .semantic-node .graph-node-label.is-prominent {
     opacity: 0;
   }
@@ -1113,8 +1258,6 @@
   .semantic-node:focus-visible .graph-node-label,
   .semantic-node.is-selected .graph-node-label,
   .semantic-node.is-path .graph-node-label,
-  .knowledge-topology.graph-zoom-near
-    .semantic-node .graph-node-label.is-prominent,
   .knowledge-topology.graph-zoom-detail .semantic-node .graph-node-label,
   .knowledge-topology.graph-zoom-detail
     .semantic-node .graph-node-label.is-secondary {
@@ -1124,7 +1267,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .semantic-edge--similar_to,
-  .semantic-node .graph-node-dot {
+  .semantic-node .graph-node-dot,
+  .semantic-node-focus-ring {
     animation: none !important;
     transition: none !important;
   }

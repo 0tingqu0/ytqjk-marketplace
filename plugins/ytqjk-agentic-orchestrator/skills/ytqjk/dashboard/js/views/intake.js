@@ -3,6 +3,7 @@ import {
 } from "../api.js";
 import { byId, button, clear, text } from "../ui/dom.js";
 import { saveIntakeResults } from "../store.js";
+import { bindIntakeForm } from "./intake-form.js";
 import { refreshAfterSuccess } from "./intake_refresh.js";
 
 function progress(stage, loaded, total) {
@@ -273,45 +274,5 @@ export function bindIntake(state, refresh) {
       }
     }
   }
-  const form = byId("intake-form");
-  const purpose = () => byId("purpose").value;
-  byId("file-input").onchange = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    try { await publishFile(context, file, purpose()); }
-    catch (error) { reportError(error); }
-    event.target.value = "";
-  };
-  byId("folder-input").onchange = async (event) => {
-    const files = Array.from(event.target.files);
-    if (!files.length) return;
-    try { await publishFolder(context, files, purpose()); }
-    catch (error) { reportError(error); }
-    event.target.value = "";
-  };
-  form.onsubmit = async (event) => {
-    event.preventDefault();
-    try {
-      await publish(
-        context, "dashboard-note.md", byId("note").value,
-        "utf8", purpose(),
-      );
-      byId("note").value = "";
-      byId("purpose").value = "";
-    } catch (error) { reportError(error); }
-  };
-  const dropZone = form.querySelector(".drop-zone");
-  dropZone.ondragover = (event) => {
-    event.preventDefault();
-    dropZone.classList.add("dragging");
-  };
-  dropZone.ondragleave = () => dropZone.classList.remove("dragging");
-  dropZone.ondrop = async (event) => {
-    event.preventDefault();
-    dropZone.classList.remove("dragging");
-    const file = event.dataTransfer.files[0];
-    if (!file) return;
-    try { await publishFile(context, file, purpose()); }
-    catch (error) { reportError(error); }
-  };
+  bindIntakeForm(context, { publish, publishFile, publishFolder });
 }

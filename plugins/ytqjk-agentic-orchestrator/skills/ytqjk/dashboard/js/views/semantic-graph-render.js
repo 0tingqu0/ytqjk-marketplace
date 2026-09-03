@@ -1,5 +1,10 @@
 import { bindKnowledgeGraphMotion } from "./knowledge-graph-motion.js";
 import { bindGraphNodeDrag } from "./knowledge-graph-drag.js";
+import {
+  nearestGraphElement,
+  syncGraphNodeHitTargets,
+  watchGraphNodeHitTargets,
+} from "./knowledge-graph-hit-targets.js";
 import { layoutKnowledgeGraph } from "./knowledge-graph-layout.js";
 import { bindGraphViewport } from "./knowledge-graph-viewport.js";
 import { bindRovingGraphNavigation } from "./knowledge-graph-accessibility.js";
@@ -30,9 +35,8 @@ function edgeCoordinates(source, target) {
 
 function edgeNode(edge, source, target, onSelect) {
   const group = svgNode("g", {
-    tabindex: "-1",
-    role: "button",
-    "aria-label": `${edge.label}关系，置信度${Math.round(edge.confidence * 100)}%`,
+    "aria-hidden": "true",
+    focusable: "false",
   }, "semantic-edge-link");
   group.dataset.edge = edge.id;
   group.dataset.source = edge.source;
@@ -76,7 +80,7 @@ function displayLabel(node) {
   return node.display_label || node.label;
 }
 
-function graphNode(node, position, degree, index, onSelect) {
+function graphNode(node, position, cluster, degree, index) {
   const group = svgNode(
     "g",
     {
@@ -88,12 +92,19 @@ function graphNode(node, position, degree, index, onSelect) {
     `graph-node-link semantic-node semantic-node--${node.type}`,
   );
   group.dataset.node = node.id;
+  group.dataset.cluster = cluster;
   group.dataset.x = position.x.toFixed(2);
   group.dataset.y = position.y.toFixed(2);
   const title = svgNode("title");
   title.textContent = node.path ? `${displayLabel(node)} · ${node.path}` : displayLabel(node);
-  const hit = svgNode("circle", { r: 16 }, "graph-node-hit");
   const radius = nodeRadius(node, degree);
+  const hit = svgNode(
+    "circle", { r: 22 }, "graph-node-hit semantic-node-hit",
+  );
+  const focusRing = svgNode("circle", {
+    r: radius + 4,
+    "vector-effect": "non-scaling-stroke",
+  }, "semantic-node-focus-ring");
   const dot = svgNode("circle", {
     r: radius,
     "data-base-radius": radius,
@@ -108,14 +119,29 @@ function graphNode(node, position, degree, index, onSelect) {
     degree >= 7 ? "is-prominent" : "",
   ].filter(Boolean).join(" "));
   label.textContent = shortened(displayLabel(node));
-  group.append(title, hit, dot, label);
-  group.onclick = () => onSelect(node);
+  group.append(title, hit, focusRing, dot, label);
   return group;
+}
+
+export function bindSemanticNodeSelection(svg, graph, onSelect) {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  svg.onclick = (event) => {
+    const selector = ".semantic-node:not(.is-filtered-out)";
+    const element = event.target?.closest?.(selector)
+      || nearestGraphElement(svg, event, selector);
+    const node = nodes.get(element?.dataset.node);
+    if (node) onSelect(node);
+  };
+  return (nodeId) => {
+    const node = nodes.get(nodeId);
+    if (node) onSelect(node);
+  };
 }
 
 function clusterNode(cluster) {
   const group = svgNode("g", {}, "semantic-cluster");
   group.dataset.cluster = cluster.id;
+  group.dataset.label = cluster.label;
   const halo = svgNode("circle", {
     cx: cluster.x,
     cy: cluster.y,
@@ -133,14 +159,19 @@ function clusterNode(cluster) {
 function statsNode(graph) {
   const stats = document.createElement("div");
   stats.className = "graph-stats";
+  const documentCount = graph.nodes.filter((node) => (
+    node.type === "document"
+  )).length;
   [
-    ["文档", graph.stats.documents],
-    ["实体", graph.stats.entities],
-    ["关系", graph.stats.relations],
-  ].forEach(([label, value]) => {
+    ["documents", "文档", documentCount],
+    ["entities", "实体", graph.nodes.length - documentCount],
+    ["relations", "关系", graph.edges.length],
+  ].forEach(([key, label, value]) => {
     const item = document.createElement("span");
+    item.dataset.stat = key;
+    item.dataset.total = String(value);
     const count = document.createElement("b");
-    count.textContent = String(value);
+    count.textContent = `${value}/${value}`;
     item.append(count, document.createTextNode(label));
     stats.append(item);
   });
@@ -157,6 +188,11 @@ export function renderSemanticGraph(
     role: "group",
     "aria-label": "知识文档、实体以及语义关系图",
   }, "knowledge-graph semantic-knowledge-graph");
+  const pointerSurface = svgNode("rect", {
+    width: layout.width,
+    height: layout.height,
+    "aria-hidden": "true",
+  }, "graph-pointer-surface");
   const clusterLayer = svgNode("g", {}, "semantic-clusters");
   const edgeLayer = svgNode("g", {}, "graph-edges semantic-edges");
   const labelLayer = svgNode("g", {}, "semantic-edge-labels");
@@ -177,19 +213,27 @@ export function renderSemanticGraph(
   graph.nodes.forEach((node, index) => {
     const position = layout.positions.get(node.id);
     if (position) nodeLayer.append(graphNode(
-      node, position, degree.get(node.id) || 0, index, onSelect,
+      node, position, layout.nodeClusters.get(node.id),
+      degree.get(node.id) || 0, index,
     ));
   });
-  svg.append(clusterLayer, edgeLayer, labelLayer, nodeLayer);
+  svg.append(pointerSurface, clusterLayer, edgeLayer, labelLayer, nodeLayer);
   target.graphViewport?.destroy?.();
   target.replaceChildren(svg, statsNode(graph));
-  bindKnowledgeGraphMotion(target);
-  bindRovingGraphNavigation(svg);
-  const viewport = bindGraphViewport(svg, target, onZoom);
+  const motion = bindKnowledgeGraphMotion(target);
+  const activateNode = bindSemanticNodeSelection(svg, graph, onSelect);
+  bindRovingGraphNavigation(svg, activateNode);
   const drag = bindGraphNodeDrag(svg, target, graph, layout);
+  const viewport = bindGraphViewport(svg, target, (state) => {
+    syncGraphNodeHitTargets(svg, ".semantic-node-hit");
+    onZoom?.(state);
+  });
+  const stopHitObserver = watchGraphNodeHitTargets(svg, ".semantic-node-hit");
   const destroyViewport = viewport.destroy.bind(viewport);
   viewport.destroy = () => {
+    motion.destroy();
     drag.destroy();
+    stopHitObserver();
     destroyViewport();
   };
   target.graphViewport = viewport;

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { errorFrom } from "../api.js";
+
 const html = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const dialog = readFileSync(
 	new URL("../ui/tree-dialog.js", import.meta.url),
@@ -15,6 +17,7 @@ const libraryDialog = readFileSync(
 	new URL("../ui/library-dialog.js", import.meta.url),
 	"utf8",
 );
+const update = readFileSync(new URL("../../update.js", import.meta.url), "utf8");
 
 test("Library create sends canonical capacity_bytes", () => {
   assert.match(html, /id="tree-capacity-mib"[^>]*type="number"/);
@@ -44,4 +47,15 @@ test("Library detail uses unified material terminology", () => {
 	assert.match(libraryDialog, /资料索引/);
 	assert.match(libraryDialog, /当前载入.*资料预览/);
 	assert.doesNotMatch(libraryDialog, /知识缓存|源码索引|预取缓存/);
+});
+
+test("Update errors render API error messages instead of objects", () => {
+  assert.equal(
+    errorFrom({ error: { code: "UPDATE_FAILED", message: "更新准备失败" } }, "更新失败"),
+    "更新准备失败",
+  );
+  assert.equal(errorFrom({ error: "旧版错误" }, "更新失败"), "旧版错误");
+  assert.match(html, /<script type="module" src="update\.js"><\/script>/);
+  assert.match(update, /new Error\(errorFrom\(result, "更新失败"\)\)/);
+  assert.doesNotMatch(update, /new Error\(result\.error/);
 });

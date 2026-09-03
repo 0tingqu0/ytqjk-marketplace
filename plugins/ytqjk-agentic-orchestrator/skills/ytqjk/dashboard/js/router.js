@@ -18,8 +18,8 @@ export function createRouter(onRoute) {
     const route = routeFromHash();
     const changed = currentRoute !== null && currentRoute !== route;
     currentRoute = route;
-    onRoute(route);
-    if (changed && window.matchMedia?.("(max-width: 600px)").matches) {
+    onRoute(route, changed);
+    if (changed) {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
   };
@@ -31,7 +31,7 @@ export function createRouter(onRoute) {
   return {
     go(route) {
       if (!Object.hasOwn(ROUTES, route)) return;
-      if (routeFromHash() === route) onRoute(route);
+      if (routeFromHash() === route) onRoute(route, false);
       else window.location.hash = route;
     },
   };

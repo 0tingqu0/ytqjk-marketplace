@@ -1,4 +1,8 @@
 import { bindKnowledgeGraphMotion } from "./knowledge-graph-motion.js";
+import {
+  nearestGraphElement,
+  watchGraphNodeHitTargets,
+} from "./knowledge-graph-hit-targets.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const GRAPH = { width: 820, height: 600, centerX: 410, centerY: 300 };
@@ -75,6 +79,13 @@ function graphLink(position, options) {
   const link = svgNode("a", { href: `#${options.route}` }, "graph-node-link");
   link.setAttribute("aria-label", options.ariaLabel);
   link.dataset.node = options.nodeId;
+  link.dataset.graphX = String(position.x);
+  link.dataset.graphY = String(position.y);
+  link.onkeydown = (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    window.location.hash = link.getAttribute("href");
+  };
   const group = svgNode(
     "g",
     { transform: `translate(${position.x} ${position.y})` },
@@ -87,8 +98,13 @@ function graphLink(position, options) {
     { r: options.hitRadius || 18 },
     "graph-node-hit",
   );
+  const focusRing = svgNode(
+    "circle",
+    { r: options.hitRadius || 18 },
+    "graph-node-focus-ring",
+  );
   const dot = svgNode("circle", { r: options.radius || 7 }, "graph-node-dot");
-  group.append(title, hit, dot);
+  group.append(title, hit, focusRing, dot);
   if (options.label) {
     const label = svgNode("text", {
       x: options.labelX ?? (position.x >= GRAPH.centerX ? 13 : -13),
@@ -101,6 +117,17 @@ function graphLink(position, options) {
   }
   link.append(group);
   return link;
+}
+
+function bindNearestNodePointer(svg) {
+  svg.onclick = (event) => {
+    if (event.detail === 0) return;
+    const nearest = nearestGraphElement(svg, event, ".graph-node-link");
+    if (!nearest) return;
+    event.preventDefault();
+    nearest.focus();
+    window.location.hash = nearest.getAttribute("href");
+  };
 }
 
 function sessionPosition(parent, index, total) {
@@ -225,6 +252,8 @@ function graphStats(snapshot) {
 }
 
 export function renderLibraryTopology(target, snapshot) {
+  target.graphViewport?.destroy?.();
+  target.graphViewport = null;
   const svg = svgNode("svg", {
     viewBox: `0 0 ${GRAPH.width} ${GRAPH.height}`,
     role: "group",
@@ -232,11 +261,24 @@ export function renderLibraryTopology(target, snapshot) {
   }, "knowledge-graph");
   const edges = svgNode("g", {}, "graph-edges");
   const nodes = svgNode("g", {}, "graph-nodes");
+  svg.append(svgNode("rect", {
+    width: GRAPH.width,
+    height: GRAPH.height,
+    "aria-hidden": "true",
+  }, "graph-pointer-surface"));
   const root = appendRoot(svg, edges, nodes, snapshot.counts);
   appendProjects(snapshot.projects, snapshot.sessions, root, edges, nodes);
   appendDocuments(snapshot.documents, root, edges, nodes);
   target.replaceChildren(svg, graphStats(snapshot));
-  bindKnowledgeGraphMotion(target);
+  const motion = bindKnowledgeGraphMotion(target);
+  bindNearestNodePointer(svg);
+  const stopHitObserver = watchGraphNodeHitTargets(svg);
+  target.graphViewport = {
+    destroy() {
+      motion.destroy();
+      stopHitObserver();
+    },
+  };
 }
 
 export const renderKnowledgeGraph = renderLibraryTopology;

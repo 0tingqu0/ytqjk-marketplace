@@ -1,18 +1,17 @@
+import {
+  graphPointFromEvent,
+  nearestGraphElement,
+} from "./knowledge-graph-hit-targets.js";
+import { createGraphDragRenderer } from "./knowledge-graph-drag-render.js";
+import { syncGraphClusters } from "./knowledge-graph-clusters.js";
+
 const DRAG_THRESHOLD = 3;
+const FLING_IDLE_THRESHOLD = 96;
 const MAX_STEP = 8;
 const STOP_SPEED = 0.04;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
-}
-
-function graphPoint(svg, event) {
-  const box = svg.getAttribute("viewBox").split(/\s+/).map(Number);
-  const bounds = svg.getBoundingClientRect();
-  return {
-    x: box[0] + ((event.clientX - bounds.left) / bounds.width) * box[2],
-    y: box[1] + ((event.clientY - bounds.top) / bounds.height) * box[3],
-  };
 }
 
 function visibleNodes(nodeElements) {
@@ -48,9 +47,11 @@ function movePoint(point, dx, dy, movable, pinnedId) {
 }
 
 export function stepGraphPhysics(
-  points, edges, movable, pinnedId = "", heat = 1,
+  points, edges, movable, pinnedId = "", heat = 1, participantIds = null,
 ) {
-  const list = [...points.values()];
+  const list = participantIds
+    ? [...participantIds].map((nodeId) => points.get(nodeId)).filter(Boolean)
+    : [...points.values()];
   edges.forEach((edge) => {
     const source = points.get(edge.source);
     const target = points.get(edge.target);
@@ -77,7 +78,7 @@ export function stepGraphPhysics(
     }
   }
   let maximumSpeed = 0;
-  list.forEach((point) => {
+  points.forEach((point) => {
     if (point.id === pinnedId || !movable.has(point.id)) {
       point.vx = 0;
       point.vy = 0;
@@ -92,44 +93,13 @@ export function stepGraphPhysics(
   return maximumSpeed;
 }
 
-function renderPositions(nodeElements, edgeElements, labelElements, points) {
-  nodeElements.forEach((element, nodeId) => {
-    const point = points.get(nodeId);
-    if (!point) return;
-    element.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
-    element.dataset.x = point.x.toFixed(2);
-    element.dataset.y = point.y.toFixed(2);
-  });
-  edgeElements.forEach((element, edgeId) => {
-    const source = points.get(element.dataset.source);
-    const target = points.get(element.dataset.target);
-    if (!source || !target) return;
-    element.querySelectorAll("line").forEach((line) => {
-      line.setAttribute("x1", source.x.toFixed(2));
-      line.setAttribute("y1", source.y.toFixed(2));
-      line.setAttribute("x2", target.x.toFixed(2));
-      line.setAttribute("y2", target.y.toFixed(2));
-    });
-    const label = labelElements.get(edgeId);
-    label?.setAttribute("x", ((source.x + target.x) / 2).toFixed(2));
-    label?.setAttribute("y", ((source.y + target.y) / 2 - 5).toFixed(2));
-  });
-}
-
 function prefersReducedMotion() {
   return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
 export function bindGraphNodeDrag(svg, target, graph, layout) {
-  const nodeElements = new Map([...svg.querySelectorAll("[data-node]")].map(
-    (element) => [element.dataset.node, element],
-  ));
-  const edgeElements = new Map([...svg.querySelectorAll(".semantic-edge-link")].map(
-    (element) => [element.dataset.edge, element],
-  ));
-  const labelElements = new Map([...svg.querySelectorAll(".semantic-edge-label")].map(
-    (element) => [element.dataset.edge, element],
-  ));
+  const renderer = createGraphDragRenderer(svg);
+  const { nodeElements } = renderer;
   const points = new Map(graph.nodes.map((node) => {
     const position = layout.positions.get(node.id);
     return [node.id, Object.assign(position, {
@@ -144,26 +114,45 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
   let frame = 0;
   let heat = 0;
   let movable = new Set();
+  let participants = new Set();
   let suppressClickUntil = 0;
 
   function finishMotion() {
     target.classList.remove("is-graph-settling");
     heat = 0;
+    syncGraphClusters(target);
+  }
+
+  function interruptMotion() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    heat = 0;
+    points.forEach((point) => {
+      point.vx = 0;
+      point.vy = 0;
+    });
+    target.classList.remove("is-graph-settling");
+    syncGraphClusters(target);
   }
 
   function animate() {
     frame = 0;
     const pinnedId = drag?.moved ? drag.nodeId : "";
-    const speed = stepGraphPhysics(
-      points, activeEdges, movable, pinnedId, heat,
+    const reducedDuringDrag = Boolean(drag?.moved && prefersReducedMotion());
+    const speed = reducedDuringDrag ? 0 : stepGraphPhysics(
+      points, activeEdges, movable, pinnedId, heat, participants,
     );
-    renderPositions(nodeElements, edgeElements, labelElements, points);
+    renderer.render(points);
     if (drag?.moved) {
-      heat = Math.max(heat, 0.82);
+      if (reducedDuringDrag) {
+        heat = 0;
+        return;
+      }
+      heat *= 0.84;
     } else {
       heat *= 0.93;
     }
-    if (drag?.moved || heat > 0.015 || speed > STOP_SPEED) {
+    if (heat > 0.015 || speed > STOP_SPEED) {
       frame = requestAnimationFrame(animate);
     } else {
       finishMotion();
@@ -176,13 +165,16 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
 
   function prepare(nodeId) {
     const visible = visibleNodes(nodeElements);
+    participants = visible;
     movable = graphNeighborhood(graph, nodeId, visible);
     activeEdges = graph.edges.filter((edge) => (
       visible.has(edge.source) && visible.has(edge.target)
+      && (movable.has(edge.source) || movable.has(edge.target))
     )).map((edge) => {
       const source = points.get(edge.source);
       const targetPoint = points.get(edge.target);
       return {
+        id: edge.id,
         source: edge.source,
         target: edge.target,
         length: Math.max(36, Math.hypot(
@@ -190,15 +182,22 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
         )),
       };
     });
+    renderer.prepare(movable, activeEdges);
   }
 
   function pointerDown(event) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || drag) return;
+    interruptMotion();
+    const element = nearestGraphElement(
+      svg, event, ".semantic-node:not(.is-filtered-out)",
+    );
+    if (!element) return;
     event.preventDefault();
-    event.stopPropagation();
-    const element = event.currentTarget;
+    event.stopImmediatePropagation();
     const point = points.get(element.dataset.node);
     if (!point) return;
+    const pointer = graphPointFromEvent(svg, event);
+    if (!pointer) return;
     prepare(point.id);
     drag = {
       element,
@@ -206,6 +205,8 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      offsetX: point.x - pointer.x,
+      offsetY: point.y - pointer.y,
       lastX: point.x,
       lastY: point.y,
       lastTime: event.timeStamp,
@@ -214,7 +215,7 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
       moved: false,
     };
     element.focus({ preventScroll: true });
-    element.setPointerCapture?.(event.pointerId);
+    svg.setPointerCapture?.(event.pointerId);
     element.classList.add("is-dragging");
     target.classList.add("is-node-dragging");
   }
@@ -227,7 +228,12 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
     if (!drag.moved && distance < DRAG_THRESHOLD) return;
     event.preventDefault();
     drag.moved = true;
-    const next = graphPoint(svg, event);
+    const pointer = graphPointFromEvent(svg, event);
+    if (!pointer) return;
+    const next = {
+      x: pointer.x + drag.offsetX,
+      y: pointer.y + drag.offsetY,
+    };
     const point = points.get(drag.nodeId);
     const elapsed = Math.max(8, event.timeStamp - drag.lastTime);
     drag.velocityX = (next.x - drag.lastX) / elapsed;
@@ -237,11 +243,8 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
     drag.lastTime = event.timeStamp;
     point.x = clamp(next.x, 24, layout.width - 24);
     point.y = clamp(next.y, 24, layout.height - 24);
-    renderPositions(nodeElements, edgeElements, labelElements, points);
-    if (!prefersReducedMotion()) {
-      heat = 1;
-      schedule();
-    }
+    heat = 1;
+    schedule();
   }
 
   function pointerUp(event) {
@@ -250,25 +253,38 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
     drag = null;
     released.element.classList.remove("is-dragging");
     target.classList.remove("is-node-dragging");
-    if (released.element.hasPointerCapture?.(event.pointerId)) {
-      released.element.releasePointerCapture(event.pointerId);
+    if (svg.hasPointerCapture?.(event.pointerId)) {
+      svg.releasePointerCapture(event.pointerId);
+    }
+    if (event.type === "pointercancel") {
+      renderer.render(points);
+      interruptMotion();
+      return;
     }
     if (!released.moved) return;
     suppressClickUntil = Date.now() + 250;
     const point = points.get(released.nodeId);
-    point.vx = clamp(released.velocityX * 7, -6, 6);
-    point.vy = clamp(released.velocityY * 7, -6, 6);
     target.classList.add("is-graph-settling");
     heat = 1;
     if (prefersReducedMotion()) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      point.vx = 0;
+      point.vy = 0;
       for (let index = 0; index < 36; index += 1) {
-        stepGraphPhysics(points, activeEdges, movable, "", heat);
+        stepGraphPhysics(
+          points, activeEdges, movable, released.nodeId, heat, participants,
+        );
         heat *= 0.9;
       }
-      renderPositions(nodeElements, edgeElements, labelElements, points);
+      renderer.render(points);
       finishMotion();
       return;
     }
+    const recentlyMoved = event.timeStamp - released.lastTime
+      <= FLING_IDLE_THRESHOLD;
+    point.vx = recentlyMoved ? clamp(released.velocityX * 7, -6, 6) : 0;
+    point.vy = recentlyMoved ? clamp(released.velocityY * 7, -6, 6) : 0;
     schedule();
   }
 
@@ -278,25 +294,25 @@ export function bindGraphNodeDrag(svg, target, graph, layout) {
     event.stopImmediatePropagation();
   }
 
-  nodeElements.forEach((element) => {
-    element.addEventListener("pointerdown", pointerDown);
-    element.addEventListener("pointermove", pointerMove);
-    element.addEventListener("pointerup", pointerUp);
-    element.addEventListener("pointercancel", pointerUp);
-    element.addEventListener("click", blockDraggedClick, true);
-  });
+  svg.addEventListener("pointerdown", pointerDown);
+  svg.addEventListener("pointermove", pointerMove);
+  svg.addEventListener("pointerup", pointerUp);
+  svg.addEventListener("pointercancel", pointerUp);
+  svg.addEventListener("click", blockDraggedClick, true);
   return {
     destroy() {
       cancelAnimationFrame(frame);
+      if (drag && svg.hasPointerCapture?.(drag.pointerId)) {
+        svg.releasePointerCapture(drag.pointerId);
+      }
+      drag = null;
       target.classList.remove("is-node-dragging", "is-graph-settling");
-      nodeElements.forEach((element) => {
-        element.classList.remove("is-dragging");
-        element.removeEventListener("pointerdown", pointerDown);
-        element.removeEventListener("pointermove", pointerMove);
-        element.removeEventListener("pointerup", pointerUp);
-        element.removeEventListener("pointercancel", pointerUp);
-        element.removeEventListener("click", blockDraggedClick, true);
-      });
+      nodeElements.forEach((element) => element.classList.remove("is-dragging"));
+      svg.removeEventListener("pointerdown", pointerDown);
+      svg.removeEventListener("pointermove", pointerMove);
+      svg.removeEventListener("pointerup", pointerUp);
+      svg.removeEventListener("pointercancel", pointerUp);
+      svg.removeEventListener("click", blockDraggedClick, true);
     },
   };
 }

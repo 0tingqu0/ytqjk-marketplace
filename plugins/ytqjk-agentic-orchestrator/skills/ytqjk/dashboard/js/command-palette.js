@@ -53,7 +53,14 @@ function render(router, openDocument) {
 export function bindCommandPalette(router, openDocument) {
   let routePrefix = false;
   const dialog = byId("command-dialog");
+  const blockedByModal = () => {
+    const active = document.querySelector(
+      'dialog[open], [aria-modal="true"]:not([hidden])',
+    );
+    return Boolean(active && active !== dialog);
+  };
   const open = () => {
+    if (blockedByModal()) return;
     render(router, openDocument);
     if (!dialog.open) dialog.showModal();
     byId("command-filter").focus();
@@ -66,6 +73,12 @@ export function bindCommandPalette(router, openDocument) {
   };
   byId("command-filter").oninput = () => render(router, openDocument);
   document.addEventListener("keydown", (event) => {
+    const commandShortcut = (event.ctrlKey || event.metaKey)
+      && event.key.toLowerCase() === "k";
+    if (blockedByModal() && event.key !== "Escape") {
+      if (commandShortcut) event.preventDefault();
+      return;
+    }
     const editing = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
     const route = {
       o: "overview",
@@ -75,7 +88,7 @@ export function bindCommandPalette(router, openDocument) {
       p: "libraries",
       s: "sessions",
     }[event.key.toLowerCase()];
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    if (commandShortcut) {
       event.preventDefault();
       open();
     } else if (routePrefix && route && !editing) {

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>YTQJK 本地知识工作台</title>
   <link rel="stylesheet" href="assets/icons/phosphor/regular.css">
@@ -14,19 +14,22 @@
   <link rel="stylesheet" href="space-theme.css">
 </head>
 <body data-theme="system">
+  <a class="skip-link" href="#view-root">跳到主要内容</a>
   <div class="app-shell">
     <aside id="app-rail" class="app-rail" aria-label="主导航">
       <div class="rail-brand"><span aria-hidden="true">YK</span><div><b>YTQJK</b><small>本地知识工作台</small></div></div>
       <nav class="rail-nav" aria-label="知识工作台视图">
-        <button type="button" data-route="overview"><i class="ph ph-house" aria-hidden="true"></i><span>总览</span></button>
-        <button type="button" data-route="intake"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span>投递任务</span></button>
-        <button type="button" data-route="documents"><i class="ph ph-file-text" aria-hidden="true"></i><span>知识文档</span></button>
-        <button type="button" data-route="review"><i class="ph ph-user-list" aria-hidden="true"></i><span>候选审阅</span><strong id="rail-candidate-count">–</strong></button>
-        <button type="button" data-route="libraries"><i class="ph ph-tree-structure" aria-hidden="true"></i><span>知识库树</span></button>
-        <button type="button" data-route="sessions"><i class="ph ph-anchor-simple" aria-hidden="true"></i><span>会话锚点</span></button>
+        <button type="button" data-route="overview" data-tooltip="总览" aria-label="总览"><i class="ph ph-house" aria-hidden="true"></i><span>总览</span></button>
+        <button type="button" data-route="intake" data-tooltip="投递任务" aria-label="投递任务"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span>投递任务</span></button>
+        <button type="button" data-route="documents" data-tooltip="知识文档" aria-label="知识文档"><i class="ph ph-file-text" aria-hidden="true"></i><span>知识文档</span></button>
+        <button type="button" data-route="review" data-tooltip="候选审阅"><i class="ph ph-user-list" aria-hidden="true"></i><span>候选审阅</span><strong id="rail-candidate-count">–</strong></button>
+        <button type="button" data-route="libraries" data-tooltip="知识库树" aria-label="知识库树"><i class="ph ph-tree-structure" aria-hidden="true"></i><span>知识库树</span></button>
+        <button type="button" data-route="sessions" data-tooltip="会话锚点" aria-label="会话锚点"><i class="ph ph-anchor-simple" aria-hidden="true"></i><span>会话锚点</span></button>
       </nav>
-      <div class="rail-footer"><button id="theme-toggle" type="button">主题：系统</button><button id="shortcut-help" type="button"><i class="ph ph-keyboard" aria-hidden="true"></i><span>快捷键</span></button></div>
+      <div class="rail-footer"><button id="theme-toggle" type="button" data-tooltip="切换主题" aria-label="切换主题，当前为系统主题">主题：系统</button><button id="shortcut-help" type="button" data-tooltip="快捷键" aria-label="快捷键"><i class="ph ph-keyboard" aria-hidden="true"></i><span>快捷键</span></button></div>
     </aside>
+
+    <button id="rail-scrim" class="rail-scrim" type="button" tabindex="-1" aria-label="关闭主导航" hidden></button>
 
     <section class="workspace">
       <header class="appbar">
@@ -64,7 +67,7 @@
                     <aside id="graph-settings-panel" class="graph-settings-panel" aria-labelledby="graph-settings-title" hidden>
                       <header><div><p class="eyebrow">Graph controls</p><h3 id="graph-settings-title">图谱设置</h3></div><div class="graph-settings-actions"><button id="graph-settings-reset" class="secondary" type="button" title="恢复默认设置"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i><span>重置</span></button><button id="graph-settings-close" class="secondary" type="button" aria-label="关闭图谱设置" title="关闭图谱设置"><i class="ph ph-x" aria-hidden="true"></i></button></div></header>
                       <details class="graph-settings-section" open><summary id="graph-focus-settings">聚焦<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div><label class="graph-setting-switch"><span><b>局部图谱</b><small>只看所选节点附近的知识</small></span><input id="graph-local-enabled" type="checkbox"></label><div class="graph-range-setting"><label for="graph-local-depth"><span>连接深度</span><output id="graph-local-depth-value">1 跳</output></label><input id="graph-local-depth" type="range" min="1" max="3" step="1" value="1"></div><output id="graph-local-status" class="graph-local-status" aria-live="polite">选择节点后可开启局部图谱</output></div></details>
-                      <details class="graph-settings-section" open><summary id="graph-filter-settings">筛选<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div><label class="graph-setting-switch"><span><b>智能降噪</b><small>隐藏低价值的单次叶子实体</small></span><input id="graph-smart-density" type="checkbox" checked></label><label class="graph-setting-switch"><span><b>知识文档</b><small>来源与可追溯内容</small></span><input id="graph-show-documents" type="checkbox" checked></label><label class="graph-setting-switch"><span><b>语义实体</b><small>主题、概念与关键实体</small></span><input id="graph-show-entities" type="checkbox" checked></label><label class="graph-select-setting" for="graph-relation-filter"><span><b>关系类型</b><small>减少无关连线</small></span><select id="graph-relation-filter"><option value="all">全部关系</option><option value="explicit">显式关系</option><option value="mentions">仅提及</option><option value="similar_to">仅相似</option></select></label></div></details>
+                      <details class="graph-settings-section" open><summary id="graph-filter-settings">筛选<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div><label class="graph-setting-switch"><span><b>智能降噪</b><small>优先保留高价值节点，大图自动分层展示</small></span><input id="graph-smart-density" type="checkbox" checked></label><label class="graph-setting-switch"><span><b>知识文档</b><small>来源与可追溯内容</small></span><input id="graph-show-documents" type="checkbox" checked></label><label class="graph-setting-switch"><span><b>语义实体</b><small>主题、概念与关键实体</small></span><input id="graph-show-entities" type="checkbox" checked></label><label class="graph-select-setting" for="graph-relation-filter"><span><b>关系类型</b><small>减少无关连线</small></span><select id="graph-relation-filter"><option value="all">全部关系</option><option value="explicit">显式关系</option><option value="mentions">仅提及</option><option value="similar_to">仅相似</option></select></label></div></details>
                       <details class="graph-settings-section"><summary id="graph-display-settings">显示<i class="ph ph-caret-down" aria-hidden="true"></i></summary><div><label class="graph-setting-switch"><span><b>主题分组</b><small>按结构社区组织节点</small></span><input id="graph-group-clusters" type="checkbox" checked></label><label class="graph-setting-switch"><span><b>全部节点标签</b><small>默认仅显示重要节点</small></span><input id="graph-show-labels" type="checkbox"></label><label class="graph-setting-switch"><span><b>关系标签</b><small>显示非提及类关系</small></span><input id="graph-show-relations" type="checkbox"></label><div class="graph-range-setting"><label for="graph-node-scale"><span>节点大小</span><output id="graph-node-scale-value">100%</output></label><input id="graph-node-scale" type="range" min="0.75" max="1.5" step="0.25" value="1"></div><div class="graph-range-setting"><label for="graph-link-scale"><span>连线粗细</span><output id="graph-link-scale-value">100%</output></label><input id="graph-link-scale" type="range" min="0.75" max="2" step="0.25" value="1"></div></div></details>
                     </aside>
                     <div id="graph-active-filters" class="graph-active-filters" aria-live="polite"></div>
@@ -94,12 +97,45 @@
 
         <section id="view-intake" class="view-panel" data-view="intake" hidden>
           <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">投递</p><h2>投递任务</h2><p class="muted">投递资料只会保存为候选，不会自动批准。</p></div></div></div>
-          <div class="intake-layout"><form id="intake-form" class="surface intake-form"><label class="drop-zone" for="file-input"><b>选择或拖入资料</b><span>文本、Office、图片或音频；单份最大 10 MiB</span></label><input id="file-input" type="file" hidden><input id="folder-input" type="file" webkitdirectory multiple hidden><div class="form-actions"><label class="secondary" for="folder-input"><i class="ph ph-folder-open" aria-hidden="true"></i>选择文件夹</label><button id="submit-intake" class="icon-leading" type="submit"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i>保存文本为候选</button></div><label for="purpose">资料作用</label><input id="purpose" maxlength="500" placeholder="例如：部署步骤或故障根因"><label for="note">直接粘贴</label><textarea id="note" rows="7" placeholder="输入可复用的资料、结论或复盘记录"></textarea></form><section class="surface task-panel"><p class="eyebrow">最近浏览器记录</p><h3>导入进度</h3><div id="intake-progress" class="progress" hidden><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><span class="progress-track"><span id="intake-progress-bar"></span></span></div><p id="intake-status" class="status-message" role="status">尚无投递任务。</p><div id="intake-results" class="compact-list"></div></section></div>
+          <div class="intake-layout">
+            <form id="intake-form" class="surface intake-form">
+              <div class="intake-form-heading"><p class="eyebrow">候选资料</p><h3>说明用途并选择来源</h3><p>用途会帮助后续检索与人工审阅，可留空。</p></div>
+              <label for="purpose">资料作用 <span>选填</span></label>
+              <input id="purpose" maxlength="500" placeholder="例如：部署步骤或故障根因">
+              <fieldset class="intake-source-group">
+                <legend>选择资料来源</legend>
+                <button id="choose-file" class="drop-zone" type="button"><i class="ph ph-upload-simple" aria-hidden="true"></i><b>选择或拖入资料</b><span>文本、Office、图片或音频；单份最大 10 MiB</span></button>
+                <input id="file-input" type="file" hidden>
+                <input id="folder-input" type="file" webkitdirectory multiple hidden>
+                <div class="form-actions intake-source-actions"><button id="choose-folder" class="secondary" type="button"><i class="ph ph-folder-open" aria-hidden="true"></i>选择文件夹</button></div>
+              </fieldset>
+              <div class="intake-divider"><span>或直接粘贴文本</span></div>
+              <label for="note">文本内容 <span>必填</span></label>
+              <textarea id="note" rows="7" required aria-describedby="intake-note-help" placeholder="输入可复用的资料、结论或复盘记录"></textarea>
+              <small id="intake-note-help" class="field-help">填写文本后即可保存为候选；文件与文件夹会在选择后直接投递。</small>
+              <div class="form-actions intake-submit-row"><button id="submit-intake" class="icon-leading" type="submit" disabled><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i>保存文本为候选</button></div>
+            </form>
+            <section class="surface task-panel"><p class="eyebrow">最近浏览器记录</p><h3>导入进度</h3><div id="intake-progress" class="progress" hidden><div><span id="intake-stage">准备中</span><b id="intake-percent">0%</b></div><span class="progress-track"><span id="intake-progress-bar"></span></span></div><p id="intake-status" class="status-message" role="status">尚无投递任务。</p><div id="intake-results" class="compact-list"></div></section>
+          </div>
         </section>
 
         <section id="view-documents" class="view-panel" data-view="documents" hidden>
           <div class="overview-heading"><div><span class="section-accent" aria-hidden="true"></span><div><p class="eyebrow">检索</p><h2>知识文档</h2></div></div><label class="search-label">筛选<input id="document-filter" data-view-search type="search" placeholder="路径、类别或状态"></label></div>
-          <div class="workbench"><section class="surface document-list-panel"><div class="filter-row" role="group" aria-label="文档状态"><button data-document-state="all" type="button">全部</button><button data-document-state="verified" type="button">已验证</button><button data-document-state="approved" type="button">已批准</button><button data-document-state="candidate" type="button">候选</button></div><div id="documents" class="document-list"></div></section><section class="surface document-detail"><div id="document-empty" class="empty-state empty-state-featured"><span class="empty-state-icon"><i class="ph ph-file-search" aria-hidden="true"></i></span><p class="eyebrow">文档预览</p><h3>从左侧选择一条知识</h3><p>查看来源、状态和正文；候选资料可在这里继续编辑与决策。</p><button class="secondary icon-leading" type="button" data-route="intake"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i>投递新资料</button></div><article id="preview" hidden><div class="detail-head"><span id="state"></span><code id="path"></code></div><textarea id="content" rows="18" hidden></textarea><div id="preview-actions" class="form-actions" hidden><button id="approve-candidate" class="icon-leading" type="button"><i class="ph ph-seal-check" aria-hidden="true"></i>批准入库</button><button id="save-candidate" class="secondary icon-leading" type="button"><i class="ph ph-floppy-disk" aria-hidden="true"></i>保存修改</button><button id="delete-candidate" class="danger icon-leading" type="button"><i class="ph ph-trash" aria-hidden="true"></i>删除候选</button></div></article></section></div>
+          <div class="workbench">
+            <section class="surface document-list-panel"><div class="filter-row" role="group" aria-label="文档状态"><button data-document-state="all" type="button">全部</button><button data-document-state="verified" type="button">已验证</button><button data-document-state="approved" type="button">已批准</button><button data-document-state="candidate" type="button">候选</button></div><div id="documents" class="document-list"></div></section>
+            <section class="surface document-detail">
+              <div id="document-empty" class="empty-state empty-state-featured"><span class="empty-state-icon"><i class="ph ph-file-search" aria-hidden="true"></i></span><p class="eyebrow">文档预览</p><h3>从左侧选择一条知识</h3><p>查看来源、状态和正文；候选资料可在这里继续编辑与决策。</p><button class="secondary icon-leading" type="button" data-route="intake"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i>投递新资料</button></div>
+              <article id="preview" hidden>
+                <div class="detail-head"><span id="state"></span><code id="path"></code></div>
+                <div id="document-mode-actions" class="document-mode-actions" role="group" aria-label="文档显示模式" hidden><button id="document-read-mode" class="secondary" type="button"><i class="ph ph-book-open-text" aria-hidden="true"></i>阅读</button><button id="document-edit-mode" class="secondary" type="button"><i class="ph ph-pencil-simple" aria-hidden="true"></i>编辑</button></div>
+                <div id="document-reading" class="document-reading"></div>
+                <label class="sr-only" for="content">候选文档正文</label>
+                <textarea id="content" rows="18" aria-describedby="document-conflict" hidden></textarea>
+                <p id="document-conflict" class="status-message document-conflict" role="status" hidden></p>
+                <div id="preview-actions" class="form-actions" hidden><button id="approve-candidate" class="icon-leading" type="button"><i class="ph ph-seal-check" aria-hidden="true"></i>批准入库</button><button id="save-candidate" class="secondary icon-leading" type="button"><i class="ph ph-floppy-disk" aria-hidden="true"></i>保存修改</button><button id="delete-candidate" class="danger icon-leading" type="button"><i class="ph ph-trash" aria-hidden="true"></i>删除候选</button></div>
+              </article>
+            </section>
+          </div>
         </section>
 
         <section id="view-review" class="view-panel" data-view="review" hidden>
@@ -126,8 +162,8 @@
     </section>
   </div>
 
-  <nav class="bottom-nav" aria-label="移动导航"><button data-route="overview" type="button">总览</button><button data-route="intake" type="button">投递</button><button data-route="documents" type="button">文档</button><button id="bottom-more" type="button">更多</button></nav>
-  <dialog id="project-library-dialog"><header><div><p id="library-kicker" class="eyebrow">索引</p><h2 id="project-library-title">读取中</h2><p id="project-library-meta" class="muted"></p></div><button id="close-project-library" type="button">关闭</button></header><p id="project-library-empty" class="empty-state" hidden>尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
+  <nav class="bottom-nav" aria-label="移动导航"><button data-route="overview" type="button"><i class="ph ph-house" aria-hidden="true"></i><span>总览</span></button><button data-route="intake" type="button"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span>投递</span></button><button data-route="documents" type="button"><i class="ph ph-file-text" aria-hidden="true"></i><span>文档</span></button><button id="bottom-more" type="button" aria-expanded="false" aria-controls="app-rail"><i class="ph ph-dots-three" aria-hidden="true"></i><span>更多</span></button></nav>
+  <dialog id="project-library-dialog" aria-labelledby="project-library-title"><header><div><p id="library-kicker" class="eyebrow">索引</p><h2 id="project-library-title">读取中</h2><p id="project-library-meta" class="muted"></p></div><button id="close-project-library" type="button">关闭</button></header><p id="project-library-empty" class="empty-state" hidden>尚未建立可浏览的索引内容。</p><div id="project-library-files"></div></dialog>
   <dialog id="tree-dialog" aria-labelledby="tree-action-title">
     <header>
       <div><p class="eyebrow">拓扑变更</p><h2 id="tree-action-title">知识库操作</h2></div>
@@ -182,9 +218,9 @@
   <dialog id="peer-dialog" aria-labelledby="peer-dialog-title"><header><div><p class="eyebrow">授权连接</p><h2 id="peer-dialog-title">新增授权电脑</h2></div><button id="close-peer-dialog" type="button">关闭</button></header><form id="peer-form" class="peer-dialog-form"><label>连接标识<input id="peer-id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}"></label><label>显示名称<input id="peer-title" required maxlength="100"></label><label>项目标识<select id="peer-project-id" required></select></label><label>对方地址<input id="peer-endpoint" required type="url" placeholder="http://192.168.1.20:8766"></label><div class="peer-discovery"><label for="peer-remote-node-id">访问对方库（可稍后获取）</label><select id="peer-remote-node-id" disabled></select><button id="peer-discover" class="secondary" type="button">连接并获取开放库</button></div><fieldset class="peer-export-field"><legend>允许对方访问本机库（可多选）</legend><div id="peer-export-node-ids" class="peer-library-tree" role="tree" aria-label="本机知识库层级" aria-multiselectable="true" tabindex="0"></div><small>完整显示本机层级；不同级库和挂载库可查看但不可勾选。</small></fieldset><label class="peer-secret-field">共享密钥<input id="peer-shared-secret" required type="password" autocomplete="new-password"></label><label class="check-row"><input id="peer-allow-insecure" type="checkbox">确认使用未加密 HTTP</label><label class="check-row"><input id="peer-enabled" type="checkbox" checked>启用此连接</label><p id="peer-form-status" class="status-message" role="status"></p><div class="form-actions"><button id="cancel-peer" class="secondary" type="button">取消</button><button id="save-peer" type="submit">保存连接</button></div></form></dialog>
   <dialog id="peer-secret-dialog" aria-labelledby="peer-secret-title"><header><div><p class="eyebrow">仅显示一次</p><h2 id="peer-secret-title">共享密钥</h2></div><button id="close-peer-secret" type="button">关闭</button></header><p class="muted">把连接标识和密钥安全发送给对方；关闭后本页立即清除。</p><label>本机连接标识<input id="peer-local-id" readonly></label><label>一次性共享密钥<textarea id="peer-secret-value" rows="3" readonly></textarea></label><p id="peer-secret-status" class="status-message" role="status"></p><div class="form-actions"><button id="copy-peer-secret" type="button">复制密钥</button><button id="dismiss-peer-secret" class="secondary" type="button">完成</button></div></dialog>
   <dialog id="peer-material-dialog" aria-labelledby="peer-material-title"><header><div><p class="eyebrow">远程材料</p><h2 id="peer-material-title">知识材料</h2><p id="peer-material-meta" class="muted"></p></div><button id="close-peer-material" type="button">关闭</button></header><pre id="peer-material-content" class="peer-material-content"></pre></dialog>
-  <dialog id="confirm-dialog"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-message"></p><div class="form-actions"><button value="cancel" class="secondary">取消</button><button id="confirm-action" value="confirm">确认</button></div></form></dialog>
-  <dialog id="command-dialog"><header><h2>跳转与操作</h2><button id="close-command" type="button">关闭</button></header><label>搜索视图或文档<input id="command-filter" type="search" autocomplete="off"></label><div id="command-results" class="command-results"></div></dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-message"></p><div class="form-actions"><button value="cancel" class="secondary">取消</button><button id="confirm-action" value="confirm">确认</button></div></form></dialog>
+  <dialog id="command-dialog" aria-labelledby="command-dialog-title"><header><h2 id="command-dialog-title">跳转与操作</h2><button id="close-command" type="button">关闭</button></header><label>搜索视图或文档<input id="command-filter" type="search" autocomplete="off"></label><div id="command-results" class="command-results"></div></dialog>
   <script type="module" src="app.js"></script>
-  <script src="update.js"></script>
+  <script type="module" src="update.js"></script>
 </body>
 </html>

@@ -129,8 +129,23 @@
   transition: opacity .18s ease;
 }
 
+.graph-pointer-surface {
+  fill: transparent;
+  pointer-events: all;
+}
+
 .graph-node-hit {
   fill: transparent;
+  /* Pointer selection is delegated to the SVG nearest-node partition. */
+  pointer-events: none;
+}
+
+.graph-node-focus-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2px;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .graph-node-dot {
@@ -162,9 +177,8 @@
   stroke-width: 2.2;
 }
 
-.graph-node-link:focus-visible .graph-node-hit {
+.graph-node-link:focus-visible .graph-node-focus-ring {
   stroke: var(--focus);
-  stroke-width: 2px;
 }
 
 .graph-node--root .graph-node-dot {
@@ -582,6 +596,12 @@
 
   .topology-surface {
     min-height: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .topology-index-details summary {
+    min-height: 44px;
   }
 }
 

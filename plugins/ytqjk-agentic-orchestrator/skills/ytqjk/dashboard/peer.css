@@ -1,8 +1,8 @@
 .peer-workspace {
   grid-column: 1 / -1;
+  min-width: 0;
   display: grid;
   gap: 16px;
-  overflow: hidden;
 }
 
 .peer-heading,
@@ -261,16 +261,23 @@
 }
 #peer-material-dialog { width: min(760px, calc(100vw - 32px)); }
 
+@media (max-width: 1180px) {
+  .peer-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 900px) {
   .peer-service-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .peer-service-form button { width: 100%; }
-  .peer-grid { grid-template-columns: 1fr; }
   .peer-toolbar button,
   .peer-actions button,
   .peer-dispatch-form button,
   .peer-discovery button { min-height: 44px; }
+  .peer-dispatch-form select,
+  .peer-dialog-form select,
+  .check-row,
+  .peer-library-node > summary { min-height: 44px; }
 }
 
 @media (max-width: 600px) {

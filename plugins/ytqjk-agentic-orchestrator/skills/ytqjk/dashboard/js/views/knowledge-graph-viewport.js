@@ -78,6 +78,8 @@ export function bindGraphViewport(svg, target, onChange) {
   let box = { ...base };
   let drag = null;
   let fitFrame = 0;
+  let panFrame = 0;
+  let lastChangeKey = "";
   let lastFitNodeIds = null;
 
   function render() {
@@ -89,11 +91,15 @@ export function bindGraphViewport(svg, target, onChange) {
     target.classList.toggle("graph-zoom-far", percent < 80);
     target.classList.toggle("graph-zoom-near", percent >= 130);
     target.classList.toggle("graph-zoom-detail", percent >= 190);
-    onChange?.({
+    const state = {
       percent,
       canZoomIn: box.width > base.width * MIN_SCALE + 0.1,
       canZoomOut: box.width < base.width * MAX_SCALE - 0.1,
-    });
+    };
+    const changeKey = `${state.percent}:${state.canZoomIn}:${state.canZoomOut}`;
+    if (changeKey === lastChangeKey) return;
+    lastChangeKey = changeKey;
+    onChange?.(state);
   }
 
   function zoom(factor, anchor = {
@@ -171,6 +177,14 @@ export function bindGraphViewport(svg, target, onChange) {
     fitFrame = requestAnimationFrame(fitNow);
   }
 
+  function schedulePanRender() {
+    if (panFrame) return;
+    panFrame = requestAnimationFrame(() => {
+      panFrame = 0;
+      render();
+    });
+  }
+
   function wheel(event) {
     event.preventDefault();
     zoom(event.deltaY < 0 ? ZOOM_IN : ZOOM_OUT, pointInViewBox(
@@ -179,6 +193,7 @@ export function bindGraphViewport(svg, target, onChange) {
   }
 
   function keydown(event) {
+    if (event.defaultPrevented) return;
     if (event.key === "+" || event.key === "=") {
       event.preventDefault();
       zoom(ZOOM_IN);
@@ -210,6 +225,7 @@ export function bindGraphViewport(svg, target, onChange) {
       x: event.clientX,
       y: event.clientY,
       box: { ...box },
+      bounds: svg.getBoundingClientRect(),
       pointerId: event.pointerId,
     };
     svg.setPointerCapture(event.pointerId);
@@ -218,11 +234,10 @@ export function bindGraphViewport(svg, target, onChange) {
 
   function pointerMove(event) {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const bounds = svg.getBoundingClientRect();
-    const dx = -((event.clientX - drag.x) / bounds.width) * drag.box.width;
-    const dy = -((event.clientY - drag.y) / bounds.height) * drag.box.height;
+    const dx = -((event.clientX - drag.x) / drag.bounds.width) * drag.box.width;
+    const dy = -((event.clientY - drag.y) / drag.bounds.height) * drag.box.height;
     box = panViewBox(drag.box, dx, dy, base);
-    render();
+    schedulePanRender();
   }
 
   function pointerUp(event) {
@@ -255,6 +270,12 @@ export function bindGraphViewport(svg, target, onChange) {
     clearFit: () => { lastFitNodeIds = null; },
     destroy() {
       cancelAnimationFrame(fitFrame);
+      cancelAnimationFrame(panFrame);
+      if (drag && svg.hasPointerCapture?.(drag.pointerId)) {
+        svg.releasePointerCapture(drag.pointerId);
+      }
+      drag = null;
+      target.classList.remove("is-panning");
       resizeObserver.disconnect();
     },
   };

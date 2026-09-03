@@ -36,6 +36,7 @@ function reviewEditor(selected, state, actions) {
   const editor = document.createElement("textarea");
   editor.id = "review-content";
   editor.rows = 18;
+  editor.setAttribute("aria-label", `编辑候选资料正文：${item.path}`);
   editor.value = state.drafts.get(item.path) ?? selected.content ?? "";
   editor.oninput = () => state.drafts.set(item.path, editor.value);
   const save = button("保存修改", "secondary icon-leading");
